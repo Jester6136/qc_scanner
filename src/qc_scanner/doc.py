@@ -87,7 +87,9 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
             reasons.append(Reason.of("QUAD_NOT_FOUND"))
         reasons.append(Reason.of("FALLBACK_ORIGINAL"))
         metrics.fallback_used = "original"
-        return ScanResult.of(_encode_png(orig), reasons, metrics)
+        return ScanResult.of(
+            _encode_png(orig), reasons, metrics, audience=cfg.hint_audience
+        )
 
     metrics.detector = quad.detector
     metrics.detector_confidence = quad.confidence
@@ -116,6 +118,7 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
         reasons,
         metrics,
         corners=(corners * ratio).tolist(),
+        audience=cfg.hint_audience,
     )
 
 

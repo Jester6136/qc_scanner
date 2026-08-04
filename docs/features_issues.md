@@ -17,7 +17,9 @@
 DEP-1 · PKG-1/2/3/4 · N-01/02/04/05/06 — cùng **vấn đề gốc** ở đầu file.
 
 **Mở thêm sau đợt chốt yêu cầu khách 2026-08-05** (xem §A2): OPS-3 · QC-11 · QC-12 · QC-13 ·
-N-11, QC-14, và S-5 nâng từ P3 lên P1. QC-11 + QC-12 đã đóng ngay trong ngày. Năm mục đầu **làm được ngay, không chờ gì**.
+N-11 · QC-14, và S-5 nâng từ P3 lên P1. **QC-11, QC-12, QC-13 đã đóng ngay trong ngày.**
+Còn lại: N-11 (làm được ngay) · QC-14 (chờ khách trả lời EX-14) · S-5 bước đo (cần ảnh EX-2) ·
+OPS-3 (để cuối, làm trên máy server — máy phát triển không build Docker).
 
 **Còn mở, và lý do**:
 
@@ -191,7 +193,7 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 |---|---|---|---|
 | 1 | [QC-11](#qc-no-crop) | ~30 phút | ✅ xong 2026-08-05 |
 | 2 | [QC-12](#qc-content-clipped) | ~nửa ngày | ✅ xong 2026-08-05 |
-| 3 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | không |
+| 3 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | ✅ xong 2026-08-05 |
 | 4 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
 | 5 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
 | 6 | [OPS-3](#ops-docker-unverified) | ~nửa ngày | **máy dev không build Docker** — làm cuối, trên máy server |
@@ -314,7 +316,26 @@ Chín ảnh thật hiện có đều là ảnh chụp thô nên chưa chạm ph�
 
 ---
 
-### 🧱 QC-13 · P1 · 🔴 · Hint hai tầng: người chụp / vận hành {#qc-two-tier-hint}
+### 🧱 QC-13 · P1 · 🟢 · Hint hai tầng: người chụp / vận hành {#qc-two-tier-hint}
+
+> **✅ Đã làm 2026-08-05.** `ReasonSpec.hints = {capturer, operator}` cho **cả 19 mã**;
+> `Reason.for_audience()` đổi tầng, và việc đổi diễn ra ở **đúng một chỗ** — `ScanResult.of()`,
+> ngay trước khi trả kết quả — thay vì bắt mọi nơi dựng `Reason` mang bối cảnh theo.
+>
+> Khai báo bối cảnh ở từng mặt tiền: `qc-scanner --audience`, `POST /?audience=`,
+> `Config.hint_audience` / `QC_SCANNER_HINT_AUDIENCE`. **`qc-scanner-batch` mặc định
+> `operator`** — chạy lô là xử lý kho ảnh, ở đó không ai chụp lại được nữa.
+>
+> Kết quả trả về **cả hai tầng** trong trường `hints`, nên phía gọi hiển thị lại theo vai người
+> đọc mà không phải gọi lại lần nữa.
+>
+> Ba test giữ đúng tinh thần chứ không chỉ giữ cấu trúc: (1) mã nào cũng phải đủ hai tầng;
+> (2) hai tầng phải **khác nhau thật** — chép nguyên hint người chụp sang là qua bài (1) mà
+> chẳng sửa được gì; (3) hint tầng vận hành **không được chứa** "chụp lại" / "lùi máy" /
+> "bật đèn", tức chính thứ [nguyên tắc §3.4 roadmap](overall_roadmap.md) cấm.
+>
+> Mã `system` (`FILE_EMPTY`, `DECODE_FAILED`) không có tầng riêng — cả hai luồng đều phải nhờ
+> người vận hành, nên `hint_for()` cho chúng rơi về tầng `operator`.
 
 [EX-3](need_exchange.md) chốt **cả hai luồng**: batch cho kho ảnh cũ (không ai chụp lại được)
 và realtime cho ảnh chụp mới (chụp lại được ngay).

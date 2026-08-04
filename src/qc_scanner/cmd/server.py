@@ -26,8 +26,16 @@ def index():
     file_content = request.files["file"].read()
     as_json = request.args.get("format") == "json"
 
+    # QC-13: hệ gọi vào khai báo ai sẽ đọc hint. Luồng realtime (người dùng vừa
+    # chụp) để mặc định `capturer`; luồng xử lý kho ảnh truyền `?audience=operator`
+    # để không nhận những lời khuyên kiểu "chụp lại" mà không ai thực hiện được.
+    audience = request.args.get("audience")
+    if audience not in (None, "capturer", "operator"):
+        return jsonify({"error": "audience phải là 'capturer' hoặc 'operator'"}), 400
+
+    overrides = {"hint_audience": audience} if audience else {}
     try:
-        result = scan_qc(file_content, config=Config.from_env())
+        result = scan_qc(file_content, config=Config.from_env(**overrides))
     except ScanError as err:
         return jsonify({"error": err.to_dict()}), 400
 

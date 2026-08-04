@@ -22,6 +22,60 @@ def test_every_reason_is_actionable(code):
 
 
 @pytest.mark.parametrize("code", sorted(REASONS))
+def test_every_reason_speaks_to_both_audiences(code):
+    """QC-13: hint tầng nào cũng phải có nội dung, không được để trống một tầng.
+
+    Không có bài này thì việc thêm mã mới sẽ lặng lẽ chỉ điền tầng người chụp —
+    đúng cái sai mà QC-13 sinh ra để sửa.
+    """
+    hints = REASONS[code].hints
+    assert set(hints) == {"capturer", "operator"}, code
+    for who, text in hints.items():
+        assert text.strip(), f"{code} thiếu hint cho {who}"
+
+
+@pytest.mark.parametrize("code", sorted(REASONS))
+def test_operator_hint_is_not_a_copy_of_the_capturer_one(code):
+    """Hai tầng phải khác nhau thật.
+
+    Chép nguyên hint người chụp sang tầng vận hành là qua được bài trên mà chẳng
+    giải quyết gì: người soi kho ảnh vẫn đọc "chụp lại", vẫn không làm được.
+    """
+    hints = REASONS[code].hints
+    assert hints["capturer"] != hints["operator"], code
+
+
+@pytest.mark.parametrize("code", sorted(REASONS))
+def test_operator_hint_never_tells_them_to_retake_the_photo(code):
+    """Người soi hàng chờ không cầm máy ảnh, và ảnh kho thì không chụp lại được."""
+    text = REASONS[code].hints["operator"].lower()
+    for forbidden in ("chụp lại", "chụp trên nền", "lùi máy", "bật đèn"):
+        assert forbidden not in text, f"{code} bảo người vận hành {forbidden!r}"
+
+
+def test_audience_switches_the_hint():
+    capturer = Reason.of("CONTENT_CLIPPED")
+    operator = capturer.for_audience("operator")
+    assert operator.code == capturer.code and operator.severity == capturer.severity
+    assert operator.hint != capturer.hint
+    assert operator.hint == REASONS["CONTENT_CLIPPED"].hints["operator"]
+
+
+def test_both_hints_travel_with_the_result():
+    """Phía gọi phải tự hiển thị lại được theo vai người đọc, không cần gọi lại."""
+    payload = ScanResult.of(b"x", [Reason.of("BLURRY")]).to_dict()
+    assert set(payload["reasons"][0]["hints"]) == {"capturer", "operator"}
+
+
+def test_system_codes_fall_back_to_the_operator_tier():
+    """Mã hệ thống không có tầng riêng — người vận hành mới là người đọc log."""
+    from qc_scanner.qc import ScanError
+
+    err = ScanError("FILE_EMPTY")
+    assert err.reason.hint == REASONS["FILE_EMPTY"].hints["operator"]
+
+
+@pytest.mark.parametrize("code", sorted(REASONS))
 def test_code_is_stable_uppercase(code):
     """Mã đi vào log/CSV của khách nên phải ổn định, viết HOA, không dấu."""
     assert code.isupper()

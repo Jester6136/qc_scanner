@@ -142,8 +142,15 @@ class Reason:
     severity: Literal["warn", "fail"]
     message:  str               # mô tả người đọc được
     hint:     str               # LÀM GÌ TIẾP THEO — bắt buộc, không được rỗng
-    audience: Literal["capturer", "operator", "system"]   # ai phải hành động
+    audience: Literal["capturer", "operator", "system"]   # `hint` ở trên viết cho ai
+    hints:    dict              # CẢ HAI tầng: {"capturer": ..., "operator": ...}
 ```
+
+**Hint hai tầng (QC-13)**. Cùng một lý do đọc khác nhau tuỳ người nhận: người chụp còn chụp
+lại được, người soi kho ảnh thì không. Luồng gọi khai báo vai — `qc-scanner --audience`,
+`POST /?audience=`, `QC_SCANNER_HINT_AUDIENCE` — và `qc-scanner-batch` mặc định `operator`.
+Trường `hints` luôn mang đủ cả hai để phía gọi tự hiển thị lại mà không phải xử lý lại ảnh.
+Mã `system` không có tầng riêng, rơi về tầng `operator`.
 
 ### Quy tắc phán quyết
 
@@ -287,7 +294,7 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
-| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08` (có mực sát mép ở cạnh bị khung cắt) | Một phần **chữ** nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
+| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08` (có mực sát mép ở cạnh bị khung cắt) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
 | `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border == 4` | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
 | `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |

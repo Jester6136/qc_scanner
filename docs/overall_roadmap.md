@@ -85,7 +85,7 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
   nhãn (QUAL-1/2, S-2, S-6, bộ eval).
 - **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 19 mã
   lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
-- **136 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
+- **199 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
   "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
 - **Đã đo** trên 8 ảnh mẫu + 9 ảnh thật (`tmp/`): 11 pass · 5 warn · 1 fail. Tốc độ
   **~0.4s/ảnh** sau khi tái dùng session (trước ~3.0s).
@@ -220,7 +220,7 @@ sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được n
 - [x] **QC-12** ✅ `CONTENT_CLIPPED` (fail) — dò pixel mực chạm mép cắt.
       [EX-1](need_exchange.md): mất viền trắng thì được, mất **chữ** thì không. Quan trọng nhất
       với hoá đơn — mất dòng tổng tiền là hỏng cả bản ghi.
-- [ ] **QC-13** Hint hai tầng (người chụp / vận hành).
+- [x] **QC-13** ✅ Hint hai tầng (người chụp / vận hành).
       [EX-3](need_exchange.md): có cả ảnh kho lẫn ảnh chụp mới. Hint "chụp lại trên nền tối"
       vô dụng với ảnh kho — vi phạm chính nguyên tắc §3.4 bên dưới.
 - [ ] **N-11** Công cụ hỗ trợ gán nhãn tập vàng.

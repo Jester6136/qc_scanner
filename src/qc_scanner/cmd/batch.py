@@ -69,7 +69,7 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
     return rows
 
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(
         description="Nắn phẳng cả một thư mục ảnh và xuất báo cáo QC dạng CSV."
     )
@@ -81,9 +81,21 @@ def main(argv=None):
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--detector", choices=["rembg-contour", "edge-hough"])
     ap.add_argument("--model", help="Model nền của rembg.")
-    args = ap.parse_args(argv)
+    ap.add_argument(
+        "--audience",
+        choices=["capturer", "operator"],
+        # Khác CLI ở mặc định: chạy lô là chạy trên kho ảnh, không ai chụp lại được
+        # nữa, nên hint phải nói cho người soi. [EX-3] · QC-13
+        default="operator",
+        help="Ai đọc hint. Mặc định `operator` — chạy lô thường là xử lý ảnh tồn kho.",
+    )
+    return ap
 
-    overrides = {}
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+
+    overrides = {"hint_audience": args.audience}
     if args.detector:
         overrides["detector"] = args.detector
     if args.model:

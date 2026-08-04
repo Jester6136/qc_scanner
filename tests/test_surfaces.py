@@ -14,6 +14,10 @@ from conftest import PAIRS
 
 SAMPLE = PAIRS[0]
 
+#: Ảnh chắc chắn sinh ra lý do — cần cho bài kiểm hint hai tầng, vì ảnh `pass`
+#: không có `reasons` nào để so hint.
+CLIPPED = next(p for p in PAIRS if p.name == "doc-1")
+
 
 @pytest.fixture(scope="module")
 def lib_output():
@@ -127,6 +131,42 @@ def test_server_json_format_returns_full_result():
     assert payload["verdict"] in {"pass", "warn", "fail"}
     assert payload["metrics"]["alpha_coverage"] > 0
     assert base64.b64decode(payload["image"]).startswith(b"\x89PNG")
+
+
+def test_server_selects_hint_tier_per_request():
+    """QC-13: hệ gọi vào khai báo vai người đọc, cùng một ảnh ra hai lời khuyên."""
+    from qc_scanner.cmd.server import app
+
+    client = app.test_client()
+    hints = {}
+    for who in ("capturer", "operator"):
+        resp = client.post(
+            f"/?format=json&audience={who}",
+            data={"file": (CLIPPED.input_path.open("rb"), CLIPPED.input_path.name)},
+        )
+        reasons = resp.get_json()["reasons"]
+        assert reasons, "cần một ảnh CÓ lý do thì bài này mới kiểm được gì"
+        assert all(r["audience"] == who for r in reasons)
+        hints[who] = [r["hint"] for r in reasons]
+    assert hints["capturer"] != hints["operator"]
+
+
+def test_server_rejects_unknown_audience():
+    from qc_scanner.cmd.server import app
+
+    client = app.test_client()
+    resp = client.post(
+        "/?audience=nobody",
+        data={"file": (SAMPLE.input_path.open("rb"), SAMPLE.input_path.name)},
+    )
+    assert resp.status_code == 400
+
+
+def test_batch_defaults_to_the_operator_tier():
+    """Chạy lô = xử lý kho ảnh; ở đó không ai chụp lại được nữa [EX-3]."""
+    from qc_scanner.cmd.batch import build_parser
+
+    assert build_parser().parse_args(["in_dir"]).audience == "operator"
 
 
 def test_library_returns_scan_result():

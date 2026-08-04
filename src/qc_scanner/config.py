@@ -105,6 +105,16 @@ class Config:
     auto_rotate_portrait: bool = False
     """Tự xoay ảnh đã nắn về chiều đứng."""
 
+    # --- Bối cảnh người dùng (QC-13) ---
+    hint_audience: str = "capturer"
+    """Ai sẽ đọc `hint`: `capturer` (chụp lại được) hay `operator` (soi trong hàng chờ).
+
+    [EX-3] chốt có **cả hai** luồng: realtime cho ảnh chụp mới, batch cho kho ảnh cũ.
+    Với ảnh kho thì "chụp lại trên nền tối" là lời khuyên vô dụng — không ai chụp lại
+    được nữa. Mặc định `capturer` vì luồng realtime là luồng có người đang đứng chờ;
+    `qc-scanner-batch` tự đổi sang `operator`.
+    """
+
     # --- Detector ---
     rembg_model: str = "u2net"
     """Model nền của rembg. `isnet-general-use` / `birefnet-general` thường tốt hơn,
