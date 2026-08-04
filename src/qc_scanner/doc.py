@@ -88,7 +88,10 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
         reasons.append(Reason.of("FALLBACK_ORIGINAL"))
         metrics.fallback_used = "original"
         return ScanResult.of(
-            _encode_png(orig), reasons, metrics, audience=cfg.hint_audience
+            _encode_png(orig),
+            _apply_pre_cropped(reasons, cfg, metrics),
+            metrics,
+            audience=cfg.hint_audience,
         )
 
     metrics.detector = quad.detector
@@ -112,6 +115,7 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     _debug(debug, "warped", warped)
 
     reasons += _quality_reasons(warped, cfg, metrics)
+    reasons = _apply_pre_cropped(reasons, cfg, metrics)
 
     return ScanResult.of(
         _encode_png(warped),
@@ -282,6 +286,33 @@ def _quality_reasons(warped, cfg: Config, metrics: Metrics):
             Reason.of("TOO_DARK", f"median_brightness={metrics.median_brightness:.0f}")
         )
     return reasons
+
+
+#: Các mã chỉ có nghĩa khi ảnh vào là ảnh CHỤP. Với ảnh đã cắt sẵn thì "giấy chạm
+#: mép khung" là điều đương nhiên, không phải lỗi. QC-14.
+BORDER_REASONS = frozenset(
+    {"CLIPPED_EDGE", "CONTENT_CLIPPED", "NO_CROP_DETECTED", "SUBJECT_FILLS_FRAME"}
+)
+
+
+def _apply_pre_cropped(reasons, cfg: Config, metrics: Metrics):
+    """QC-14: ảnh khai báo là đã cắt sẵn thì bỏ các mã về biên.
+
+    **Không phát một mã cảnh báo thay thế.** Đã cân nhắc một mã
+    `PRE_CROPPED_UNVERIFIED` mức `warn` cho đúng nguyên tắc "không im lặng", nhưng
+    nó nói lại đúng thứ phía gọi vừa khai báo, đổi lại là đẩy *toàn bộ* kho ảnh đã
+    cắt vào hàng chờ người soi ([EX-8]) — tốn công thật để đổi lấy thông tin bằng
+    không. Sự thật "đã bỏ qua kiểm tra biên" đi vào `metrics.pre_cropped`, nơi dành
+    cho dữ kiện không đòi hành động.
+
+    Rủi ro còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó qc_scanner mất khả năng
+    bắt crop hụt. Đó là đánh đổi thuộc về phía gọi, và vì thế nó phải **khai báo**
+    chứ không được đoán.
+    """
+    metrics.pre_cropped = bool(cfg.pre_cropped)
+    if not cfg.pre_cropped:
+        return reasons
+    return [r for r in reasons if r.code not in BORDER_REASONS]
 
 
 def _cross_check(quad, work, mask, cfg: Config, metrics: Metrics):

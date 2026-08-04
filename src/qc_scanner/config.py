@@ -105,6 +105,20 @@ class Config:
     auto_rotate_portrait: bool = False
     """Tự xoay ảnh đã nắn về chiều đứng."""
 
+    # --- Bối cảnh đầu vào (QC-14) ---
+    pre_cropped: bool = False
+    """Ảnh vào **đã được cắt sát từ trước** (bản scan, hoặc đã qua công cụ crop khác).
+
+    Khi bật, các mã về biên (`CLIPPED_EDGE`, `CONTENT_CLIPPED`, `NO_CROP_DETECTED`,
+    `SUBJECT_FILLS_FRAME`) bị bỏ qua: với ảnh đã cắt thì "giấy chạm mép khung" là
+    chuyện đương nhiên, không phải lỗi.
+
+    **Phải khai báo, không tự đoán được.** Đo trên 37 ảnh (8 đã cắt + 29 ảnh chụp):
+    `alpha_coverage` chạy 0.270–0.998 ở nhóm đã cắt và 0.260–0.996 ở nhóm ảnh chụp —
+    hai dải trùng gần như hoàn toàn, `quad_area_ratio` cũng vậy. Không có ngưỡng nào
+    tách được chúng, nên đoán mò chỉ đổi loại lỗi này lấy loại lỗi khác.
+    """
+
     # --- Bối cảnh người dùng (QC-13) ---
     hint_audience: str = "capturer"
     """Ai sẽ đọc `hint`: `capturer` (chụp lại được) hay `operator` (soi trong hàng chờ).

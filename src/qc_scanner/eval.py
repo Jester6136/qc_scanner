@@ -22,6 +22,7 @@ dữ liệu phải xin, không phải thứ suy ra được từ ảnh mẫu OSS
 
 import argparse
 import csv
+import dataclasses
 import json
 import pathlib
 import sys
@@ -34,32 +35,25 @@ import numpy as np
 from . import geometry as geo
 from .config import Config
 from .doc import scan_qc
-from .qc import ScanError
+from .qc import Metrics, ScanError
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 #: IoU tối thiểu giữa tứ giác dự đoán và nhãn để tính là "nắn đúng".
 CROP_IOU_THRESHOLD = 0.90
 
+#: Cột CSV = cột ngữ cảnh + **mọi** trường của `Metrics`, suy trực tiếp từ dataclass.
+#:
+#: Trước đây đây là danh sách chép tay, và `DictWriter(extrasaction="ignore")` lặng lẽ
+#: nuốt mọi metric không có trong danh sách. `border_ink_ratio` (QC-12) mất khỏi báo cáo
+#: đúng kiểu đó: hàm đo chạy, số có thật, nhưng không ai nhìn thấy. Suy từ dataclass thì
+#: thêm metric mới là tự có cột.
 CSV_FIELDS = [
     "file",
     "verdict",
     "reasons",
     "seconds",
-    "alpha_coverage",
-    "contour_candidates",
-    "quad_area_ratio",
-    "skew_ratio",
-    "is_convex",
-    "touches_border",
-    "est_dpi",
-    "blur_score",
-    "glare_ratio",
-    "median_brightness",
-    "fallback_used",
-    "detector",
-    "detector_confidence",
-    "detector_iou",
+    *[f.name for f in dataclasses.fields(Metrics)],
     "iou_vs_label",
     "expect_verdict",
 ]

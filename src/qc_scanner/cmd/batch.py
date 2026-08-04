@@ -82,6 +82,11 @@ def build_parser():
     ap.add_argument("--detector", choices=["rembg-contour", "edge-hough"])
     ap.add_argument("--model", help="Model nền của rembg.")
     ap.add_argument(
+        "--pre-cropped",
+        action="store_true",
+        help="Cả lô là ảnh đã cắt sát từ trước → bỏ qua kiểm tra về biên (QC-14).",
+    )
+    ap.add_argument(
         "--audience",
         choices=["capturer", "operator"],
         # Khác CLI ở mặc định: chạy lô là chạy trên kho ảnh, không ai chụp lại được
@@ -95,7 +100,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    overrides = {"hint_audience": args.audience}
+    overrides = {"hint_audience": args.audience, "pre_cropped": args.pre_cropped}
     if args.detector:
         overrides["detector"] = args.detector
     if args.model:

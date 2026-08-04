@@ -162,6 +162,22 @@ def test_server_rejects_unknown_audience():
     assert resp.status_code == 400
 
 
+def test_server_accepts_pre_cropped_flag():
+    """QC-14: phía gọi khai báo ảnh đã cắt sẵn thì mã về biên phải biến mất."""
+    from qc_scanner.cmd.server import app
+
+    client = app.test_client()
+    codes = {}
+    for query in ("", "&pre_cropped=1"):
+        resp = client.post(
+            f"/?format=json{query}",
+            data={"file": (CLIPPED.input_path.open("rb"), CLIPPED.input_path.name)},
+        )
+        codes[query] = {r["code"] for r in resp.get_json()["reasons"]}
+    assert "CLIPPED_EDGE" in codes[""]
+    assert "CLIPPED_EDGE" not in codes["&pre_cropped=1"]
+
+
 def test_batch_defaults_to_the_operator_tier():
     """Chạy lô = xử lý kho ảnh; ở đó không ai chụp lại được nữa [EX-3]."""
     from qc_scanner.cmd.batch import build_parser

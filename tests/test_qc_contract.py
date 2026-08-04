@@ -118,6 +118,21 @@ def test_real_results_satisfy_invariants(scan_cache_qc):
             assert reason.hint and reason.audience in AUDIENCES, name
 
 
+def test_every_metric_reaches_the_csv_report():
+    """Metric không có cột CSV = metric không ai nhìn thấy.
+
+    Đã xảy ra thật: `CSV_FIELDS` là danh sách chép tay và `DictWriter` được đặt
+    `extrasaction="ignore"`, nên `border_ink_ratio` (QC-12) bị nuốt im lặng — hàm
+    đo vẫn chạy, số vẫn đúng, báo cáo vẫn thiếu.
+    """
+    import dataclasses
+
+    from qc_scanner.eval import CSV_FIELDS
+
+    missing = {f.name for f in dataclasses.fields(Metrics)} - set(CSV_FIELDS)
+    assert not missing, f"metric không có cột trong báo cáo: {sorted(missing)}"
+
+
 def test_metrics_always_present(scan_cache_qc):
     """Không có metric thì không chốt được ngưỡng bằng số đo, chỉ đoán."""
     for name, result in scan_cache_qc.items():

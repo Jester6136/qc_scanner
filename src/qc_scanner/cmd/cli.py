@@ -35,6 +35,11 @@ EXIT_INPUT_ERROR = 3
 )
 @click.option("--model", help="Model nền của rembg (u2net, isnet-general-use…).")
 @click.option(
+    "--pre-cropped",
+    is_flag=True,
+    help="Ảnh vào đã cắt sát từ trước → bỏ qua các kiểm tra về biên (QC-14).",
+)
+@click.option(
     "--audience",
     type=click.Choice(["capturer", "operator"]),
     help="Ai đọc hint: người chụp (chụp lại được) hay người soi hàng chờ. "
@@ -43,7 +48,10 @@ EXIT_INPUT_ERROR = 3
 @click.option(
     "--cross-check", is_flag=True, help="Chạy detector thứ hai và báo nếu hai bên lệch."
 )
-def main(input, output, report, quiet, debug_dir, detector, model, audience, cross_check):
+def main(
+    input, output, report, quiet, debug_dir, detector, model, pre_cropped,
+    audience, cross_check,
+):
     """Nắn phẳng tài liệu và chấm điểm chất lượng.
 
     Ảnh vẫn ra stdout như cũ; phán quyết đi theo exit code (0 pass · 1 warn ·
@@ -54,6 +62,8 @@ def main(input, output, report, quiet, debug_dir, detector, model, audience, cro
         overrides["detector"] = detector
     if model:
         overrides["rembg_model"] = model
+    if pre_cropped:
+        overrides["pre_cropped"] = True
     if audience:
         overrides["hint_audience"] = audience
     if cross_check:

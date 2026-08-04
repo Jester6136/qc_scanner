@@ -353,6 +353,9 @@ class Metrics:
     glare_ratio: Optional[float] = None
     median_brightness: Optional[float] = None
 
+    pre_cropped: bool = False
+    """Phía gọi khai báo ảnh vào đã cắt sẵn → các kiểm tra về biên đã bị bỏ qua (QC-14)."""
+
     fallback_used: str = "none"
     """`none` · `edge_detect` · `original` — minh bạch đường đi."""
 

@@ -14,3 +14,4 @@ __pycache__/
 tmp
 # ảnh đầu vào thật (không commit)
 tmp/
+tmp_2/

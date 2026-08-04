@@ -34,6 +34,11 @@ def index():
         return jsonify({"error": "audience phải là 'capturer' hoặc 'operator'"}), 400
 
     overrides = {"hint_audience": audience} if audience else {}
+
+    # QC-14: ảnh đã cắt sẵn thì "giấy chạm mép khung" là đương nhiên. Không đoán
+    # được từ pixel (đo trên 37 ảnh: hai nhóm trùng dải), nên phía gọi phải nói.
+    if request.args.get("pre_cropped", "").lower() in {"1", "true", "yes"}:
+        overrides["pre_cropped"] = True
     try:
         result = scan_qc(file_content, config=Config.from_env(**overrides))
     except ScanError as err:

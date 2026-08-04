@@ -150,9 +150,44 @@
   ([S-1](features_issues.md#s-model-swap)) có thể kéo theo ràng buộc giấy phép mới, **kiểm
   trước khi chốt**.
 
-### EX-14 · ❓ Ảnh tồn kho là ảnh CHỤP THÔ hay ảnh ĐÃ CẮT SẴN? {#ex-precropped}
+### EX-14 · ✅ Ảnh tồn kho là ảnh CHỤP THÔ hay ảnh ĐÃ CẮT SẴN? {#ex-precropped}
 
 *(Mở 2026-08-05, phát sinh khi làm [QC-12](features_issues.md#qc-content-clipped).)*
+
+> **✅ Chốt 2026-08-05**: **có cả ảnh đã cắt sẵn** truyền vào. Đã cài cờ `pre_cropped`
+> ([QC-14](features_issues.md#qc-precropped)) — phía gọi khai báo, hệ thống **không tự đoán**
+> (đo 37 ảnh: `alpha_coverage` của hai nhóm trùng dải gần như hoàn toàn, không tách được).
+>
+> **Việc còn lại thuộc phía tích hợp**: hệ gọi phải biết ảnh nào đã cắt để đặt cờ. Nếu kho ảnh
+> không có thông tin đó thì phải chọn một mặc định cho cả kho — và chọn "đã cắt" nghĩa là chấp
+> nhận qc_scanner không bắt được crop hụt trên các ảnh chụp thô lẫn trong đó.
+
+### EX-15 · ❓ Một hồ sơ gồm NHIỀU ảnh — ai chịu trách nhiệm ghép và kiểm đủ? {#ex-multipage}
+
+*(Mở 2026-08-05, từ ảnh đợt 2: giấy chứng nhận quyền sử dụng đất chụp **từng mặt một**, mỗi mặt
+là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
+
+- **Hỏi**: Ai ghép các ảnh của cùng một hồ sơ lại, và ai kiểm "hồ sơ này đã đủ mặt chưa"?
+  Hệ gọi đã có mã hồ sơ / thứ tự trang khi gửi ảnh chưa?
+- **Đề xuất trả lời**: **hệ gọi giữ việc này**, qc_scanner không đụng vào.
+- **Vì sao**:
+  1. Chụp từng mặt là **cách chụp đúng**, không phải lỗi. Bắt chụp lại là vô nghĩa — chụp lại
+     vẫn ra hai ảnh. Xem quyết định dưới đây.
+  2. qc_scanner **không có state**: mỗi lần gọi là một ảnh, không có khái niệm "hồ sơ". Thêm nó
+     là thêm phiên/hàng đợi/định danh — đổi hẳn kiến trúc, phá
+     [nguyên tắc §3.1](overall_roadmap.md).
+  3. Muốn biết "đủ mặt chưa" phải biết **loại giấy tờ** có mấy mặt. Đó là tri thức nghiệp vụ
+     của hệ gọi, không suy ra được từ một tấm ảnh.
+
+> **✅ Quyết định 2026-08-05 (bên làm đề xuất, chờ khách xác nhận)**: **KHÔNG bắt chụp lại.**
+> Giấy chứng nhận chụp hai mặt thành hai ảnh là hợp lệ; qc_scanner chấm **từng ảnh** như bình
+> thường, mỗi mặt nhận verdict riêng. Việc kiểm "hồ sơ đủ 2 mặt chưa" là kiểm ở **mức bản ghi**,
+> nằm ở hệ gọi.
+>
+> Đã kiểm trên ảnh thật đợt 2: ảnh chụp **cả tờ mở đôi** (hai nửa cùng khung, có nếp gấp giữa)
+> không sinh mã lạ nào — không `MULTIPLE_DOCUMENTS`, `skew_ratio` 1.00–1.33. Nghĩa là dù khách
+> chụp mở đôi hay chụp từng mặt, lõi QC đều xử lý được; khác biệt duy nhất là **khung hình có
+> lấy trọn tờ giấy không**, và cái đó đã có mã lý do rồi.
 
 - **Hỏi**: Trong phần "phần lớn tồn kho" ở [EX-3](#ex-3), ảnh là **ảnh chụp thô** (còn thấy mặt
   bàn quanh tờ giấy) hay đã qua một bước **cắt sát** nào đó rồi? Nếu có cả hai, phân biệt được

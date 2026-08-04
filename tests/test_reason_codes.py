@@ -120,6 +120,34 @@ def test_border_ink_is_zero_when_quad_is_inside_the_frame(qc):
     assert result.metrics.border_ink_ratio == 0.0
 
 
+# --- QC-14: ảnh khai báo là đã cắt sẵn -------------------------------------- #
+
+PRE_CROPPED = Config(pre_cropped=True)
+
+
+def test_pre_cropped_drops_border_reasons():
+    """Với ảnh đã cắt, "giấy chạm mép khung" là đương nhiên chứ không phải lỗi."""
+    result = scan_qc(S.clipped_document(), config=PRE_CROPPED)
+    assert not (set(result.codes) & {"CLIPPED_EDGE", "CONTENT_CLIPPED"})
+    assert result.metrics.pre_cropped is True
+
+
+def test_pre_cropped_still_reports_everything_else():
+    """Cờ này chỉ tắt kiểm tra về BIÊN. Ảnh mờ vẫn là ảnh mờ.
+
+    Không có bài này thì `pre_cropped` dễ trượt thành một công tắc "cho qua tất".
+    """
+    result = scan_qc(S.blurry_document(), config=PRE_CROPPED)
+    assert "BLURRY" in result.codes
+    assert result.verdict == "fail"
+
+
+def test_pre_cropped_is_off_by_default():
+    """Mặc định phải là ảnh chụp: bật nhầm thì mất luôn khả năng bắt crop hụt."""
+    assert Config().pre_cropped is False
+    assert scan_qc(S.clipped_document()).metrics.pre_cropped is False
+
+
 # --- QC-11: "không cắt được gì" phải là fail, không phải warn --------------- #
 #
 # Kiểm thẳng vào luật hình học thay vì dựng ảnh tổng hợp: dấu hiệu này phụ thuộc

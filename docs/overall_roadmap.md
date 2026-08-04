@@ -223,9 +223,9 @@ sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được n
 - [x] **QC-13** ✅ Hint hai tầng (người chụp / vận hành).
       [EX-3](need_exchange.md): có cả ảnh kho lẫn ảnh chụp mới. Hint "chụp lại trên nền tối"
       vô dụng với ảnh kho — vi phạm chính nguyên tắc §3.4 bên dưới.
-- [ ] **N-11** Công cụ hỗ trợ gán nhãn tập vàng.
-      [EX-2](need_exchange.md): khách cấp ảnh, **bên mình gán nhãn**, khách duyệt. Dựng trước
-      để ảnh về là gán được ngay.
+- [x] **QC-14** ✅ Cờ `pre_cropped` cho ảnh đã cắt sẵn. Khách xác nhận có gửi loại này
+      (EX-14). Không tự đoán được — đo 37 ảnh, hai nhóm trùng dải `alpha_coverage`.
+- ~~**N-11** Công cụ gán nhãn tập vàng~~ — **BỎ** theo yêu cầu khách 2026-08-05.
 - [ ] **S-5 (bước đo)** Đo độ cong dòng chữ sau khi nắn trên tập ảnh thật; đếm tỉ lệ ảnh vượt
       ngưỡng OCR chịu được. **Chỉ đo, chưa làm dewarping.**
       [EX-5](need_exchange.md) xác nhận hoá đơn có cong → dewarping vào phạm vi, nhưng 1 tuần+

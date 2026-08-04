@@ -194,8 +194,9 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 | 1 | [QC-11](#qc-no-crop) | ~30 phút | ✅ xong 2026-08-05 |
 | 2 | [QC-12](#qc-content-clipped) | ~nửa ngày | ✅ xong 2026-08-05 |
 | 3 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | ✅ xong 2026-08-05 |
-| 4 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
-| 5 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
+| 4 | [QC-14](#qc-precropped) | ~2h | ✅ xong 2026-08-05 |
+| 5 | [S-5](#s-dewarp) đo độ cong | ~2h đo | ⚫ hạ ưu tiên — khách nói giấy cong là **hiếm** |
+| — | ~~N-11 công cụ gán nhãn~~ | — | ⚫ **BỎ** theo yêu cầu khách 2026-08-05 |
 | 6 | [OPS-3](#ops-docker-unverified) | ~nửa ngày | **máy dev không build Docker** — làm cuối, trên máy server |
 
 ---
@@ -296,7 +297,36 @@ số đo trên tập vàng. `CLIPPED_EDGE` giữ nguyên mức `warn` cho ca ch�
 
 ---
 
-### 🧱 QC-14 · P1 · 🔴 · Ảnh ĐÃ CẮT SẴN bị `CONTENT_CLIPPED` báo oan {#qc-precropped}
+### 🧱 QC-14 · P1 · 🟢 · Ảnh ĐÃ CẮT SẴN bị `CONTENT_CLIPPED` báo oan {#qc-precropped}
+
+> **✅ Đã làm 2026-08-05**, sau khi khách xác nhận **có** gửi cả ảnh đã cắt sẵn (EX-14) và gửi
+> thêm 20 ảnh thật (đợt 2).
+>
+> **Đã thử tự đoán trước, và bỏ vì số liệu bác bỏ.** Nếu tách được "ảnh đã cắt" khỏi "ảnh chụp"
+> bằng pixel thì không cần phiền phía gọi. Đo trên 37 ảnh (8 đã cắt + 29 ảnh chụp):
+> `alpha_coverage` **0.270–0.998** ở nhóm đã cắt và **0.260–0.996** ở nhóm ảnh chụp;
+> `quad_area_ratio` cũng trùng dải. Không có ngưỡng nào tách được — đoán mò chỉ đổi loại lỗi
+> này lấy loại lỗi khác. Nên **phía gọi phải khai báo**.
+>
+> Cài đặt: `Config.pre_cropped` · `qc-scanner --pre-cropped` · `qc-scanner-batch --pre-cropped`
+> · `POST /?pre_cropped=1` · `QC_SCANNER_PRE_CROPPED`. Khi bật, bốn mã về biên bị bỏ:
+> `CLIPPED_EDGE`, `CONTENT_CLIPPED`, `NO_CROP_DETECTED`, `SUBJECT_FILLS_FRAME`.
+> Kết quả trên `examples/*.out.png`: 7 fail + 1 warn → **7 pass + 1 fail**, ca fail còn lại là
+> `LOW_RESOLUTION` — đúng, vì đó không phải lỗi biên.
+>
+> **Cân nhắc đã bác**: phát thêm một mã `PRE_CROPPED_UNVERIFIED` mức `warn` cho đúng nguyên tắc
+> "không im lặng". Bỏ, vì nó nói lại đúng thứ phía gọi vừa khai báo, đổi lại là đẩy *toàn bộ*
+> kho ảnh đã cắt vào hàng chờ người soi ([EX-8](need_exchange.md)) — tốn công thật để lấy thông
+> tin bằng không. Sự thật "đã bỏ qua kiểm tra biên" đi vào `metrics.pre_cropped`, chỗ dành cho
+> dữ kiện không đòi hành động.
+>
+> **Rủi ro còn lại, phải nói rõ với khách**: gắn cờ nhầm cho một ảnh chụp thì qc_scanner mất
+> khả năng bắt crop hụt trên ảnh đó. Vì thế cờ này để **tắt mặc định**, và có test chặn nó
+> trượt thành công tắc "cho qua tất" (ảnh mờ vẫn phải `fail`).
+
+---
+
+### 📕 QC-14 (hồ sơ gốc) {#qc-precropped-original}
 
 Phát sinh từ chính QC-12. Với ảnh **đã được cắt sát** từ trước (bản scan, hoặc ảnh đã qua một
 công cụ crop khác), chữ chạy tới sát mép là chuyện **bình thường** — nhưng nhìn từ ngoài nó
@@ -350,7 +380,14 @@ nội dung, không chỉ một.
 
 ---
 
-### 📦 N-11 · P1 · 🔴 · Công cụ hỗ trợ gán nhãn tập vàng {#n-label-tool}
+### 📦 N-11 · ⚫ BỎ · Công cụ hỗ trợ gán nhãn tập vàng {#n-label-tool}
+
+> **⚫ Bỏ 2026-08-05 theo yêu cầu.** Không dựng công cụ gán nhãn.
+>
+> Hệ quả phải nhớ: [QUAL-3](#qual-thresholds) (quét ngưỡng), [S-1](#s-model-swap) (đổi model)
+> và [S-3](#s-docaligner) (đổi detector) vẫn cần nhãn để quyết bằng số. Bỏ công cụ **không** bỏ
+> nhu cầu đó — chỉ có nghĩa là khi cần nhãn thì sẽ gán bằng cách khác, hoặc chấp nhận chốt
+> những mục kia bằng cảm tính. Ghi ra đây để lúc đó không ai ngạc nhiên.
 
 [EX-2](need_exchange.md) chốt: **khách cấp ảnh, bên làm gán nhãn, khách duyệt**. Nghĩa là công
 việc gán nhãn ~100 ảnh rơi về phía mình, và cần công cụ chứ không gán tay từng toạ độ.
