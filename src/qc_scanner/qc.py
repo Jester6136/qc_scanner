@@ -114,6 +114,14 @@ REASONS: dict[str, ReasonSpec] = {
             "capturer",
         ),
         _spec(
+            "NO_CROP_DETECTED",
+            "fail",
+            "Tứ giác gần trọn khung và chạm cả 4 mép — thực chất không cắt được gì.",
+            "Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. "
+            "Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép.",
+            "capturer",
+        ),
+        _spec(
             "EXTREME_SKEW",
             "warn",
             "Góc chụp nghiêng mạnh, cạnh đối lệch nhau nhiều.",

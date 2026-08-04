@@ -25,7 +25,9 @@ version = re.search(
 setup(
     name="qc-scanner",
     version=version,
-    description="Document scanner and quality gate: crop, deskew, and report why when it cannot",
+    description=(
+        "Document scanner and quality gate: crop, deskew, and report why when it cannot"
+    ),
     long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="document, scanner, quality control, qc, opencv",

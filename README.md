@@ -132,10 +132,10 @@ qc-scanner photo.jpg out.png --detector edge-hough --cross-check
 
 | | |
 |---|---|
-| ✅ Nói được vì sao | 17 mã lý do, mã nào cũng kèm `hint` + `audience` |
+| ✅ Nói được vì sao | 18 mã lý do, mã nào cũng kèm `hint` + `audience` |
 | ✅ Không im lặng | Không tìm được biên → vẫn trả ảnh gốc, nhưng kèm `FALLBACK_ORIGINAL` (fail) |
 | ✅ Tự khắc phục | rembg thua → đường lui dò cạnh, kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| ✅ Có bộ đo | 122 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| ✅ Có bộ đo | 128 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | ⚠️ Ngưỡng chưa chốt | Hai ngưỡng đã chốt bằng số đo; phần còn lại là **ước đoán** cho tới khi có tập vàng của khách |
 | ⚠️ Chưa đo được độ chính xác | Crop rate / false pass / false fail cần ảnh **có nhãn** — công cụ đã sẵn, thiếu dữ liệu |
 

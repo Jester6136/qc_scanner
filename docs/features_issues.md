@@ -189,12 +189,12 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 
 | # | Mã | Công | Chặn ở đâu |
 |---|---|---|---|
-| 1 | [OPS-3](#ops-docker-unverified) | ~nửa ngày | không |
-| 2 | [QC-11](#qc-no-crop) | ~30 phút | không |
-| 3 | [QC-12](#qc-content-clipped) | ~nửa ngày | không |
-| 4 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | không |
-| 5 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
-| 6 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
+| 1 | [QC-11](#qc-no-crop) | ~30 phút | ✅ xong 2026-08-05 |
+| 2 | [QC-12](#qc-content-clipped) | ~nửa ngày | không |
+| 3 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | không |
+| 4 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
+| 5 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
+| 6 | [OPS-3](#ops-docker-unverified) | ~nửa ngày | **máy dev không build Docker** — làm cuối, trên máy server |
 
 ---
 
@@ -207,6 +207,11 @@ Sau [EX-13](need_exchange.md), image này **chính là thứ bàn giao cho khác
 để hệ khác gọi vào. Một artefact chưa từng được kiểm mà lại là bề mặt bàn giao chính là rủi ro
 lớn nhất hiện tại của dự án.
 
+**Hoãn tới cuối (chốt 2026-08-05)**: máy phát triển hiện tại không build Docker được. Việc này
+làm khi lên máy server. Rủi ro **không giảm** vì hoãn — chỉ dời chỗ; đến lúc build mà hỏng thì
+vẫn hỏng, nên đừng coi phần còn lại "xong" là cả gói đã xong. Phần **không** cần Docker vẫn nên
+làm sớm: tài liệu API + test hợp đồng API chạy trực tiếp trên `wsgiref` server, không cần image.
+
 **Hướng**: (1) `docker build` thật, sửa tới khi qua; (2) `docker run` rồi gọi thử `POST /`,
 `?format=json`, ca hỏng, `/healthz`; (3) kiểm model đã nướng sẵn bằng cách chạy image **ngắt
 mạng**; (4) viết **tài liệu API** (endpoint, status code theo verdict, header, schema JSON);
@@ -215,7 +220,18 @@ mạng**; (4) viết **tài liệu API** (endpoint, status code theo verdict, he
 
 ---
 
-### 🧱 QC-11 · P0 · 🔴 · `NO_CROP_DETECTED` — bắt ca "không crop được gì mà vẫn báo warn" {#qc-no-crop}
+### 🧱 QC-11 · P0 · 🟢 · `NO_CROP_DETECTED` — bắt ca "không crop được gì mà vẫn báo warn" {#qc-no-crop}
+
+> **✅ Đã làm 2026-08-05.** Mã `NO_CROP_DETECTED` (`fail`) trong [qc.py](../src/qc_scanner/qc.py),
+> ngưỡng `no_crop_area_ratio = 0.90` trong [config.py](../src/qc_scanner/config.py), luật ở
+> `_geometry_reasons()`. Nó **thay** `CLIPPED_EDGE` chứ không cộng thêm — chạm 4 mép ở đây là hệ
+> quả, nêu cả hai làm loãng lý do thật. Chạy lại 9 ảnh thật: đúng 2 ảnh đổi `warn` → `fail`, 7
+> ảnh còn lại không đổi. 4 test trong `tests/test_reason_codes.py` kiểm thẳng luật hình học
+> (kể cả **đối chứng** tứ giác 0.94 khung mà không chạm đủ 4 mép thì không được báo).
+>
+> *Khác kế hoạch một điểm*: định dựng ca test bằng ảnh giấy trắng trên nền trắng, nhưng dấu hiệu
+> này phụ thuộc việc rembg tách nhầm nền — không tái tạo ổn định bằng ảnh vẽ tay, mà ảnh thật thì
+> không commit được (dữ liệu khách). Nên test đánh thẳng vào `_geometry_reasons()`.
 
 Ảnh `abc1b13d82af03f15abe.jpg`: rembg tách **cái bàn trắng** thay vì tờ hoá đơn trắng đặt trên
 nó. Tứ giác "tài liệu" thành ra gần trọn khung, một góc ở toạ độ **x = −105**, `approxPolyDP`

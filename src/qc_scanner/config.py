@@ -45,6 +45,15 @@ class Config:
     border_margin_px: int = 2
     """Góc nằm trong khoảng này tính từ mép ảnh coi như chạm biên."""
 
+    no_crop_area_ratio: float = 0.90
+    """Tứ giác lớn hơn tỉ lệ này **và** chạm đủ 4 mép → coi như không cắt được gì (QC-11).
+
+    Đo trên 17 ảnh thật: dấu hiệu kép này bắt đúng 2 ảnh, cả hai đều thật sự không cắt
+    được, 0 báo động giả. Riêng `quad_area_ratio > 0.90` thì không đủ — ảnh chụp sát tài
+    liệu vẫn cho tỉ lệ cao mà biên vẫn đúng; điều kiện `touches_border == 4` mới là thứ
+    phân biệt "tài liệu chiếm hết khung" với "detector trả lại chính khung hình".
+    """
+
     # --- Chất lượng ảnh ---
     min_long_side_px: int = 600
     """Cạnh dài tối thiểu của ảnh đã nắn.

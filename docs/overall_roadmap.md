@@ -83,9 +83,9 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
 
 - Luồng lõi chạy được; **Giai đoạn 0, 1, 2, 4 đã xong**, Giai đoạn 3 làm được phần không cần
   nhãn (QUAL-1/2, S-2, S-6, bộ eval).
-- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 17 mã
+- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 18 mã
   lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
-- **122 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
+- **128 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
   "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
 - **Đã đo** trên 8 ảnh mẫu + 9 ảnh thật (`tmp/`): 11 pass · 5 warn · 1 fail. Tốc độ
   **~0.4s/ảnh** sau khi tái dùng session (trước ~3.0s).
@@ -214,12 +214,7 @@ Thứ tự bắt buộc: **đo trước, đổi sau.**
 12/13 câu hỏi trong [need_exchange.md](need_exchange.md) đã có câu trả lời. Sáu việc dưới đây
 sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được ngay.
 
-- [ ] **OPS-3** `docker build` thật + chạy thử service + kiểm ngắt mạng + **tài liệu API** +
-      **test hợp đồng API** + thêm build image vào CI.
-      *Vì sao trước hết*: [EX-13](need_exchange.md) chốt bàn giao là **Docker image có sẵn HTTP
-      service**. Dockerfile hiện **chưa build thử lần nào** — thứ bàn giao chính lại là thứ
-      chưa có bằng chứng chạy được. Đây là rủi ro lớn nhất hiện tại.
-- [ ] **QC-11** `NO_CROP_DETECTED` (fail) — bắt ca detector trả nguyên khung hình.
+- [x] **QC-11** ✅ `NO_CROP_DETECTED` (fail) — bắt ca detector trả nguyên khung hình.
       Dấu hiệu đã đo: `quad_area_ratio > 0.90` và `touches_border == 4` → đúng 2/17 ảnh, 0 báo
       động giả.
 - [ ] **QC-12** `CONTENT_CLIPPED` (fail) — dò pixel mực chạm mép cắt.
@@ -235,9 +230,17 @@ sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được n
       ngưỡng OCR chịu được. **Chỉ đo, chưa làm dewarping.**
       [EX-5](need_exchange.md) xác nhận hoá đơn có cong → dewarping vào phạm vi, nhưng 1 tuần+
       nên phải có số trước khi cam kết.
+- [ ] **OPS-3 — LÀM CUỐI, TRÊN MÁY SERVER.** `docker build` + chạy thử service + kiểm ngắt mạng
+      + thêm build image vào CI. **Máy phát triển hiện tại không build Docker** (chốt
+      2026-08-05) nên việc này dời xuống cuối, làm khi lên máy triển khai.
+      Hoãn **không** làm rủi ro nhỏ đi: [EX-13](need_exchange.md) chốt bàn giao là **Docker image
+      có sẵn HTTP service**, mà image đó vẫn chưa có bằng chứng dựng được. Phần **tài liệu API**
+      và **test hợp đồng API** tách ra làm sớm được vì chúng chạy thẳng trên server Python,
+      không cần image.
 
-**Tiêu chí ra**: khách `docker run` lên là gọi được API theo đúng tài liệu; ảnh crop sai không
-còn lọt xuống mức `warn`; mỗi mã lý do hành động được với **cả hai** nhóm người dùng.
+**Tiêu chí ra**: ảnh crop sai không còn lọt xuống mức `warn`; mỗi mã lý do hành động được với
+**cả hai** nhóm người dùng; hợp đồng API có tài liệu và có test giữ. *(Phần `docker run` được
+của khách nằm ở OPS-3, kiểm trên máy server.)*
 
 ### Giai đoạn 7 — Chỉ chạy được khi có tập vàng (EX-2)
 

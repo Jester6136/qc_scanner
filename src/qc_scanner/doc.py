@@ -206,7 +206,22 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
         reasons.append(
             Reason.of("EXTREME_SKEW", f"skew_ratio={metrics.skew_ratio:.2f}")
         )
-    if metrics.touches_border >= 1:
+    # QC-11: tứ giác gần trọn khung *và* chạm cả 4 mép = detector trả lại chính khung
+    # hình, không phải tờ giấy. Ca này trước đây chỉ ra `warn` (CLIPPED_EDGE) nên ảnh
+    # chưa cắt vẫn trôi được xuống người dùng. Phát riêng một mã `fail` và **thay** cho
+    # CLIPPED_EDGE — chạm 4 mép ở đây là hệ quả, nói thêm chỉ làm loãng lý do thật.
+    if (
+        metrics.quad_area_ratio > cfg.no_crop_area_ratio
+        and metrics.touches_border >= 4
+    ):
+        reasons.append(
+            Reason.of(
+                "NO_CROP_DETECTED",
+                f"quad_area_ratio={metrics.quad_area_ratio:.3f}, "
+                f"touches_border={metrics.touches_border}",
+            )
+        )
+    elif metrics.touches_border >= 1:
         reasons.append(
             Reason.of("CLIPPED_EDGE", f"touches_border={metrics.touches_border}")
         )

@@ -107,7 +107,7 @@ scan_qc(data, config) -> ScanResult
         thử đường lui edge-hough → qua lọc thì dùng + RECOVERED_BY_EDGE_FALLBACK (warn)
  7. vẫn không có quad → trả ảnh GỐC + QUAD_NOT_FOUND/SUBJECT_NOT_FOUND + FALLBACK_ORIGINAL
     (fail).  Khác bản cũ ở đúng một chỗ: **có nhãn**.
- 8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE
+ 8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE · NO_CROP_DETECTED
     ≥2 ứng viên → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
  9. warp trên ảnh GỐC, PNG
@@ -285,7 +285,8 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
-| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
+| `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border == 4` | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
+| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
 | `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |
 | `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. Chụp **từng tờ một**. | capturer |
 | `FALLBACK_ORIGINAL` | fail | trả ảnh gốc không nắn | Không nắn được, ảnh trả về là ảnh gốc chưa xử lý. Không đưa thẳng vào OCR. | operator |
