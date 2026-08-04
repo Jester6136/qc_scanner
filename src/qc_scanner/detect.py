@@ -9,7 +9,7 @@ Chỗ cắm cho hướng hồi quy 4 góc trực tiếp (DocAligner…): thêm m
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -38,7 +38,7 @@ class Detector:
     def find_quad(self, work_img, mask, config) -> Optional[QuadCandidate]:
         raise NotImplementedError
 
-    def all_candidates(self, work_img, mask, config) -> List[QuadCandidate]:
+    def all_candidates(self, work_img, mask, config) -> list[QuadCandidate]:
         found = self.find_quad(work_img, mask, config)
         return [found] if found else []
 
@@ -108,8 +108,12 @@ class EdgeHoughDetector(Detector):
         if lines is None or len(lines) < 4:
             return []
 
+        # OpenCV 4 trả (N, 1, 4), OpenCV 5 trả (N, 4). Chuẩn hoá về (N, 4) thay
+        # vì đoán theo version — hai build khác nhau vẫn phải chạy như nhau.
+        segments = np.asarray(lines).reshape(-1, 4)
+
         horizontal, vertical = [], []
-        for x1, y1, x2, y2 in lines[:, 0]:
+        for x1, y1, x2, y2 in segments:
             angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
             (horizontal if angle < 45 or angle > 135 else vertical).append(
                 (x1, y1, x2, y2)

@@ -3,3 +3,19 @@
 # https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
 requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+# Cấu hình tường minh để lint trên máy dev và trên CI cho cùng kết quả —
+# không phụ thuộc config toàn cục của từng máy.
+[tool.ruff]
+line-length = 95
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "B008",  # Depends()-style default là mẫu hợp lệ của click/flask
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]

@@ -56,7 +56,7 @@ def main(input, output, report, quiet, debug_dir, detector, model, cross_check):
         result = scan_qc(input.read(), config=config, debug=debug_dir)
     except ScanError as err:
         _emit(err.to_dict(), report, quiet)
-        raise SystemExit(EXIT_INPUT_ERROR)
+        raise SystemExit(EXIT_INPUT_ERROR) from err
 
     if result.image is not None:
         output.write(result.image)

@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from conftest import EXAMPLES, PAIRS
+from conftest import PAIRS
 
 SAMPLE = PAIRS[0]
 

@@ -5,7 +5,7 @@ Nguyên tắc chi phối file này: **không im lặng**. Mọi nhánh không-l�
 `reasons`. Trả ảnh gốc mà không báo gì là bug, không phải fallback.
 """
 
-from typing import List, Optional
+from typing import Optional
 
 import cv2
 import imutils
@@ -32,7 +32,7 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     """
     cfg = config or Config.from_env()
     metrics = Metrics()
-    reasons: List[Reason] = []
+    reasons: list[Reason] = []
 
     if not data:
         raise ScanError("FILE_EMPTY")
@@ -109,7 +109,12 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
 
     reasons += _quality_reasons(warped, cfg, metrics)
 
-    return ScanResult.of(_encode_png(warped), reasons, metrics)
+    return ScanResult.of(
+        _encode_png(warped),
+        reasons,
+        metrics,
+        corners=(corners * ratio).tolist(),
+    )
 
 
 def scan(data: bytes) -> bytes:

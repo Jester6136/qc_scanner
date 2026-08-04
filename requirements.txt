@@ -1,8 +1,12 @@
-click
-flask
-imutils
-numpy
-onnxruntime
-opencv-python
-rembg
-waitress
+# Ghim dải tương thích, không ghim đúng một bản: nâng vá lỗi vẫn nhận được,
+# còn bản major mới thì phải chạy bộ regression trên examples/ rồi mới mở.
+# rembg là dependency biến động nhất (API remove() đã đổi qua các bản) và cũng
+# là thứ quyết định chất lượng đầu ra — đổi bản nó mà không đo là đổi thầm lặng.
+click>=8.1,<9
+flask>=3.0,<4
+imutils>=0.5.4,<0.6
+numpy>=1.26,<3
+onnxruntime>=1.17,<2
+opencv-python>=4.8,<6
+rembg>=2.0,<3
+waitress>=3.0,<4

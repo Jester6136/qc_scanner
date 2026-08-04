@@ -9,7 +9,7 @@ Mã (`code`) là **ổn định vĩnh viễn** — nó đi vào log/CSV của kh
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Literal, Optional
 
 Severity = Literal["warn", "fail"]
 Audience = Literal["capturer", "operator", "system"]
@@ -32,7 +32,7 @@ def _spec(code, severity, message, hint, audience):
 
 
 #: Danh mục mã lý do. Thêm mã mới = thêm một dòng ở đây, không rải rác trong code.
-REASONS: Dict[str, ReasonSpec] = {
+REASONS: dict[str, ReasonSpec] = {
     s.code: s
     for s in [
         # --- Đầu vào ---
@@ -207,7 +207,7 @@ class Reason:
         return d
 
 
-def verdict_of(reasons: List[Reason]) -> Verdict:
+def verdict_of(reasons: list[Reason]) -> Verdict:
     """fail nếu có ≥1 reason fail · warn nếu có reason nhưng không fail · pass nếu rỗng.
 
     Bất biến: ``verdict == "pass"`` ⟺ ``reasons == []``.
@@ -276,8 +276,15 @@ class ScanResult:
     """PNG đã nắn, hoặc best-effort, hoặc None nếu fail cứng."""
 
     verdict: Verdict
-    reasons: List[Reason] = field(default_factory=list)
+    reasons: list[Reason] = field(default_factory=list)
     metrics: Metrics = field(default_factory=Metrics)
+
+    corners: Optional[list[list[float]]] = None
+    """4 góc đã dùng để nắn, theo hệ toạ độ **ảnh gốc**, thứ tự TL-TR-BR-BL.
+
+    Đây là thứ so được với nhãn vàng để tính IoU — không có nó thì không đo được
+    độ chính xác dò biên, chỉ đo được "có ra ảnh hay không".
+    """
 
     def __post_init__(self):
         # Bất biến: pass ⟺ reasons rỗng. Không có "pass kèm ghi chú".
@@ -288,17 +295,18 @@ class ScanResult:
             )
 
     @classmethod
-    def of(cls, image, reasons, metrics=None) -> "ScanResult":
+    def of(cls, image, reasons, metrics=None, corners=None) -> "ScanResult":
         reasons = list(reasons)
         return cls(
             image=image,
             verdict=verdict_of(reasons),
             reasons=reasons,
             metrics=metrics or Metrics(),
+            corners=corners,
         )
 
     @property
-    def codes(self) -> List[str]:
+    def codes(self) -> list[str]:
         return [r.code for r in self.reasons]
 
     def to_dict(self, include_image: bool = False) -> dict:
@@ -307,6 +315,8 @@ class ScanResult:
             "reasons": [r.to_dict() for r in self.reasons],
             "metrics": self.metrics.to_dict(),
         }
+        if self.corners is not None:
+            d["corners"] = self.corners
         if include_image:
             import base64
 
