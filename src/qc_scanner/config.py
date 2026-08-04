@@ -45,6 +45,23 @@ class Config:
     border_margin_px: int = 2
     """Góc nằm trong khoảng này tính từ mép ảnh coi như chạm biên."""
 
+    content_clip_band_ratio: float = 0.01
+    """Bề rộng dải sát mép ảnh đem soi mực, theo cạnh ngắn của ảnh gốc (QC-12)."""
+
+    max_border_ink_ratio: float = 0.08
+    """Trên mức này coi như đã cắt vào **chữ**, không phải chỉ mất viền trắng (QC-12).
+
+    Đo trên 17 ảnh thật/mẫu + 4 ảnh cắt cố ý 12% mỗi chiều:
+
+    - không mất gì (tứ giác nằm trong ảnh): **0.000** — 12 ảnh;
+    - chạm mép nhưng chỗ chạm là giấy trắng: **0.000–0.041** (doc-1, doc-5, và ca
+      mẫu `clipped_margin_only`);
+    - cắt vào chữ thật: **0.150–0.507** (4 ảnh cắt cố ý + 2 ảnh thật).
+
+    Ngưỡng đặt ở 0.08, giữa 0.041 và 0.150. Không đặt sát 0 vì nhóm "mất viền" không
+    về đúng 0 được: vệt tối ở mép giấy luôn còn sót lại chút ít sau khi co mask.
+    """
+
     no_crop_area_ratio: float = 0.90
     """Tứ giác lớn hơn tỉ lệ này **và** chạm đủ 4 mép → coi như không cắt được gì (QC-11).
 

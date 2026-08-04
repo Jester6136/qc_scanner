@@ -108,6 +108,7 @@ scan_qc(data, config) -> ScanResult
  7. vẫn không có quad → trả ảnh GỐC + QUAD_NOT_FOUND/SUBJECT_NOT_FOUND + FALLBACK_ORIGINAL
     (fail).  Khác bản cũ ở đúng một chỗ: **có nhãn**.
  8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE · NO_CROP_DETECTED
+    tứ giác chạm mép ảnh mà chỗ chạm CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
     ≥2 ứng viên → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
  9. warp trên ảnh GỐC, PNG
@@ -163,6 +164,7 @@ Bất biến: **`verdict == "pass"` ⟺ `reasons == []`**. Không có "pass kèm
 | `skew_ratio` | tỉ lệ cạnh đối dài/ngắn (max của 2 cặp) | bắt `EXTREME_SKEW` |
 | `is_convex` | tứ giác có lồi không | bắt `NOT_CONVEX` |
 | `touches_border` | số góc nằm sát mép ảnh (< 2px) | bắt `CLIPPED_EDGE` |
+| `border_ink_ratio` | mật độ mực sát mép ảnh, ở cạnh tứ giác bị khung cắt; `0.0` khi tứ giác nằm trọn trong ảnh | bắt `CONTENT_CLIPPED` |
 | `est_dpi` | ước lượng DPI đầu ra (giả định khổ A4) | bắt `LOW_RESOLUTION` |
 | `blur_score` | variance of Laplacian trên ảnh đã nắn | bắt `BLURRY` |
 | `alpha_coverage` | % pixel alpha > 0 sau rembg | bắt `SUBJECT_NOT_FOUND` |
@@ -285,6 +287,7 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
+| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08` (có mực sát mép ở cạnh bị khung cắt) | Một phần **chữ** nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
 | `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border == 4` | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
 | `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |

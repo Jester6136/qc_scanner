@@ -114,6 +114,14 @@ REASONS: dict[str, ReasonSpec] = {
             "capturer",
         ),
         _spec(
+            "CONTENT_CLIPPED",
+            "fail",
+            "Có chữ chạy tới sát mép ảnh ở cạnh bị khung hình cắt — nội dung đã mất.",
+            "Một phần **chữ** nằm ngoài khung hình, không phải chỉ mất viền trắng. "
+            "Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép.",
+            "capturer",
+        ),
+        _spec(
             "NO_CROP_DETECTED",
             "fail",
             "Tứ giác gần trọn khung và chạm cả 4 mép — thực chất không cắt được gì.",
@@ -250,6 +258,13 @@ class Metrics:
     is_convex: Optional[bool] = None
     touches_border: int = 0
     """Số góc nằm sát mép ảnh."""
+
+    border_ink_ratio: Optional[float] = None
+    """Mật độ pixel mực sát mép ảnh, ở những cạnh tứ giác bị khung hình cắt (QC-12).
+
+    `0.0` khi tứ giác nằm trọn trong ảnh — khi đó biên cắt là mép tờ giấy, không
+    phải chỗ nội dung bị mất.
+    """
 
     est_dpi: Optional[float] = None
     """DPI ước lượng của ảnh đã nắn, giả định khổ A4."""

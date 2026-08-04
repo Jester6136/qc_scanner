@@ -41,9 +41,29 @@ def tiny_document():
 
 
 def clipped_document():
-    """CLIPPED_EDGE: tờ giấy tràn ra ngoài mép khung."""
+    """CONTENT_CLIPPED: giấy tràn mép khung **và** có chữ chạy tới sát mép.
+
+    Dòng kẻ đầu tiên của `_paper` nằm ở y=6, trong khi dải soi mực rộng 1% cạnh
+    ngắn (9px) — nên chỗ bị khung cắt có nội dung thật, không phải viền trắng.
+    """
     img = np.full((1200, 900, 3), 25, np.uint8)
     img[0:1100, 0:820] = _paper(1100, 820)
+    return _png(img)
+
+
+def clipped_margin_only():
+    """CLIPPED_EDGE (warn, KHÔNG fail): giấy tràn mép khung nhưng chỉ mất viền trắng.
+
+    Cặp đôi của `clipped_document`, dựng để chốt đúng ranh giới [EX-1]: mất viền
+    thì được, mất chữ thì không. Không có ca này thì một cài đặt "cứ chạm mép là
+    fail" vẫn xanh test — mà đó chính là hành vi sai cần tránh.
+    """
+    img = np.full((1200, 900, 3), 25, np.uint8)
+    paper = np.full((950, 700, 3), 245, np.uint8)
+    paper[120:-120, 120:-120] = _paper(950 - 240, 700 - 240)  # chữ lùi vào 120px
+    # Chừa nền ở phải/dưới: giấy phủ kín cả 4 mép thì rembg trả nguyên khung và ca
+    # này rơi sang NO_CROP_DETECTED, không còn kiểm được thứ định kiểm.
+    img[0:950, 0:700] = paper
     return _png(img)
 
 

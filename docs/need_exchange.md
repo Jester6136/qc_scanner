@@ -150,6 +150,22 @@
   ([S-1](features_issues.md#s-model-swap)) có thể kéo theo ràng buộc giấy phép mới, **kiểm
   trước khi chốt**.
 
+### EX-14 · ❓ Ảnh tồn kho là ảnh CHỤP THÔ hay ảnh ĐÃ CẮT SẴN? {#ex-precropped}
+
+*(Mở 2026-08-05, phát sinh khi làm [QC-12](features_issues.md#qc-content-clipped).)*
+
+- **Hỏi**: Trong phần "phần lớn tồn kho" ở [EX-3](#ex-3), ảnh là **ảnh chụp thô** (còn thấy mặt
+  bàn quanh tờ giấy) hay đã qua một bước **cắt sát** nào đó rồi? Nếu có cả hai, phân biệt được
+  từ metadata/thư mục không?
+- **Đề xuất trả lời**: nếu không chắc, gửi ~20 ảnh lấy ngẫu nhiên từ kho là đủ để tự nhìn ra.
+- **Vì sao**: `CONTENT_CLIPPED` bắt ca "có chữ chạy tới sát mép ảnh". Với ảnh **đã cắt sát**,
+  chữ sát mép là chuyện bình thường — nhưng từ một tấm ảnh đơn lẻ thì **không phân biệt được**
+  nó là bản cắt đẹp hay bản đã mất mất một dòng. Đo trên `examples/*.out.png` (ảnh đã cắt):
+  `border_ink_ratio` 0.124–0.891, tức toàn bộ sẽ bị báo `fail`.
+- **Ảnh hưởng nếu là ảnh đã cắt**: cần thêm bối cảnh đầu vào (`--pre-cropped` / một trường trong
+  request) để tắt mã này cho luồng kho, thay vì để hệ thống đoán →
+  [QC-14](features_issues.md#qc-precropped).
+
 ---
 
 ## Cách dùng file này

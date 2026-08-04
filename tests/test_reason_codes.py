@@ -16,6 +16,7 @@ from qc_scanner.qc import ScanError
 BAD_CASES = [
     "tiny_document",
     "clipped_document",
+    "clipped_margin_only",
     "skewed_document",
     "two_documents",
     "white_on_white",
@@ -49,7 +50,8 @@ def test_no_false_pass_on_bad_input(case, qc):
     "case,code",
     [
         ("tiny_document", "TOO_SMALL"),
-        ("clipped_document", "CLIPPED_EDGE"),
+        ("clipped_document", "CONTENT_CLIPPED"),
+        ("clipped_margin_only", "CLIPPED_EDGE"),
         ("skewed_document", "EXTREME_SKEW"),
         ("two_documents", "MULTIPLE_DOCUMENTS"),
         ("blurry_document", "BLURRY"),
@@ -88,6 +90,34 @@ def test_subject_not_found_falls_back_to_original():
     assert "FALLBACK_ORIGINAL" in result.codes
     assert result.image is not None
     assert result.metrics.fallback_used == "original"
+
+
+# --- QC-12: mất viền trắng ≠ mất chữ (EX-1) --------------------------------- #
+
+
+def test_losing_white_margin_is_only_a_warning(qc):
+    """Ranh giới của EX-1, chiều "được phép": chạm mép nhưng không mất nội dung."""
+    result = qc("clipped_margin_only")
+    assert result.verdict == "warn", result.codes
+    assert "CONTENT_CLIPPED" not in result.codes
+
+
+def test_losing_text_is_a_failure(qc):
+    """Chiều "không được phép": có chữ ở chỗ bị khung cắt."""
+    result = qc("clipped_document")
+    assert result.verdict == "fail", result.codes
+    assert "CONTENT_CLIPPED" in result.codes
+
+
+def test_content_clipped_replaces_clipped_edge(qc):
+    """Đã nói mất chữ thì không nói thêm chạm mép — đó chỉ là cách chữ bị mất."""
+    assert "CLIPPED_EDGE" not in qc("clipped_document").codes
+
+
+def test_border_ink_is_zero_when_quad_is_inside_the_frame(qc):
+    """Tứ giác nằm trọn trong ảnh thì biên cắt là mép giấy, không có gì bị mất."""
+    result = qc("document_on_dark_background")
+    assert result.metrics.border_ink_ratio == 0.0
 
 
 # --- QC-11: "không cắt được gì" phải là fail, không phải warn --------------- #

@@ -102,6 +102,8 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
         )
 
     corners = geo.expand(quad.corners, cfg.edge_expand_px, work.shape)
+    reasons = _content_reasons(orig, corners * ratio, cfg, metrics, reasons)
+
     warped = perspective.four_point_transform(orig, corners * ratio)
     if cfg.auto_rotate_portrait and warped.shape[1] > warped.shape[0]:
         warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
@@ -226,6 +228,36 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
             Reason.of("CLIPPED_EDGE", f"touches_border={metrics.touches_border}")
         )
     return reasons
+
+
+def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons):
+    """QC-12: phân biệt *mất viền trắng* (chấp nhận được) với *mất chữ* (không).
+
+    [EX-1] chốt tiêu chí "đạt" nằm ở **nội dung**, không ở hình học. `CLIPPED_EDGE`
+    chỉ đếm góc chạm mép nên vừa báo thừa (mất viền cũng `warn`) vừa báo thiếu (mất
+    hẳn một dòng cũng chỉ `warn`). Có mực sát mép thì thay nó bằng một mã `fail` —
+    giữ cả hai chỉ làm loãng, vì lúc đó "chạm mép" chỉ là cách nội dung bị mất.
+
+    Biên độ "chạm mép" ở đây tính bằng pixel **ảnh gốc** và cố tình chặt hơn của
+    `CLIPPED_EDGE` (vốn nới theo `ratio`). Nới ra thì tứ giác chỉ *gần* mép cũng bị
+    soi, mà dải sát mép giấy luôn có **bóng mép** — ngưỡng thích nghi đọc bóng đó
+    thành mực. Đo thật trên doc-5 (tứ giác cách mép 4px): margin 2 → 0.000, margin 5
+    → 0.187 tuy chẳng mất chữ nào. Mã mức `fail` thì phải đòi bằng chứng chặt: tứ
+    giác thật sự chạm mép, chứ không phải gần mép.
+    """
+    metrics.border_ink_ratio = geo.ink_at_image_border(
+        orig,
+        corners_full,
+        band_ratio=cfg.content_clip_band_ratio,
+        margin_px=cfg.border_margin_px,
+    )
+    if metrics.border_ink_ratio <= cfg.max_border_ink_ratio:
+        return reasons
+    kept = [r for r in reasons if r.code != "CLIPPED_EDGE"]
+    kept.append(
+        Reason.of("CONTENT_CLIPPED", f"border_ink_ratio={metrics.border_ink_ratio:.3f}")
+    )
+    return kept
 
 
 def _quality_reasons(warped, cfg: Config, metrics: Metrics):

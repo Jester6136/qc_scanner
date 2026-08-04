@@ -17,7 +17,7 @@
 DEP-1 · PKG-1/2/3/4 · N-01/02/04/05/06 — cùng **vấn đề gốc** ở đầu file.
 
 **Mở thêm sau đợt chốt yêu cầu khách 2026-08-05** (xem §A2): OPS-3 · QC-11 · QC-12 · QC-13 ·
-N-11, và S-5 nâng từ P3 lên P1. Năm mục đầu **làm được ngay, không chờ gì**.
+N-11, QC-14, và S-5 nâng từ P3 lên P1. QC-11 + QC-12 đã đóng ngay trong ngày. Năm mục đầu **làm được ngay, không chờ gì**.
 
 **Còn mở, và lý do**:
 
@@ -190,7 +190,7 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 | # | Mã | Công | Chặn ở đâu |
 |---|---|---|---|
 | 1 | [QC-11](#qc-no-crop) | ~30 phút | ✅ xong 2026-08-05 |
-| 2 | [QC-12](#qc-content-clipped) | ~nửa ngày | không |
+| 2 | [QC-12](#qc-content-clipped) | ~nửa ngày | ✅ xong 2026-08-05 |
 | 3 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | không |
 | 4 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
 | 5 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
@@ -252,7 +252,32 @@ Kèm ca test dựng bằng ảnh giấy trắng trên nền trắng.
 
 ---
 
-### 🧱 QC-12 · P0 · 🔴 · `CONTENT_CLIPPED` — mất viền thì được, mất CHỮ thì không {#qc-content-clipped}
+### 🧱 QC-12 · P0 · 🟢 · `CONTENT_CLIPPED` — mất viền thì được, mất CHỮ thì không {#qc-content-clipped}
+
+> **✅ Đã làm 2026-08-05.** `geo.ink_at_image_border()` + mã `CONTENT_CLIPPED` (`fail`), ngưỡng
+> `max_border_ink_ratio = 0.08`. Nó **thay** `CLIPPED_EDGE` khi có mực ở mép, giữ `CLIPPED_EDGE`
+> mức `warn` cho ca chỉ mất viền — đúng ranh giới [EX-1](need_exchange.md).
+>
+> **Ba lần đo lại mới ra cách đo dùng được**, ghi lại để không ai đi lại đường cụt:
+> 1. *Đo dải biên trên ảnh đã nắn* — vô dụng. `warpPerspective` chèn pixel đen ngoài tứ giác;
+>    cạnh trái `doc-3.out.png` có **95%** pixel < 30. Đo được toàn vùng đệm, ảnh sạch cũng cho
+>    0.10–0.92, ảnh cắt cố ý còn *thấp hơn* ảnh sạch.
+> 2. *Chuyển sang đo trên ảnh gốc, trong phần nằm trong tứ giác* — đúng hướng nhưng nới biên
+>    "chạm mép" theo `ratio` thì doc-5 (tứ giác cách mép 4px) nhảy 0.000 → 0.187 vì dải rơi vào
+>    **bóng mép giấy**. Mã mức `fail` phải đòi tứ giác *thật sự* chạm mép: margin 2px ảnh gốc.
+> 3. *Co mask đều vài pixel để bỏ vệt biên* — co đều thì ăn luôn vào phía mép ảnh, đúng chỗ cần
+>    soi. Phải co **theo dọc dải** (kernel dẹt song song mép ảnh), cộng điều kiện cạnh phải áp
+>    ≥10% mép ảnh mới xét — tứ giác chạm mép bằng một góc thì mẫu số bé, tỉ lệ bị vệt ranh giới
+>    chi phối.
+>
+> Kết quả tách nhóm rõ: không mất gì **0.000** (12 ảnh) · mất viền **0.000–0.041** · mất chữ
+> **0.150–0.507** (4 ảnh cắt cố ý 12% mỗi chiều + 2 ảnh thật). Ngưỡng 0.08 nằm giữa.
+> Test: cặp `clipped_document` / `clipped_margin_only` chốt **cả hai chiều** của EX-1.
+>
+> ⚠️ **Hệ quả phải báo khách** → [QC-14](#qc-precropped) bên dưới: ảnh **đã cắt sẵn** (chữ chạy
+> tới sát mép) nay đều `fail`. Đo trên `examples/*.out.png`: 0.124–0.891, tức đúng dấu hiệu của
+> ảnh mất chữ.
+
 
 [EX-1](need_exchange.md) chốt tiêu chí "đạt" nằm ở **nội dung**, không ở hình học: mất viền
 trắng chấp nhận được, mất chữ thì không.
@@ -266,6 +291,26 @@ chạm biên → `CONTENT_CLIPPED` severity `fail`. Bề rộng dải và ngư�
 số đo trên tập vàng. `CLIPPED_EDGE` giữ nguyên mức `warn` cho ca chỉ mất viền.
 
 ⚠️ Với hoá đơn thì mã này quan trọng nhất: mất dòng tổng tiền là hỏng cả bản ghi.
+
+---
+
+### 🧱 QC-14 · P1 · 🔴 · Ảnh ĐÃ CẮT SẴN bị `CONTENT_CLIPPED` báo oan {#qc-precropped}
+
+Phát sinh từ chính QC-12. Với ảnh **đã được cắt sát** từ trước (bản scan, hoặc ảnh đã qua một
+công cụ crop khác), chữ chạy tới sát mép là chuyện **bình thường** — nhưng nhìn từ ngoài nó
+giống hệt ảnh bị khung hình cắt mất chữ. Đo trên `examples/*.out.png`: `border_ink_ratio`
+0.124–0.891, đều `fail`.
+
+Hai thứ này **không phân biệt được từ một tấm ảnh đơn lẻ**: cùng một bức ảnh "chữ chạm mép" có
+thể là bản cắt đẹp, cũng có thể là bản mất mất dòng cuối. Chỉ có bối cảnh mới trả lời được.
+
+[EX-3](need_exchange.md) chốt kho ảnh là **hỗn hợp**: phần lớn tồn kho + một phần chụp mới. Nếu
+phần tồn kho đó đã qua cắt, QC sẽ báo trượt gần như toàn bộ.
+
+**Hướng**: cần khách trả lời trước (**EX-14**, xem [need_exchange.md](need_exchange.md)) — ảnh
+tồn kho là **ảnh chụp thô** hay **ảnh đã cắt**? Nếu có ảnh đã cắt thì thêm bối cảnh đầu vào
+(`--pre-cropped` / trường trong request) để tắt `CONTENT_CLIPPED` cho luồng đó, thay vì đoán.
+Chín ảnh thật hiện có đều là ảnh chụp thô nên chưa chạm phải, nhưng đó là mẫu quá nhỏ để kết luận.
 
 ---
 
