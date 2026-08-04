@@ -219,6 +219,103 @@ def verdict_of(reasons: List[Reason]) -> Verdict:
     return "pass"
 
 
+@dataclass
+class Metrics:
+    """Số đo thô đi kèm **mọi** kết quả — để tra ngược và tinh chỉnh ngưỡng.
+
+    Không có metric thì không chốt được ngưỡng bằng số đo, chỉ đoán. Đây cũng là
+    dữ liệu đổ ra CSV cho báo cáo QC hàng loạt.
+    """
+
+    alpha_coverage: Optional[float] = None
+    """% pixel alpha > 0 sau rembg."""
+
+    contour_candidates: int = 0
+    """Số contour chiếm ≥ `candidate_area_ratio` diện tích ảnh."""
+
+    quad_area_ratio: Optional[float] = None
+    """Diện tích tứ giác / diện tích ảnh."""
+
+    skew_ratio: Optional[float] = None
+    """Tỉ lệ cạnh đối dài/ngắn (lấy max của hai cặp)."""
+
+    is_convex: Optional[bool] = None
+    touches_border: int = 0
+    """Số góc nằm sát mép ảnh."""
+
+    est_dpi: Optional[float] = None
+    """DPI ước lượng của ảnh đã nắn, giả định khổ A4."""
+
+    blur_score: Optional[float] = None
+    """Variance of Laplacian trên ảnh đã nắn."""
+
+    glare_ratio: Optional[float] = None
+    median_brightness: Optional[float] = None
+
+    fallback_used: str = "none"
+    """`none` · `edge_detect` · `original` — minh bạch đường đi."""
+
+    detector: Optional[str] = None
+    detector_confidence: Optional[float] = None
+    detector_iou: Optional[float] = None
+    """IoU giữa hai detector khi bật đối chiếu chéo (S-6)."""
+
+    def to_dict(self) -> dict:
+        return {
+            k: (round(v, 4) if isinstance(v, float) else v)
+            for k, v in self.__dict__.items()
+            if v is not None
+        }
+
+
+@dataclass
+class ScanResult:
+    """Đầu ra của `scan_qc()`: **một phán quyết kèm ảnh**, không chỉ là ảnh."""
+
+    image: Optional[bytes]
+    """PNG đã nắn, hoặc best-effort, hoặc None nếu fail cứng."""
+
+    verdict: Verdict
+    reasons: List[Reason] = field(default_factory=list)
+    metrics: Metrics = field(default_factory=Metrics)
+
+    def __post_init__(self):
+        # Bất biến: pass ⟺ reasons rỗng. Không có "pass kèm ghi chú".
+        expected = verdict_of(self.reasons)
+        if self.verdict != expected:
+            raise AssertionError(
+                f"verdict {self.verdict!r} không khớp reasons (đúng phải là {expected!r})"
+            )
+
+    @classmethod
+    def of(cls, image, reasons, metrics=None) -> "ScanResult":
+        reasons = list(reasons)
+        return cls(
+            image=image,
+            verdict=verdict_of(reasons),
+            reasons=reasons,
+            metrics=metrics or Metrics(),
+        )
+
+    @property
+    def codes(self) -> List[str]:
+        return [r.code for r in self.reasons]
+
+    def to_dict(self, include_image: bool = False) -> dict:
+        d = {
+            "verdict": self.verdict,
+            "reasons": [r.to_dict() for r in self.reasons],
+            "metrics": self.metrics.to_dict(),
+        }
+        if include_image:
+            import base64
+
+            d["image"] = (
+                base64.b64encode(self.image).decode("ascii") if self.image else None
+            )
+        return d
+
+
 class ScanError(Exception):
     """Lỗi có mã lý do — thay cho việc nuốt exception rồi trả None (BUG-2).
 

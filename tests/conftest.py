@@ -49,11 +49,17 @@ def pair(request):
 
 
 @pytest.fixture(scope="session")
-def scan_cache():
-    """name -> PNG bytes, tính một lần cho cả session."""
-    from qc_scanner.doc import scan
+def scan_cache_qc():
+    """name -> ScanResult, tính một lần cho cả session."""
+    from qc_scanner.doc import scan_qc
 
-    return {p.name: scan(p.input_bytes) for p in PAIRS}
+    return {p.name: scan_qc(p.input_bytes) for p in PAIRS}
+
+
+@pytest.fixture(scope="session")
+def scan_cache(scan_cache_qc):
+    """name -> PNG bytes."""
+    return {name: r.image for name, r in scan_cache_qc.items()}
 
 
 def decode(png_bytes, flags=cv2.IMREAD_COLOR):
