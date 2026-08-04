@@ -1,11 +1,10 @@
-import glob
-import os
+import json
 import sys
 
 import click
-import rembg
 
 from ..doc import scan
+from ..qc import ScanError
 
 
 @click.command()
@@ -18,7 +17,13 @@ from ..doc import scan
     type=click.File("wb", lazy=True),
 )
 def main(input, output):
-    output.write(scan(rembg.remove(input.read())))
+    """Nắn phẳng tài liệu: qc-scanner [INPUT] [OUTPUT] (mặc định stdin/stdout)."""
+    try:
+        output.write(scan(input.read()))
+    except ScanError as err:
+        json.dump(err.to_dict(), sys.stderr, ensure_ascii=False, indent=2)
+        sys.stderr.write("\n")
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

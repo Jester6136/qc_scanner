@@ -1,44 +1,45 @@
 import argparse
 from io import BytesIO
-from urllib.parse import unquote_plus
-from urllib.request import urlopen
 
-from flask import Flask, request, send_file
+from flask import Flask, jsonify, request, send_file
 from waitress import serve
 
 from ..doc import scan
+from ..qc import ScanError
+
+#: Giới hạn kích thước upload (OPS-1) — chặn ảnh khổng lồ làm cạn RAM worker.
+MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
 
-@app.route("/", methods=["GET", "POST"])
+def _error(reason_dict, status):
+    return jsonify({"error": reason_dict}), status
+
+
+@app.route("/", methods=["POST"])
 def index():
-    file_content = ""
+    # SEC-1: nhánh `GET /?url=` đã bị bỏ hẳn — nó fetch URL tùy ý (kể cả
+    # file:// và metadata nội bộ). POST file đủ cho mọi ca dùng thật.
+    if "file" not in request.files:
+        return {"error": "missing post form param 'file'"}, 400
 
-    if request.method == "POST":
-        if "file" not in request.files:
-            return {"error": "missing post form param 'file'"}, 400
-
-        file_content = request.files["file"].read()
-
-    if request.method == "GET":
-        url = request.args.get("url", type=str)
-        if url is None:
-            return {"error": "missing query param 'url'"}, 400
-
-        file_content = urlopen(unquote_plus(url)).read()
-
-    if file_content == "":
-        return {"error": "File content is empty"}, 400
+    file_content = request.files["file"].read()
 
     try:
-        return send_file(
-            BytesIO(scan(file_content)),
-            mimetype="image/png",
-        )
-    except Exception as e:
-        app.logger.exception(e, exc_info=True)
-        return {"error": "oops, something went wrong!"}, 500
+        image = scan(file_content)
+    except ScanError as err:
+        # 400 cho lỗi đầu vào, 422 cho ảnh hợp lệ nhưng không xử lý được.
+        status = 400 if err.code in {"FILE_EMPTY", "DECODE_FAILED"} else 422
+        return _error(err.to_dict(), status)
+
+    return send_file(BytesIO(image), mimetype="image/png")
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return {"status": "ok"}
 
 
 def main():
@@ -47,7 +48,7 @@ def main():
     ap.add_argument(
         "-a",
         "--addr",
-        default="0.0.0.0",
+        default="127.0.0.1",
         type=str,
         help="The IP address to bind to.",
     )
