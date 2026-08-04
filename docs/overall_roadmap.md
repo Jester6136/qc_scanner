@@ -97,9 +97,13 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
   dữ liệu.
 - 9 ảnh thật trong `tmp/` là mẫu đầu tiên, **chưa có nhãn** nên chỉ dùng để so cấu hình với
   nhau, chưa dùng để chấm đúng/sai được.
-- **2026-08-05 đã chốt 12/13 câu hỏi với khách** → sinh ra Giai đoạn 6 (5 việc làm được ngay)
-  và Giai đoạn 7 (chờ tập vàng). Thay đổi phạm vi lớn nhất: **giấy hoá đơn có cong** nên
-  dewarping (S-5) vào phạm vi, và **bàn giao là Docker image kèm HTTP service**.
+- **2026-08-05 đã chốt 12/13 câu hỏi với khách** → sinh ra Giai đoạn 6 và Giai đoạn 7 (chờ tập
+  vàng). Bàn giao là **Docker image kèm HTTP service** → hợp đồng API là bề mặt bàn giao chính.
+- **Dewarping (S-5) đã đo và loại khỏi phạm vi** (cùng ngày). EX-5 nói hoá đơn có cong nên nó
+  từng được nâng lên P1, nhưng **đo trên 36 ảnh thật thì không ảnh nào cong quá sàn nhiễu của
+  mask**. Đây là ví dụ đúng của nguyên tắc "đo trước, làm sau": một câu trả lời phỏng vấn suýt
+  kéo theo 1 tuần+ công việc mà số đo không ủng hộ.
+- **Đã đo trên 29 ảnh thật của khách** (9 đợt 1 + 20 đợt 2), gồm cả CCCD, sổ đỏ, hoá đơn.
 
 ## 5. Bắc Nam của bài toán
 
@@ -212,7 +216,8 @@ Thứ tự bắt buộc: **đo trước, đổi sau.**
 ### Giai đoạn 6 — Việc phát sinh từ đợt chốt yêu cầu khách (2026-08-05) 🎯 LÀM TIẾP
 
 12/13 câu hỏi trong [need_exchange.md](need_exchange.md) đã có câu trả lời. Sáu việc dưới đây
-sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được ngay.
+sinh ra từ đó. **Tính đến 2026-08-05: QC-11/12/13/14 đã xong, S-5 đã đo và chốt là không làm,
+N-11 bị bỏ theo yêu cầu. Chỉ còn OPS-3, và nó đợi máy server.**
 
 - [x] **QC-11** ✅ `NO_CROP_DETECTED` (fail) — bắt ca detector trả nguyên khung hình.
       Dấu hiệu đã đo: `quad_area_ratio > 0.90` và `touches_border == 4` → đúng 2/17 ảnh, 0 báo
@@ -226,10 +231,10 @@ sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được n
 - [x] **QC-14** ✅ Cờ `pre_cropped` cho ảnh đã cắt sẵn. Khách xác nhận có gửi loại này
       (EX-14). Không tự đoán được — đo 37 ảnh, hai nhóm trùng dải `alpha_coverage`.
 - ~~**N-11** Công cụ gán nhãn tập vàng~~ — **BỎ** theo yêu cầu khách 2026-08-05.
-- [ ] **S-5 (bước đo)** Đo độ cong dòng chữ sau khi nắn trên tập ảnh thật; đếm tỉ lệ ảnh vượt
-      ngưỡng OCR chịu được. **Chỉ đo, chưa làm dewarping.**
-      [EX-5](need_exchange.md) xác nhận hoá đơn có cong → dewarping vào phạm vi, nhưng 1 tuần+
-      nên phải có số trước khi cam kết.
+- [x] **S-5 (bước đo)** ✅ Đã đo độ vồng mép giấy trên 36 ảnh. Không ảnh nào vượt sàn nhiễu
+      của mask (0.07, đo trên chính ảnh mẫu phẳng đã biết); 5 giá trị cao nhất đều là ảnh
+      **tách nền sai**, không phải giấy cong. → **Không làm dewarping**, S-5 hạ P1 → P3.
+      Tiết kiệm 1 tuần+. Mở lại khi có tập ảnh hoá đơn cuộn thật.
 - [ ] **OPS-3 — LÀM CUỐI, TRÊN MÁY SERVER.** `docker build` + chạy thử service + kiểm ngắt mạng
       + thêm build image vào CI. **Máy phát triển hiện tại không build Docker** (chốt
       2026-08-05) nên việc này dời xuống cuối, làm khi lên máy triển khai.

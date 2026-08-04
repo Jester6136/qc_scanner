@@ -16,10 +16,9 @@
 **Đã đóng**: BUG-1/2/3/4 · SEC-1 · OPS-1/2 · QC-1/2/3/4/5/6/7/8/9/10 · QUAL-1/2 · S-2/S-6 ·
 DEP-1 · PKG-1/2/3/4 · N-01/02/04/05/06 — cùng **vấn đề gốc** ở đầu file.
 
-**Mở thêm sau đợt chốt yêu cầu khách 2026-08-05** (xem §A2): OPS-3 · QC-11 · QC-12 · QC-13 ·
-N-11 · QC-14, và S-5 nâng từ P3 lên P1. **QC-11, QC-12, QC-13 đã đóng ngay trong ngày.**
-Còn lại: N-11 (làm được ngay) · QC-14 (chờ khách trả lời EX-14) · S-5 bước đo (cần ảnh EX-2) ·
-OPS-3 (để cuối, làm trên máy server — máy phát triển không build Docker).
+**Đợt chốt yêu cầu khách 2026-08-05** (xem §A2) mở thêm 6 mục và **đóng gần hết ngay trong
+ngày**: QC-11 · QC-12 · QC-13 · QC-14 🟢 · S-5 đã đo → chốt **không làm** ⚪ · N-11 **bỏ** theo
+yêu cầu ⚫. Chỉ còn **OPS-3**, để cuối vì máy phát triển không build Docker được.
 
 **Còn mở, và lý do**:
 
@@ -28,7 +27,7 @@ OPS-3 (để cuối, làm trên máy server — máy phát triển không build 
 | QUAL-3 quét ngưỡng | Cần tập vàng có nhãn của khách (EX-2). Bộ eval đã chạy được, chỉ thiếu dữ liệu. |
 | S-1 đổi model nền | **Đã đo** (xem mục S-1). isnet chậm gấp 3 và đổi 2 verdict; không có nhãn thì không biết đổi là tốt hay tệ. |
 | S-3 DocAligner | Chỗ cắm đã sẵn (S-2). Nguyên tắc "đo trước, đổi sau" cấm đổi đường chính khi chưa có tập vàng. |
-| S-5 dewarping | Chờ chốt EX-5: ảnh khách có giấy cong/gập không. Làm thừa thì đắt vô ích. |
+| S-5 dewarping | **Đã đo, chốt là KHÔNG làm.** 36 ảnh thật, không ảnh nào cong quá sàn nhiễu của mask. Mở lại khi có ảnh hoá đơn cuộn. |
 | N-03/07/08/09/10 | Chờ nhu cầu khách (EX-3/EX-5/EX-10). |
 
 Mọi **ngưỡng** trong `config.py` vẫn là ước đoán, trừ hai cái đã chốt bằng số đo (cạnh dài
@@ -593,7 +592,42 @@ tận dụng thứ đã có. Chỉ làm sau khi S-2/S-3 xong.
 
 ---
 
-### 🔬 S-5 · **P1** · 🔴 · Dewarping: nắn giấy CONG, không chỉ phối cảnh phẳng {#s-dewarp}
+### 🔬 S-5 · P3 · ⚪ · Dewarping: nắn giấy CONG, không chỉ phối cảnh phẳng {#s-dewarp}
+
+> **📏 Đã ĐO 2026-08-05 → hạ từ P1 xuống P3, hoãn.** Khách cũng xác nhận giấy cong là **hiếm**
+> trong kho ảnh thật.
+>
+> **Cách đo**: giấy phẳng thì 4 mép là đoạn thẳng; giấy cong/vênh thì mép phình ra khỏi dây
+> cung nối hai góc. Đo độ lệch lớn nhất của contour so với dây cung, chia cho chiều dài mép →
+> *tỉ lệ vồng*, không phụ thuộc kích thước ảnh. Đo trên **mép** chứ không trên dòng chữ vì mép
+> đã có sẵn trong pipeline (contour + 4 góc), không phải dựng thêm bộ dò dòng chữ.
+>
+> **Kết quả trên 36 ảnh** (9 đợt 1 + 20 đợt 2 + 7 ảnh mẫu):
+>
+> | Nhóm | trung vị | p90 | max |
+> |---|---|---|---|
+> | tmp đợt 1 (n=9) | 0.051 | 0.355 | 0.355 |
+> | tmp_2 đợt 2 (n=20) | 0.021 | 0.175 | 0.305 |
+> | examples (n=7) | 0.039 | 0.072 | 0.072 |
+>
+> **5 giá trị cao nhất đều là ảnh mà bước TÁCH NỀN đã sai** (`abc1b13…` bắt mặt bàn, `2aOboQp…`
+> bắt cả xấp giấy, `40b9f8b…` không cắt được gì) — mép "vồng" đó là biên của vật khác, không
+> phải giấy cong. Bỏ nhóm này ra thì giá trị lớn nhất còn **0.074**, mà ngay cả ảnh mẫu *phẳng
+> đã biết* (doc-4/5/6) cũng cho 0.069–0.072. Nghĩa là **0.07 là sàn nhiễu của mask rembg, không
+> phải độ cong thật**. Không ảnh nào trong tay vượt sàn đó.
+>
+> **Kết luận**: không có bằng chứng nào đòi dewarping trong tập ảnh hiện có → **không làm**,
+> tiết kiệm 1 tuần+.
+>
+> ⚠️ **Giới hạn của phép đo, phải nói thẳng**: nó bắt được giấy cong kiểu *vênh mép* (hoá đơn
+> cuộn tròn), nhưng **bỏ sót** tờ phẳng ở mép mà gợn sóng ở giữa, và cũng không bắt được *nếp
+> gấp* (tờ chứng nhận mở đôi — nếp là đường gãy, không làm vồng mép ngoài). Bằng chứng dứt điểm
+> phải là **một tập ảnh hoá đơn cuộn thật**, thứ chưa có trong mẫu. Mở lại mục này khi có.
+>
+> 💡 Quan sát phụ đáng ghi: tỉ lệ vồng cao lại là **tín hiệu tách nền sai** rất sạch trên mẫu
+> này (5/5). Có thể thành một metric rẻ tiền sau, nhưng chưa đủ dữ liệu để chốt ngưỡng.
+
+<details><summary>Bối cảnh gốc (trước khi đo)</summary>
 
 `four_point_transform` chỉ sửa được biến dạng **phẳng**. Giấy cong, gập nếp, sách đóng gáy →
 sau khi nắn **vẫn méo**, dòng chữ vẫn cong → OCR vẫn sai. Họ phương pháp giải quyết: dự đoán
@@ -609,6 +643,8 @@ xong dòng chữ vẫn cong, OCR vẫn sai. Không có mục nào khác trong s�
 hưởng. **Bước tiếp theo là ĐO**, không phải làm: trên tập ảnh EX-2, đo độ cong (độ lệch của
 dòng chữ so với đường thẳng sau khi nắn) và đếm tỉ lệ ảnh vượt ngưỡng OCR chịu được. Có số rồi
 mới quyết đáng hay không đáng.
+
+</details>
 
 ---
 
