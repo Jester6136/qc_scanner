@@ -8,8 +8,13 @@
 > nguyên nhân + hướng xử lý ([overall_roadmap.md §1](overall_roadmap.md)). Phần lớn câu hỏi dưới
 > đây tồn tại vì **QC chỉ định nghĩa được khi biết "đạt" nghĩa là gì với khách**.
 >
-> ⚠️ Trạng thái hiện tại: **chưa có tài liệu khách nào**, chưa có ảnh thật nào ngoài 8 ảnh mẫu
-> OSS trong `examples/`. Toàn bộ ngưỡng trong `algorithm.md §7` đang là **ước đoán**.
+> ⚠️ Cập nhật 2026-08-05: đã nhận **9 ảnh thật đầu tiên** (trong `tmp/`, không commit) — đủ để
+> hiệu chỉnh hai ngưỡng bằng số đo và để so hai cấu hình với nhau, nhưng **chưa có nhãn** nên
+> chưa chấm được đúng/sai. Các ngưỡng còn lại trong `algorithm.md §7` vẫn là **ước đoán**.
+>
+> **EX-2 (tập vàng có nhãn) nay là mục chặn nhiều việc nhất**: toàn bộ Giai đoạn 3 còn lại
+> (QUAL-3 quét ngưỡng, S-1 đổi model, S-3 DocAligner) đang đứng chờ đúng một thứ này. Công cụ
+> đo đã dựng xong và chạy được (`python -m qc_scanner.eval --labels`).
 
 ---
 
@@ -46,6 +51,10 @@
 - **Vì sao**: (a) `est_dpi` hiện giả định khổ A4 — sai khổ thì sai ngưỡng; (b) tài liệu có
   **khung viền** làm contour bắt nhầm đường kẻ trong tài liệu thay vì mép giấy
   ([QUAL-1](features_issues.md#qual-quad-filter)); (c) giấy trắng cần nền tối để rembg tách được.
+- **🔥 Đã thành vấn đề thật, không còn là giả định**: ngưỡng `LOW_RESOLUTION` theo DPI-A4 loại
+  nhầm **15/17** ảnh đã thử — toàn giấy tờ khổ nhỏ đọc tốt. Đã phải bỏ chốt chặn theo DPI và
+  chuyển sang số pixel cạnh dài. **Biết khổ giấy thật thì lấy lại được chốt chặn DPI**, vốn
+  đúng hơn về mặt OCR. Đây là câu hỏi rẻ mà đổi được chất lượng phán quyết.
 
 ### EX-5 · ❓ Giấy có **cong/gập** không (quyết định có cần dewarping)
 - **Hỏi**: Tài liệu được ép phẳng khi chụp, hay có nếp gấp / cong / đóng gáy (sổ, quyển)?
@@ -102,8 +111,10 @@
 ### EX-12 · ❓ Bảo mật & lưu trữ ảnh tài liệu
 - **Hỏi**: Ảnh chứa thông tin cá nhân (CMND/CCCD, địa chỉ, chữ ký)? Được lưu tạm không, bao lâu?
   HTTP server sẽ đặt ở mạng nội bộ hay public? Có yêu cầu xác thực?
-- **Vì sao**: server hiện **không có xác thực**, và có lỗ hổng [SSRF](features_issues.md#sec-ssrf)
-  đọc được file nội bộ. Nếu đặt public thì SEC-1 từ P0 thành **khẩn cấp**.
+- **Vì sao**: SSRF ([SEC-1](features_issues.md#sec-ssrf)) **đã vá** — nhánh `GET /?url=` bị bỏ
+  hẳn, và bind mặc định chuyển về `127.0.0.1`. Nhưng server vẫn **không có xác thực**: nếu
+  khách định đặt nó ở mạng có thể truy cập được từ ngoài thì cần thêm một lớp xác thực, và đó
+  là việc chưa nằm trong roadmap.
 
 ### EX-13 · ❓ Giấy phép & phân phối
 - **Hỏi**: Sản phẩm giao cho khách dưới dạng nào — thư viện PyPI, Docker image, hay mã nguồn?
@@ -117,8 +128,9 @@
 
 ## Cách dùng file này
 - Trước mỗi buổi làm việc với khách: lọc mục ❓, chuẩn bị câu hỏi + **tài liệu/dữ liệu cần xin**.
-- Ưu tiên hỏi trước: **EX-2** (tập vàng — chặn nhiều việc nhất), **EX-1** (định nghĩa "đạt"),
-  **EX-7** (cân bằng false pass/fail), **EX-5** (có cần dewarping không).
+- Ưu tiên hỏi trước: **EX-2** (tập vàng — nay là thứ chặn *toàn bộ* phần còn lại), **EX-4**
+  (khổ giấy — đã thành vấn đề thật, xem trên), **EX-1** (định nghĩa "đạt"), **EX-7** (cân bằng
+  false pass/fail), **EX-5** (có cần dewarping không).
 - Sau khi có câu trả lời: đổi trạng thái ✅ + ghi **quyết định đã chốt** (kèm ngày, nguồn tài liệu).
 - Quyết định chốt mà ảnh hưởng code → tạo issue/feature tương ứng trong
   [features_issues.md](features_issues.md); nếu chốt một **ngưỡng**, ghi thẳng vào

@@ -37,28 +37,31 @@ danh mục mã lý do: [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-
 
 - Nguồn gốc: lõi bắt nguồn từ OSS `danielgatis/docscan` (MIT); dự án đã **đổi tên thành
   `qc_scanner`** (2026-08) để phản ánh định hướng QC. **Chưa publish** dưới tên mới.
-- Quy mô code: **164 dòng Python**, 3 file. Cực nhỏ — đọc hết trong 10 phút.
+- Quy mô code: **1639 dòng Python**, 9 file (ban đầu 164 dòng / 3 file). Phần lớn phần tăng thêm
+  là lõi QC, bộ eval và chú thích lý do — thuật toán nắn ảnh vẫn nhỏ như cũ.
 - Kỹ thuật: **KHÔNG có model riêng của dự án**. `rembg` (U²-Net qua onnxruntime) tách nền,
   phần còn lại là OpenCV thuần (contour + approxPolyDP + four-point transform).
 
 ## 2. Kiến trúc (một đoạn)
 
-Ba mặt tiền chung **một** hàm lõi `scan(bytes) -> bytes`:
+Bốn mặt tiền chung **một** hàm lõi `scan_qc()`:
 
 ```
-CLI  (qc-scanner)          ─┐
-Server (qc-scanner-server) ─┼──►  qc_scanner.doc.scan()  ──►  rembg → OpenCV contour → warp → PNG
-Library (import scan)   ─┘
+CLI    (qc-scanner)        ─┐
+Batch  (qc-scanner-batch)  ─┤
+Server (qc-scanner-server) ─┼──►  qc_scanner.doc.scan_qc()  ──►  ScanResult
+Library (import scan_qc)   ─┘                │
+                                             ├── Detector (rembg-contour | edge-hough)
+                                             ├── geometry: metric hình học + chất lượng
+                                             └── qc.REASONS: verdict + hint + audience
 ```
 
-Không state, không DB, không hàng đợi, không config file. Mọi tham số **hardcode**
-(`APPROX_POLY_DP_ACCURACY_RATIO=0.02`, `IMG_RESIZE_H=500`, medianBlur ksize 15).
-
-Kiến trúc đích (theo hướng QC) tách lõi thành hai lớp, mặt tiền giữ nguyên:
+Không state, không DB, không hàng đợi. Tham số **không còn hardcode** — tất cả nằm trong
+`config.py`, override được bằng `QC_SCANNER_*`.
 
 ```
 scan(bytes) -> bytes                  # API cũ, giữ để không phá người dùng hiện tại
-scan_qc(bytes) -> ScanResult          # API mới: ảnh + verdict + reasons[] + metrics + hints
+scan_qc(bytes) -> ScanResult          # API chính: ảnh + verdict + reasons[] + metrics
 ```
 
 Chi tiết luồng: [algorithm.md](algorithm.md).
@@ -76,23 +79,24 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
    tự quyết dùng hay bỏ; chỉ `fail` khi đầu ra chắc chắn vô dụng.
 6. **Vendor `rembg` nguyên trạng** — không sửa vendor; mọi tinh chỉnh bọc ở lớp `doc.py`.
 
-## 4. Hiện trạng (2026-08)
+## 4. Hiện trạng (2026-08-05)
 
-- Luồng lõi **chạy được**; có 8 cặp ảnh mẫu input/output trong [examples/](../examples/).
-- **Chưa có gì của QC**: `scan()` trả `bytes` hoặc `None`; không verdict, không reason code,
-  không metric, không hint. Toàn bộ mục §1 ở trên là **việc phải làm**, chưa phải hiện trạng.
-- **Chất lượng chưa được đo lần nào**: không test, không CI, không tập vàng có nhãn 4 góc.
-  Không biết tỉ lệ phát hiện biên đúng là bao nhiêu.
-- **Lỗi chặn ở đường CLI**: `rembg` bị gọi **hai lần** → chậm gấp đôi, mask sai.
-  [BUG-1](features_issues.md#bug-double-rembg).
-- **Nuốt lỗi**: `scan()` bắt mọi exception, in stderr, trả `None` → CLI ghi `None` (crash),
-  server trả 500 "oops, something went wrong!". Đây chính là phản-QC.
-  [BUG-2](features_issues.md#bug-swallow).
-- **Lỗ hổng SSRF** ở HTTP server (`GET /?url=` fetch URL bất kỳ, kể cả `file://` và metadata
-  nội bộ). [SEC-1](features_issues.md#sec-ssrf).
-- **Dependency không ghim version nào** → build hôm nay và tháng sau có thể khác nhau.
-- Thư mục local **không phải git repo** (`.git` không tồn tại) → thay đổi chưa được version
-  control. Cần `git init` / clone lại từ remote trước khi sửa.
+- Luồng lõi chạy được; **Giai đoạn 0, 1, 2, 4 đã xong**, Giai đoạn 3 làm được phần không cần
+  nhãn (QUAL-1/2, S-2, S-6, bộ eval).
+- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 17 mã
+  lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
+- **122 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
+  "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
+- **Đã đo** trên 8 ảnh mẫu + 9 ảnh thật (`tmp/`): 11 pass · 5 warn · 1 fail. Tốc độ
+  **~0.4s/ảnh** sau khi tái dùng session (trước ~3.0s).
+- Các lỗi chặn đã đóng hết: rembg gọi hai lần, nuốt lỗi trả `None`, SSRF `GET /?url=`,
+  so `bytes` với `str`, vỡ trên ảnh grayscale, dependency không ghim.
+- **Vẫn thiếu, và là thứ chặn nhiều nhất: tập vàng có nhãn của khách** (EX-2). Không có nó thì
+  không chốt được ngưỡng (QUAL-3), không dám đổi model nền (S-1) hay detector (S-3), và không
+  báo cáo được crop rate / false pass / false fail lúc nghiệm thu. Công cụ đã sẵn — chỉ thiếu
+  dữ liệu.
+- 9 ảnh thật trong `tmp/` là mẫu đầu tiên, **chưa có nhãn** nên chỉ dùng để so cấu hình với
+  nhau, chưa dùng để chấm đúng/sai được.
 
 ## 5. Bắc Nam của bài toán
 
@@ -114,45 +118,45 @@ vài chục ms. Đòn bẩy tốc độ chỉ có 2: (a) tái dùng `rembg` sess
 
 ## 6. Roadmap chi tiết
 
-### Giai đoạn 0 — Chặn máu & dựng bộ đo (1–2 ngày) 🎯 ĐANG TỚI
-- [ ] `git init` + commit hiện trạng trước khi sửa bất cứ thứ gì.
-- [ ] **BUG-1** Bỏ `rembg` gọi hai lần ở CLI.
-- [ ] **BUG-2** Thay "nuốt lỗi trả None" bằng lỗi có mã — nền móng của QC.
-- [ ] **SEC-1** Tắt/allowlist `GET /?url=` ở server.
-- [ ] Regression test trên 8 cặp trong `examples/` — [test_eval.md §2](test_eval.md).
+### Giai đoạn 0 — Chặn máu & dựng bộ đo ✅ XONG
+- [x] `git init` + commit hiện trạng trước khi sửa bất cứ thứ gì.
+- [x] **BUG-1** Bỏ `rembg` gọi hai lần ở CLI.
+- [x] **BUG-2** Thay "nuốt lỗi trả None" bằng lỗi có mã — nền móng của QC.
+- [x] **SEC-1** Tắt/allowlist `GET /?url=` ở server.
+- [x] Regression test trên 8 cặp trong `examples/` — [test_eval.md §2](test_eval.md).
 - **Tiêu chí ra**: `pytest` xanh trên máy sạch; CLI lỗi thì exit code ≠ 0 kèm mã lý do.
 
-### Giai đoạn 1 — Lõi QC: verdict + reason + hint (TRỌNG TÂM)
-- [ ] **QC-1** Kiểu `ScanResult{image, verdict, reasons[], metrics, hints[]}` + `scan_qc()`.
+### Giai đoạn 1 — Lõi QC: verdict + reason + hint ✅ XONG
+- [x] **QC-1** Kiểu `ScanResult{image, verdict, reasons[], metrics}` + `scan_qc()`.
       Giữ `scan()` cũ làm lớp mỏng bọc ngoài (tương thích ngược).
-- [ ] **QC-2** Cài **danh mục mã lý do** giai đoạn 1: `DECODE_FAILED`, `SUBJECT_NOT_FOUND`,
+- [x] **QC-2** Cài **danh mục mã lý do** giai đoạn 1: `DECODE_FAILED`, `SUBJECT_NOT_FOUND`,
       `QUAD_NOT_FOUND`, `TOO_SMALL`, `CLIPPED_EDGE`, `NOT_CONVEX`, `EXTREME_SKEW`.
       — [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes)
-- [ ] **QC-3** Mỗi mã kèm `hint` tiếng Việt + đối tượng nhận (người chụp / vận hành / hệ thống).
-- [ ] **QC-4** Bề mặt hóa QC ra cả 3 mặt tiền:
+- [x] **QC-3** Mỗi mã kèm `hint` tiếng Việt + đối tượng nhận (người chụp / vận hành / hệ thống).
+- [x] **QC-4** Bề mặt hóa QC ra cả 3 mặt tiền:
       CLI → exit code theo verdict + JSON ra stderr/`--report`;
       server → header/`multipart` hoặc `?format=json` trả cả ảnh lẫn phán quyết;
       library → trả `ScanResult`.
-- [ ] **QC-5** Metric đo được kèm theo: `quad_area_ratio`, `skew_ratio`, `est_dpi`,
+- [x] **QC-5** Metric đo được kèm theo: `quad_area_ratio`, `skew_ratio`, `est_dpi`,
       `blur_score` (variance of Laplacian), `contour_candidates`.
 - **Tiêu chí ra**: mọi ảnh trong tập thử ra đúng 1 verdict + ≥1 reason khi không phải `pass`;
   không còn đường nào trả `None`.
 
-### Giai đoạn 2 — QC nâng cao & tự khắc phục ("hơn cả thế")
-- [ ] **QC-6** Kiểm chất lượng ảnh (không chỉ hình học): `BLURRY`, `GLARE`, `TOO_DARK`,
+### Giai đoạn 2 — QC nâng cao & tự khắc phục ("hơn cả thế") ✅ XONG
+- [x] **QC-6** Kiểm chất lượng ảnh (không chỉ hình học): `BLURRY`, `GLARE`, `TOO_DARK`,
       `LOW_RESOLUTION` — chặn ảnh mà OCR chắc chắn đọc sai.
-- [ ] **QC-7** **Fallback dò cạnh** khi rembg không tách được chủ thể (giấy trắng trên nền
+- [x] **QC-7** **Fallback dò cạnh** khi rembg không tách được chủ thể (giấy trắng trên nền
       trắng): Canny + HoughLines + giao điểm → tứ giác. Thành công thì hạ `fail` → `warn`
       kèm reason `RECOVERED_BY_EDGE_FALLBACK`.
-- [ ] **QC-8** Tự sửa nhẹ: nới biên vài pixel khi tứ giác chạm mép, tự xoay về chiều đứng.
-- [ ] **QC-9** `MULTIPLE_DOCUMENTS` — phát hiện nhiều tứ giác lớn (nhiều tờ trong một khung),
+- [x] **QC-8** Tự sửa nhẹ: nới biên vài pixel khi tứ giác chạm mép, tự xoay về chiều đứng.
+- [x] **QC-9** `MULTIPLE_DOCUMENTS` — phát hiện nhiều tứ giác lớn (nhiều tờ trong một khung),
       báo rõ thay vì lặng lẽ lấy tờ to nhất.
-- [ ] **QC-10** Chế độ debug: xuất ảnh trung gian (mask, contour vẽ chồng, tứ giác chọn) để
+- [x] **QC-10** Chế độ debug: xuất ảnh trung gian (mask, contour vẽ chồng, tứ giác chọn) để
       soi ca sai — công cụ chính khi tinh chỉnh ngưỡng.
 - **Tiêu chí ra**: false-pass giảm đo được; một phần ca `QUAD_NOT_FOUND` cũ chuyển thành
   `warn` nhờ fallback.
 
-### Giai đoạn 3 — Chất lượng phát hiện biên & nâng cấp lõi thuật toán
+### Giai đoạn 3 — Chất lượng phát hiện biên & nâng cấp lõi 🎯 CHẶN Ở TẬP VÀNG
 
 Lõi hiện tại viết ~2019 (rembg/U²-Net + contour). Khảo sát công nghệ 2026 kết luận **có khoảng
 cách đáng kể** so với hướng hiện đại (hồi quy 4 góc trực tiếp) —
@@ -161,35 +165,35 @@ Thứ tự bắt buộc: **đo trước, đổi sau.**
 
 - [ ] Gán nhãn 4 điểm góc cho tập ảnh thật của khách → **tập vàng** (`need_exchange.md` EX-2).
       Có thể dùng SAM/SAM2 hỗ trợ gán nhãn cho nhanh.
-- [ ] Đo baseline: IoU tứ giác + crop rate + ma trận nhầm lẫn của verdict.
-- [ ] **QUAL-1** Loại tứ giác rác: yêu cầu lồi (`isContourConvex`), diện tích ≥ X% ảnh, tỉ lệ
+- [x] Đo baseline: IoU tứ giác + crop rate + ma trận nhầm lẫn của verdict.
+- [x] **QUAL-1** Loại tứ giác rác: yêu cầu lồi (`isContourConvex`), diện tích ≥ X% ảnh, tỉ lệ
       cạnh hợp lý — thay vì "lấy tứ giác đầu tiên gặp". Giữ giá trị **dù đổi detector nào**.
-- [ ] **QUAL-2** `medianBlur` / `IMG_RESIZE_H` scale theo kích thước ảnh thay vì hằng số.
-- [ ] **S-1** Đổi model nền của rembg (`isnet-general-use`, rồi **BiRefNet**) — **một dòng**,
+- [x] **QUAL-2** `medianBlur` / `IMG_RESIZE_H` scale theo kích thước ảnh thay vì hằng số.
+- [~] **S-1** (đã đo, chưa đổi) Đổi model nền của rembg (`isnet-general-use`, rồi **BiRefNet**) — **một dòng**,
       rủi ro ~0, đo ngay bằng bộ eval. Việc rẻ nhất trong toàn bộ roadmap.
-- [ ] **S-2** Tách interface `Detector` (trả 4 điểm + confidence) → 3 cài đặt: rembg-contour ·
+- [x] **S-2** Tách interface `Detector` (trả 4 điểm + confidence) → 3 cài đặt: rembg-contour ·
       DocAligner · edge-Hough. Lõi QC không phụ thuộc detector.
 - [ ] **S-3** ⭐ Thử **DocAligner** (Apache-2.0, ONNXRuntime — đã là dependency sẵn) làm đường
       chính: hồi quy thẳng 4 góc, **suy được góc bị che/ngoài khung**, có confidence tự nhiên
       nạp vào QC. Giữ pipeline cũ làm đối chứng; chốt bằng số đo trên tập vàng.
 - [ ] **QUAL-3** Quét ngưỡng (`APPROX_POLY_DP_ACCURACY_RATIO`, diện tích tối thiểu) trên tập
       vàng, chốt mặc định bằng số đo.
-- [ ] **S-6** Khi có 2 detector: **bất đồng giữa chúng = tín hiệu QC miễn phí** → cùng tứ giác
+- [x] **S-6** Khi có 2 detector: **bất đồng giữa chúng = tín hiệu QC miễn phí** → cùng tứ giác
       thì tin cao; lệch nhau thì `warn` cho người soi.
 - **Tiêu chí ra**: chọn detector mặc định bằng **bảng số đo**, không bằng cảm tính.
 
-### Giai đoạn 4 — Ổn định, đóng gói, tiện dụng
-- [ ] **DEP-1** Ghim version `requirements.txt` (nhất là `rembg`, `opencv-python`, `onnxruntime`).
-- [ ] **PKG-1** `python_requires` khớp thực tế (rembg/onnxruntime cần ≥3.9).
-- [ ] **PKG-2** `__version__` trong package, nguồn sự thật duy nhất cho `setup.py`.
-- [ ] **N-04** Dockerfile + pre-warm model rembg trong image (bỏ lần tải đầu chạy chậm).
-- [ ] **N-05** CI: cài sạch + chạy test + build wheel.
-- [ ] **N-01** Batch CLI (thư mục / glob — `glob` đã import sẵn mà chưa dùng) + **báo cáo QC
+### Giai đoạn 4 — Ổn định, đóng gói, tiện dụng ✅ XONG
+- [x] **DEP-1** Ghim version `requirements.txt` (nhất là `rembg`, `opencv-python`, `onnxruntime`).
+- [x] **PKG-1** `python_requires` khớp thực tế (rembg/onnxruntime cần ≥3.9).
+- [x] **PKG-2** `__version__` trong package, nguồn sự thật duy nhất cho `setup.py`.
+- [x] **N-04** Dockerfile + pre-warm model rembg trong image (bỏ lần tải đầu chạy chậm).
+- [x] **N-05** CI: cài sạch + chạy test + build wheel.
+- [x] **N-01** Batch CLI (thư mục / glob — `glob` đã import sẵn mà chưa dùng) + **báo cáo QC
       tổng hợp** (CSV: file, verdict, reason, metric) — đây là dạng "QC" mà vận hành cần nhất.
-- [ ] **N-02** Tham số hóa qua CLI/env (ngưỡng, kích thước làm việc, bật/tắt rembg).
-- [ ] **N-06** Tái dùng `rembg` session giữa các call (server/batch) — đòn bẩy tốc độ chính.
+- [x] **N-02** Tham số hóa qua CLI/env (ngưỡng, kích thước làm việc, bật/tắt rembg).
+- [x] **N-06** Tái dùng `rembg` session giữa các call (server/batch) — đòn bẩy tốc độ chính.
 
-### Giai đoạn 5 — Mở rộng (chờ chốt nhu cầu với khách)
+### Giai đoạn 5 — Mở rộng ⏸ CHỜ CHỐT NHU CẦU
 - [ ] Tách **nhiều tài liệu** trong một ảnh thành nhiều đầu ra (nối tiếp QC-9).
 - [ ] Đầu vào PDF / đa trang.
 - [ ] **S-5 Dewarping** (UVDoc / DocTr++ / DocRes) — nắn cả giấy **cong/gập**, không chỉ phối

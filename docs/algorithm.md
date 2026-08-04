@@ -4,8 +4,8 @@
 > kèm **hợp đồng đầu ra QC** đang hướng tới. Nguồn sự thật là code; tài liệu này giải thích
 > *vì sao* và *cách* các bước ghép lại. Tham chiếu ghi dạng `path:line` để tra ngược.
 >
-> ⚠️ §0–§5 mô tả **code hiện tại**. §2, §6, §7 đánh dấu 🔜 là **thiết kế đích** (chưa cài) —
-> xem lộ trình ở [overall_roadmap.md §6](overall_roadmap.md#6-roadmap-chi-tiết).
+> ✅ Cập nhật 2026-08-05: §2, §6, §7 **đã được cài đặt**. §1 mô tả thuật toán cũ và được giữ
+> lại để đối chiếu — §1b bên dưới mô tả luồng đang chạy.
 
 ---
 
@@ -40,7 +40,7 @@ Ba mặt tiền gọi cùng hàm này:
 
 ---
 
-## 1. `scan()` — thuật toán hiện tại, từng bước
+## 1. `scan()` — thuật toán **ban đầu** (giữ để đối chiếu)
 
 ```
 scan(data: bytes) -> bytes | None
@@ -91,7 +91,39 @@ scan(data: bytes) -> bytes | None
 
 ---
 
-## 2. 🔜 Hợp đồng đầu ra QC
+## 1b. `scan_qc()` — luồng đang chạy
+
+```
+scan_qc(data, config) -> ScanResult
+ 1. data rỗng                         → ScanError(FILE_EMPTY)
+ 2. orig = imdecode(data)             → None thì ScanError(DECODE_FAILED)
+ 3. rgba = rembg(data, session dùng lại)          # gọi ĐÚNG MỘT LẦN, mọi mặt tiền
+ 4. work  = hạ mẫu về work_height (KHÔNG phóng to ảnh nhỏ hơn)
+    mask  = threshold(alpha) → medianBlur(ksize ≈ 3% chiều cao)
+    metrics.alpha_coverage = tỉ lệ pixel alpha > 0
+ 5. candidates = detector.all_candidates(work, mask)   # contour ≥ 5% diện tích
+    quad       = best_candidate(...)                   # LỌC rồi mới chọn, không lấy cái đầu
+ 6. nếu quad None HOẶC alpha_coverage ngoài [0.05, 0.95]:
+        thử đường lui edge-hough → qua lọc thì dùng + RECOVERED_BY_EDGE_FALLBACK (warn)
+ 7. vẫn không có quad → trả ảnh GỐC + QUAD_NOT_FOUND/SUBJECT_NOT_FOUND + FALLBACK_ORIGINAL
+    (fail).  Khác bản cũ ở đúng một chỗ: **có nhãn**.
+ 8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE
+    ≥2 ứng viên → MULTIPLE_DOCUMENTS
+    cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
+ 9. warp trên ảnh GỐC, PNG
+10. metric chất lượng → LOW_RESOLUTION · BLURRY · GLARE · TOO_DARK
+11. verdict suy từ reasons; pass ⟺ reasons rỗng
+```
+
+`scan()` cũ vẫn còn, là lớp bọc mỏng trả `result.image` — không phá người dùng hiện tại,
+nhưng cũng **không mang phán quyết**, nên mã mới nên gọi `scan_qc()`.
+
+Mọi ngưỡng nằm trong [`config.py`](../src/qc_scanner/config.py), override được bằng biến môi
+trường `QC_SCANNER_*`.
+
+---
+
+## 2. ✅ Hợp đồng đầu ra QC (đã cài)
 
 Đây là thay đổi cốt lõi của dự án: **đầu ra không còn là ảnh, mà là một phán quyết kèm ảnh.**
 
@@ -149,12 +181,11 @@ output = stdout nếu là pipe, ngược lại đối số file
 output.write( scan( rembg.remove( input.read() ) ) )
 ```
 
-🔴 **Lỗi**: `rembg.remove()` gọi ở đây, rồi `scan()` gọi `rembg()` **lần nữa** ở
-[doc.py:17](../src/qc_scanner/doc.py#L17). Ảnh đi qua model hai lần: chậm gấp đôi, và lần hai chạy
-trên PNG đã trong suốt → mask alpha có thể sai. → [BUG-1](features_issues.md#bug-double-rembg)
+✅ **Đã sửa**: `rembg` chỉ còn được gọi bên trong `scan_qc()`. CLI nay trả **exit code theo
+verdict** (0 pass · 1 warn · 2 fail · 3 đầu vào hỏng) và in báo cáo JSON (reason + hint) ra
+stderr, hoặc ra file với `--report`. Ảnh vẫn ra stdout như cũ nên pipe hiện có không vỡ.
 
-🔜 Đích: CLI trả **exit code theo verdict** (0 = pass, 1 = warn, 2 = fail) và in báo cáo JSON
-(reason + hint) ra stderr, hoặc ra file với `--report`. Ảnh vẫn ra stdout như cũ.
+Thêm `qc-scanner-batch` cho cả thư mục, xuất CSV báo cáo QC.
 
 ---
 
@@ -168,14 +199,14 @@ send_file(BytesIO(scan(file_content)), mimetype="image/png")
 lỗi → log + {"error": "oops, something went wrong!"}, 500        🔴 phản-QC
 ```
 
-Ba vấn đề, xem [features_issues.md §B](features_issues.md#b-issues--bảo-mật--đúng-đắn):
-`GET ?url=` fetch URL tùy ý ([SEC-1](features_issues.md#sec-ssrf)); so sánh `b"" == ""` luôn
-sai nên file rỗng lọt qua ([BUG-3](features_issues.md#bug-empty-check)); và 500 "oops" là
-đúng thứ QC phải xóa bỏ.
+✅ **Đã sửa cả ba**. Nhánh `GET /?url=` bị bỏ hẳn (405). Chốt chặn rỗng chuyển vào
+`scan_qc()` nên cả ba mặt tiền cùng được bảo vệ. `?format=json` trả `ScanResult` (ảnh base64
++ verdict + reasons + metrics); mặc định trả PNG kèm header `X-QC-Scanner-Verdict` /
+`X-QC-Scanner-Reasons`. HTTP status theo verdict: 200 pass/warn, **422** fail, 400 đầu vào hỏng.
 
-🔜 Đích: `?format=json` trả `ScanResult` (ảnh base64 + verdict + reasons), mặc định vẫn trả
-PNG nhưng kèm header `X-QC-Scanner-Verdict` / `X-QC-Scanner-Reasons`. HTTP status theo verdict:
-200 pass/warn, **422** fail (kèm body JSON reason + hint), 400 đầu vào hỏng.
+Lưu ý về hành vi cũ: mô tả "500 oops" **chưa đúng**. Đo thực tế cho thấy server cũ trả
+**200 OK + PNG rỗng 0 byte** với ảnh hỏng, vì `BytesIO(None)` hợp lệ nên `send_file` không
+ném gì để rơi vào `except`. Đó là hỏng âm thầm — tệ hơn 500.
 
 ---
 
@@ -188,12 +219,22 @@ PNG nhưng kèm header `X-QC-Scanner-Verdict` / `X-QC-Scanner-Reasons`. HTTP sta
 | `warpPerspective` trên ảnh gốc | ~10–50ms | tỉ lệ với megapixel |
 | `imencode(".png")` | ~10–100ms | PNG nén chậm hơn JPEG — chấp nhận (xem nguyên tắc §3.3 roadmap) |
 
-Hệ quả: **mọi tối ưu tốc độ đều nằm ở rembg** — tái dùng session, GPU provider. Chưa đo thực
-tế lần nào; cần benchmark trước khi kết luận (xem [test_eval.md §4](test_eval.md)).
+Hệ quả: **mọi tối ưu tốc độ đều nằm ở rembg** — tái dùng session, GPU provider.
+
+✅ **Đã đo** (9 ảnh thật, Apple Silicon, model đã cache):
+
+| Cấu hình | Thời gian/ảnh (median) |
+|---|---|
+| Bản đầu (tạo session mới mỗi lần gọi) | ~3.0s |
+| **Tái dùng session (N-06, hiện tại)** | **0.395s** |
+| Tái dùng session + model `isnet-general-use` | 1.198s |
+
+Giả thuyết "rembg chiếm ~95%" **được xác nhận**: bỏ được phần nạp lại model là đủ để nhanh
+hơn ~7 lần, trong khi phần OpenCV không đổi. Đừng tối ưu OpenCV.
 
 ---
 
-## 6. 🔜 Fallback dò cạnh (khi rembg thất bại)
+## 6. ✅ Fallback dò cạnh (đã cài)
 
 Ca thường gặp nhất mà rembg chịu thua: **giấy trắng trên nền trắng/sáng** → `alpha_coverage`
 gần 0 hoặc gần 1 (nuốt cả ảnh). Khi đó thay vì `fail` ngay, chạy đường lui:
@@ -216,7 +257,7 @@ không bao giờ giấu việc đã phải dùng đường lui.
 
 ---
 
-## 7. 🔜 Danh mục mã lý do (reason codes)
+## 7. ✅ Danh mục mã lý do (đã cài)
 
 Nguyên tắc bất biến: **mã nào cũng phải có `hint` và `audience`**. Mã không hành động được
 là mã vô dụng.
@@ -227,7 +268,7 @@ là mã vô dụng.
 |---|---|---|---|---|
 | `DECODE_FAILED` | fail | `imdecode` trả None | File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG. | system |
 | `FILE_EMPTY` | fail | `len(data) == 0` | Không nhận được dữ liệu. Kiểm tra lại bước tải/upload. | system |
-| `LOW_RESOLUTION` | fail | `est_dpi < 150` | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
+| `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
 
 ### Tách chủ thể
 
@@ -253,9 +294,24 @@ là mã vô dụng.
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `BLURRY` | fail | `blur_score < ngưỡng` | Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại. | capturer |
+| `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại. | capturer |
 | `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt lóa/phản quang che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy tránh phản chiếu. | capturer |
 | `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp nơi sáng hơn hoặc bật đèn. | capturer |
+
+### Hai ngưỡng đã chốt bằng số đo — và vì sao khác thiết kế ban đầu
+
+**`LOW_RESOLUTION`: bỏ `est_dpi ≥ 150`, dùng cạnh dài ≥ 600px.** DPI chỉ tính được khi biết
+khổ giấy thật, mà điều đó chưa xác nhận được với khách (EX-4). Đo trên 17 ảnh (8 mẫu + 9 ảnh
+thật), ngưỡng DPI-theo-A4 loại nhầm **15/17** — toàn giấy tờ khổ nhỏ hoàn toàn đọc được. Số
+pixel cạnh dài không phụ thuộc khổ giấy nên dùng làm chốt chặn được ngay; `est_dpi` vẫn được
+báo cáo trong `metrics` nhưng **không dùng để phán quyết** cho tới khi chốt được khổ giấy.
+
+**`BLURRY`: 25, không phải 100.** Ngưỡng 100 loại nhầm doc-1 (`blur_score` 42.7) — một ảnh đã
+được duyệt mắt. Đo bản sắc nét 42.7–358 so với bản làm mờ nhân tạo (GaussianBlur k≥9) 2.7–9.4:
+hai cụm tách bạch, ngưỡng 25 nằm gọn ở giữa.
+
+Các ngưỡng còn lại (0.20 diện tích, 1.8 skew, 0.05/0.95 alpha, 0.02 glare, 60 độ sáng) **vẫn
+là ước đoán** — cần tập vàng để chốt (QUAL-3, EX-2).
 
 > Thêm mã mới: đặt mã **ổn định, viết HOA, không đổi về sau** (mã đi vào log/CSV của khách);
 > ghi đủ cột trong bảng trên; bổ sung ca test trong [test_eval.md §3](test_eval.md).
@@ -331,8 +387,8 @@ làm **trọng tài offline** để soi ca bất đồng khi eval.
 
 | # | Việc | Công | Kỳ vọng | Khi nào |
 |---|---|---|---|---|
-| **S-1** | Đổi model rembg (`isnet-general-use`, rồi BiRefNet), đo bằng bộ eval §5 | **1 dòng** | Cải thiện biên ngay, rủi ro ~0 | Ngay khi có bộ đo (GĐ 3) |
-| **S-2** | Tách interface `Detector` → 3 cài đặt (rembg-contour · DocAligner · edge-Hough) | vài giờ | Mở đường so sánh khách quan, không khoá vào một hướng | GĐ 3 |
+| **S-1** | Đổi model rembg | 🟡 **đã đo** | isnet chậm gấp 3, đổi 2 verdict — chưa đủ căn cứ đổi mặc định. Chờ EX-2 | — |
+| **S-2** | Tách interface `Detector` | 🟢 **xong** | `rembg-contour` + `edge-hough`; chỗ cắm DocAligner đã sẵn | — |
 | **S-3** | **Thêm DocAligner làm đường chính**, giữ pipeline cũ làm đối chứng | 1–2 ngày | **Bước nhảy chất lượng lớn nhất** + có confidence cho QC | GĐ 3, sau khi có tập vàng |
 | **S-4** | Bộ lọc hình học + reason code ([QUAL-1](features_issues.md#qual-quad-filter)) | — | Giữ nguyên giá trị **dù chọn detector nào** | GĐ 1–3 |
 | **S-5** | Dewarping (UVDoc) | 1 tuần+ | Chỉ có lợi nếu ảnh khách cong | Chờ EX-5 |

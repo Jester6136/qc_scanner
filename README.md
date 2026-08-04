@@ -31,95 +31,121 @@ better extraction downstream.
 ### How it works
 
 ```
-photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  findContours + approxPolyDP  ──►  4 corners
-                                                                                    │
-                                        PNG  ◄── four-point perspective transform ◄──┘
+photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  lọc + chọn tứ giác  ──►  4 corners
+              │                    │                                        │
+              │  rembg thua        │  metric hình học + chất lượng          │
+              ▼                    ▼                                        ▼
+        edge-Hough fallback   reasons[] + verdict          four-point transform → PNG
 ```
 
-One core function, three front-ends (CLI, HTTP server, Python library) — all calling the same
-`scan()`. No database, no queue, no configuration. Full walkthrough with rationale:
-[docs/algorithm.md](docs/algorithm.md).
+Một hàm lõi `scan_qc()`, ba mặt tiền (CLI, HTTP server, Python library) — tất cả gọi cùng nó.
+Không database, không hàng đợi. Chi tiết: [docs/algorithm.md](docs/algorithm.md).
 
-Output is **always PNG** — deliberately. The result feeds OCR/VLM downstream, and lossy JPEG
-artefacts around small glyphs cost accuracy.
+Đầu ra **luôn là PNG** — cố ý. Ảnh này đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ
+nhỏ làm giảm độ chính xác bóc dữ liệu.
+
+### Mỗi lần xử lý trả về một phán quyết
+
+```python
+from qc_scanner import scan_qc
+
+result = scan_qc(open("photo.jpg", "rb").read())
+result.verdict          # "pass" | "warn" | "fail"
+result.codes            # ["CLIPPED_EDGE"]
+result.reasons[0].hint  # "Một phần tài liệu nằm ngoài khung hình. Lùi máy ra..."
+result.metrics.skew_ratio
+result.image            # PNG bytes
+```
+
+Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mã lý do nào cũng kèm `hint` (làm gì tiếp
+theo) và `audience` (ai phải làm: người chụp / vận hành / hệ thống gọi).
 
 ### Installation
 
-Not published to PyPI yet — install from source:
+Chưa publish lên PyPI — cài từ nguồn:
 
 ```bash
 pip install -r requirements.txt
 pip install .
 ```
 
-> ⚠️ The **first run downloads the rembg model** (tens of MB, into `~/.u2net/`). Machines without
-> internet access will fail there, not in the code. Pre-warm before benchmarking or shipping.
+> ⚠️ **Lần chạy đầu tải model rembg** (~176MB, về `~/.u2net/`). Máy không có mạng sẽ fail ở
+> đây, không phải trong code. Dùng [Dockerfile](Dockerfile) để có sẵn model trong image.
 
 ### Usage as a CLI
 
-Scan from a remote image
 ```bash
-curl -s http://input.png | qc-scanner > output.png
+qc-scanner photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
+cat photo.jpg | qc-scanner > out.png  # pipe vẫn chạy như cũ
+qc-scanner photo.jpg out.png --report qc.json
 ```
 
-Scan from a local file
+Báo cáo QC ra stderr (hoặc `--report`):
+
+```json
+{
+  "verdict": "warn",
+  "reasons": [{"code": "CLIPPED_EDGE", "severity": "warn",
+               "hint": "Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép.",
+               "audience": "capturer"}],
+  "metrics": {"quad_area_ratio": 0.79, "skew_ratio": 1.0, "touches_border": 3, "...": "..."}
+}
+```
+
+### Usage in batch (thứ vận hành cần nhất)
+
 ```bash
-qc-scanner path/to/input.png path/to/output.png
+qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
 ```
 
-### Usage as a library
-
-In `app.py`
-
-```python
-import sys
-from qc_scanner.doc import scan
-
-sys.stdout.buffer.write(scan(sys.stdin.buffer.read()))
-```
-
-Then run
-```bash
-cat input.png | python app.py > out.png
-```
+CSV có một dòng mỗi ảnh: file, verdict, reasons, và toàn bộ metric — đủ để lọc ra đúng những
+ảnh cần soi lại.
 
 ### Usage as an HTTP server
 
 ```bash
-qc-scanner-server -a 0.0.0.0 -p 5000
-curl -F "file=@input.jpg" http://127.0.0.1:5000/ -o out.png
+qc-scanner-server -a 127.0.0.1 -p 5000
+curl -F "file=@photo.jpg" http://127.0.0.1:5000/ -o out.png -D-
+# X-QC-Scanner-Verdict: warn
+# X-QC-Scanner-Reasons: CLIPPED_EDGE
+
+curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"   # ScanResult đầy đủ
 ```
 
-> ⚠️ The server has **no authentication**, and its `GET /?url=` endpoint fetches arbitrary URLs
-> (SSRF — see [SEC-1](docs/features_issues.md#sec-ssrf)). Do **not** expose it publicly as-is.
+HTTP status theo verdict: 200 pass/warn · **422** fail · 400 đầu vào hỏng.
+
+> ⚠️ Server **không có xác thực**. Mặc định bind `127.0.0.1`; đặt sau reverse proxy có xác
+> thực nếu cần truy cập từ máy khác.
+
+### Cấu hình
+
+Mọi ngưỡng nằm trong [`config.py`](src/qc_scanner/config.py), override được bằng env:
+
+```bash
+QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 qc-scanner photo.jpg out.png
+qc-scanner photo.jpg out.png --detector edge-hough --cross-check
+```
 
 ---
 
 ## Status & direction
 
-The core is small (~164 lines) and works, but it was written years ago and has known gaps. Read
-this before relying on it:
-
 | | |
 |---|---|
-| ✅ Works | Perspective correction on photos with a reasonably contrasting background |
-| ⚠️ Silent failures | If no quadrilateral is found it returns the **original image** and tells you nothing |
-| ⚠️ Errors swallowed | Any exception becomes `None` + one stderr line — CLI then crashes, server returns `500 "oops"` |
-| 🔴 CLI bug | `rembg` runs **twice** on the CLI path — twice as slow, and results differ from the library path |
-| 🔴 Not measured | No tests, no CI, no labelled ground truth. Detection accuracy is currently **unknown** |
+| ✅ Nói được vì sao | 17 mã lý do, mã nào cũng kèm `hint` + `audience` |
+| ✅ Không im lặng | Không tìm được biên → vẫn trả ảnh gốc, nhưng kèm `FALLBACK_ORIGINAL` (fail) |
+| ✅ Tự khắc phục | rembg thua → đường lui dò cạnh, kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
+| ✅ Có bộ đo | 122 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| ⚠️ Ngưỡng chưa chốt | Hai ngưỡng đã chốt bằng số đo; phần còn lại là **ước đoán** cho tới khi có tập vàng của khách |
+| ⚠️ Chưa đo được độ chính xác | Crop rate / false pass / false fail cần ảnh **có nhãn** — công cụ đã sẵn, thiếu dữ liệu |
 
-**Where this is going: qc_scanner becomes a QC gate, not just a crop function.**
+Đã đo trên 8 ảnh mẫu + 9 ảnh thật: 11 pass · 5 warn · 1 fail, **~0.4s/ảnh** (trước khi tái
+dùng session rembg là ~3.0s).
 
-Every call should return a *verdict* — pass / warn / fail — and when it cannot crop, say **why**
-(a stable reason code such as `QUAD_NOT_FOUND`, `SUBJECT_NOT_FOUND`, `BLURRY`) and **what to do
-about it** (an actionable hint aimed at the right person: whoever took the photo, the operator,
-or the calling system). Better still: recover automatically where possible — then report that it
-had to. At scale, a wrong crop that stays silent is worse than an honest failure: it flows into
-OCR and nobody notices until acceptance testing.
-
-See [docs/overall_roadmap.md](docs/overall_roadmap.md) for the plan, and
-[docs/algorithm.md §8](docs/algorithm.md) for a 2026 survey of what modern approaches
-(direct 4-corner regression, newer segmentation backbones, neural dewarping) would buy us.
+Việc còn lại đều chặn ở cùng một chỗ — **tập ảnh có nhãn của khách**
+([need_exchange.md EX-2](docs/need_exchange.md)): quét ngưỡng (QUAL-3), đổi model nền (S-1,
+đã đo nhưng chưa đủ căn cứ đổi), thử hồi quy 4 góc trực tiếp (S-3 DocAligner — chỗ cắm đã sẵn
+qua interface `Detector`).
 
 ## Documentation · Tài liệu
 
@@ -136,20 +162,22 @@ Tài liệu dự án viết bằng tiếng Việt, đặt trong [docs/](docs/):
 ## Development
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+conda create -n qc_scanner python=3.12 && conda activate qc_scanner
+pip install -r requirements-dev.txt
 pip install -e .
 ```
 
-Kiểm nhanh sau khi sửa (chi tiết: [docs/test_eval.md](docs/test_eval.md)):
-
 ```bash
-# lib / CLI / pipe / server phải cho CÙNG kết quả trên cùng ảnh
-qc-scanner examples/doc-1.jpg /tmp/out.png && open /tmp/out.png
+pytest                    # 122 bài, ~25s sau khi model đã cache
+ruff check src tests
 ```
 
-Trước khi gửi thay đổi: chạy §1 và §2 của `test_eval.md`; thay đổi thuật toán phải kèm **số đo
-trước/sau**; thêm reason code phải kèm `hint` + `audience`.
+Trước khi gửi thay đổi:
+- thay đổi thuật toán phải kèm **số đo trước/sau** (`python -m qc_scanner.eval ... --baseline`);
+- thêm reason code phải kèm `hint` + `audience` — `test_qc_contract.py` sẽ chặn nếu thiếu;
+- nâng dependency thì chạy bộ regression và ghi version cũ/mới trong commit.
+
+Chi tiết: [docs/test_eval.md](docs/test_eval.md).
 
 ## License
 

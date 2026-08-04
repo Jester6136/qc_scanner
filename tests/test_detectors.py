@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 
 import synthetic as S
+from qc_scanner import geometry as geo
 from qc_scanner.config import Config
 from qc_scanner.detect import DETECTORS, QuadCandidate, best_candidate, get_detector
 from qc_scanner.doc import scan_qc
-from qc_scanner import geometry as geo
 
 
 def test_unknown_detector_fails_loudly():
