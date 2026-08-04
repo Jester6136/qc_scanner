@@ -2,7 +2,8 @@
 
 > Thay cho "project-insight". Đây là **điểm vào** cho người mới: dự án là gì, đang ở đâu,
 > đi về đâu. Chi tiết kỹ thuật ở `algorithm.md`; việc cần làm ở `features_issues.md`;
-> cách kiểm ở `test_eval.md`; việc cần hỏi khách ở `need_exchange.md`.
+> cách kiểm ở `test_eval.md`; việc cần hỏi khách ở `need_exchange.md`;
+> hợp đồng HTTP bàn giao cho khách ở `api.md`.
 
 ---
 
@@ -83,9 +84,9 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
 
 - Luồng lõi chạy được; **Giai đoạn 0, 1, 2, 4 đã xong**, Giai đoạn 3 làm được phần không cần
   nhãn (QUAL-1/2, S-2, S-6, bộ eval).
-- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 19 mã
+- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 20 mã
   lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
-- **199 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
+- **239 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
   "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
 - **Đã đo** trên 8 ảnh mẫu + 9 ảnh thật (`tmp/`): 11 pass · 5 warn · 1 fail. Tốc độ
   **~0.4s/ảnh** sau khi tái dùng session (trước ~3.0s).
@@ -239,9 +240,9 @@ N-11 bị bỏ theo yêu cầu. Chỉ còn OPS-3, và nó đợi máy server.**
       + thêm build image vào CI. **Máy phát triển hiện tại không build Docker** (chốt
       2026-08-05) nên việc này dời xuống cuối, làm khi lên máy triển khai.
       Hoãn **không** làm rủi ro nhỏ đi: [EX-13](need_exchange.md) chốt bàn giao là **Docker image
-      có sẵn HTTP service**, mà image đó vẫn chưa có bằng chứng dựng được. Phần **tài liệu API**
-      và **test hợp đồng API** tách ra làm sớm được vì chúng chạy thẳng trên server Python,
-      không cần image.
+      có sẵn HTTP service**, mà image đó vẫn chưa có bằng chứng dựng được.
+      ✅ **Phần không cần Docker đã xong**: [api.md](api.md) + 30 test hợp đồng. Còn lại đúng
+      phần phải có Docker mới làm được.
 
 **Tiêu chí ra**: ảnh crop sai không còn lọt xuống mức `warn`; mỗi mã lý do hành động được với
 **cả hai** nhóm người dùng; hợp đồng API có tài liệu và có test giữ. *(Phần `docker run` được

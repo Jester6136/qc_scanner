@@ -62,6 +62,15 @@ REASONS: dict[str, ReasonSpec] = {
             "system",
         ),
         _spec(
+            "MISSING_FILE",
+            "fail",
+            "Request không có trường form `file`.",
+            "Ảnh chưa được đính kèm. Kiểm tra lại bước chọn/tải ảnh.",
+            "Hệ gọi gửi request thiếu trường `file`. Đây là lỗi tích hợp, "
+            "báo bên phát triển — không phải lỗi của ảnh.",
+            "system",
+        ),
+        _spec(
             "DECODE_FAILED",
             "fail",
             "Không giải mã được dữ liệu thành ảnh.",

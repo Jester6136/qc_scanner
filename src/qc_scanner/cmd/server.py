@@ -20,8 +20,11 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 def index():
     # SEC-1: nhánh `GET /?url=` đã bị bỏ hẳn — nó fetch URL tùy ý (kể cả
     # file:// và metadata nội bộ). POST file đủ cho mọi ca dùng thật.
+    # Mọi lỗi 400 trả CÙNG một hình dạng: `{"error": {code, message, hint, …}}`.
+    # Trước đây ca thiếu `file` trả `{"error": "<chuỗi>"}` còn ca ảnh hỏng trả
+    # `{"error": {…}}` — cùng một khoá, hai kiểu dữ liệu, phía tích hợp phải đoán.
     if "file" not in request.files:
-        return jsonify({"error": "missing post form param 'file'"}), 400
+        return jsonify({"error": ScanError("MISSING_FILE").to_dict()}), 400
 
     file_content = request.files["file"].read()
     as_json = request.args.get("format") == "json"

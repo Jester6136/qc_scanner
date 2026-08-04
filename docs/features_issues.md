@@ -211,8 +211,19 @@ lớn nhất hiện tại của dự án.
 
 **Hoãn tới cuối (chốt 2026-08-05)**: máy phát triển hiện tại không build Docker được. Việc này
 làm khi lên máy server. Rủi ro **không giảm** vì hoãn — chỉ dời chỗ; đến lúc build mà hỏng thì
-vẫn hỏng, nên đừng coi phần còn lại "xong" là cả gói đã xong. Phần **không** cần Docker vẫn nên
-làm sớm: tài liệu API + test hợp đồng API chạy trực tiếp trên `wsgiref` server, không cần image.
+vẫn hỏng, nên đừng coi phần còn lại "xong" là cả gói đã xong.
+
+> **✅ Phần không cần Docker đã xong 2026-08-05**: [docs/api.md](api.md) — hợp đồng API đầy đủ
+> (endpoint, tham số, status theo verdict, schema JSON, bất biến, phần "chưa có và biết là chưa
+> có") — cùng **30 test hợp đồng** ở `tests/test_api_contract.py` chạy qua `app.test_client()`,
+> không cần image.
+>
+> Sửa luôn một bất nhất phát hiện khi viết tài liệu: cùng khoá `error` mà ca thiếu `file` trả
+> **chuỗi** còn ca ảnh hỏng trả **object**, phía tích hợp phải đoán kiểu dữ liệu. Nay mọi lỗi
+> 400 đều là object có `code`; thêm mã `MISSING_FILE`.
+>
+> **Còn lại đúng phần cần Docker**: `docker build`, `docker run`, kiểm ngắt mạng, thêm build
+> image vào CI.
 
 **Hướng**: (1) `docker build` thật, sửa tới khi qua; (2) `docker run` rồi gọi thử `POST /`,
 `?format=json`, ca hỏng, `/healthz`; (3) kiểm model đã nướng sẵn bằng cách chạy image **ngắt
