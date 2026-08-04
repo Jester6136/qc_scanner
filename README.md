@@ -142,10 +142,15 @@ qc-scanner photo.jpg out.png --detector edge-hough --cross-check
 Đã đo trên 8 ảnh mẫu + 9 ảnh thật: 11 pass · 5 warn · 1 fail, **~0.4s/ảnh** (trước khi tái
 dùng session rembg là ~3.0s).
 
-Việc còn lại đều chặn ở cùng một chỗ — **tập ảnh có nhãn của khách**
-([need_exchange.md EX-2](docs/need_exchange.md)): quét ngưỡng (QUAL-3), đổi model nền (S-1,
-đã đo nhưng chưa đủ căn cứ đổi), thử hồi quy 4 góc trực tiếp (S-3 DocAligner — chỗ cắm đã sẵn
-qua interface `Detector`).
+**Việc tiếp theo** (chi tiết: [overall_roadmap.md §6 Giai đoạn 6](docs/overall_roadmap.md)) —
+12/13 câu hỏi với khách đã chốt ngày 2026-08-05, sinh ra 5 việc **làm được ngay**: kiểm thật
+Docker image + tài liệu API (OPS-3), `NO_CROP_DETECTED` (QC-11), `CONTENT_CLIPPED` (QC-12),
+hint hai tầng cho người chụp / vận hành (QC-13), công cụ gán nhãn (N-11).
+
+Phần chốt ngưỡng và nâng cấp detector vẫn chặn ở **tập ảnh có nhãn**
+([EX-2](docs/need_exchange.md)). Và một thay đổi phạm vi đáng kể: khách xác nhận **hoá đơn
+thường cong/nhăn** — nắn phối cảnh phẳng không sửa được biến dạng đó, nên dewarping (S-5) vào
+phạm vi, đo trước rồi mới quyết.
 
 ## Documentation · Tài liệu
 

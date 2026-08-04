@@ -16,6 +16,9 @@
 **Đã đóng**: BUG-1/2/3/4 · SEC-1 · OPS-1/2 · QC-1/2/3/4/5/6/7/8/9/10 · QUAL-1/2 · S-2/S-6 ·
 DEP-1 · PKG-1/2/3/4 · N-01/02/04/05/06 — cùng **vấn đề gốc** ở đầu file.
 
+**Mở thêm sau đợt chốt yêu cầu khách 2026-08-05** (xem §A2): OPS-3 · QC-11 · QC-12 · QC-13 ·
+N-11, và S-5 nâng từ P3 lên P1. Năm mục đầu **làm được ngay, không chờ gì**.
+
 **Còn mở, và lý do**:
 
 | Mã | Vì sao chưa làm |
@@ -176,6 +179,107 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 `MULTIPLE_DOCUMENTS` (warn). Về sau có thể trả **nhiều** ảnh đầu ra (Giai đoạn 5).
 
 ---
+
+---
+
+## A2. ISSUES — Phát sinh từ đợt chốt yêu cầu khách 2026-08-05
+
+> Sáu mục dưới đây **không có trong sổ cũ**; chúng sinh ra từ các quyết định ở
+> [need_exchange.md](need_exchange.md). Thứ tự trong bảng là thứ tự đề nghị làm.
+
+| # | Mã | Công | Chặn ở đâu |
+|---|---|---|---|
+| 1 | [OPS-3](#ops-docker-unverified) | ~nửa ngày | không |
+| 2 | [QC-11](#qc-no-crop) | ~30 phút | không |
+| 3 | [QC-12](#qc-content-clipped) | ~nửa ngày | không |
+| 4 | [QC-13](#qc-two-tier-hint) | ~nửa ngày | không |
+| 5 | [N-11](#n-label-tool) | ~1 ngày | không (dựng trước, chờ ảnh) |
+| 6 | [S-5](#s-dewarp) đo độ cong | ~2h đo | cần ảnh EX-2 |
+
+---
+
+### 🔴 OPS-3 · P0 · 🔴 · Dockerfile CHƯA BUILD THỬ LẦN NÀO {#ops-docker-unverified}
+
+[Dockerfile](../Dockerfile) được viết ở Giai đoạn 4 nhưng **chưa chạy `docker build` lần nào**
+— không có bằng chứng nào là nó dựng được, càng không có bằng chứng service bên trong chạy được.
+
+Sau [EX-13](need_exchange.md), image này **chính là thứ bàn giao cho khách**, kèm HTTP service
+để hệ khác gọi vào. Một artefact chưa từng được kiểm mà lại là bề mặt bàn giao chính là rủi ro
+lớn nhất hiện tại của dự án.
+
+**Hướng**: (1) `docker build` thật, sửa tới khi qua; (2) `docker run` rồi gọi thử `POST /`,
+`?format=json`, ca hỏng, `/healthz`; (3) kiểm model đã nướng sẵn bằng cách chạy image **ngắt
+mạng**; (4) viết **tài liệu API** (endpoint, status code theo verdict, header, schema JSON);
+(5) thêm **test hợp đồng API** để thay đổi schema làm gãy test chứ không gãy tích hợp của khách;
+(6) thêm bước build image vào CI.
+
+---
+
+### 🧱 QC-11 · P0 · 🔴 · `NO_CROP_DETECTED` — bắt ca "không crop được gì mà vẫn báo warn" {#qc-no-crop}
+
+Ảnh `abc1b13d82af03f15abe.jpg`: rembg tách **cái bàn trắng** thay vì tờ hoá đơn trắng đặt trên
+nó. Tứ giác "tài liệu" thành ra gần trọn khung, một góc ở toạ độ **x = −105**, `approxPolyDP`
+không ra nổi 4 đỉnh nên phải ép `minAreaRect` (`confidence 0.6`). Ảnh ra gần như ảnh vào.
+
+Verdict hiện tại: **`warn`**. Theo [EX-8](need_exchange.md) thì `warn` vào hàng chờ người soi,
+nên ca này chưa lọt hẳn — nhưng nó bị xếp cùng nhóm với những cảnh báo lành tính, và bản chất
+nó là *hệ thống không làm được gì cả*, không phải *làm được nhưng có rủi ro*.
+
+**Dấu hiệu nhận biết đã đo**: `quad_area_ratio > 0.90` **và** `touches_border == 4`. Chạy trên
+17 ảnh (8 mẫu + 9 ảnh thật): đánh dấu đúng **2 ảnh**, cả hai đều thật sự không được crop
+(`abc1b13…` và `40b9f8b0…` — ảnh sau ra 1264×957 từ 1280×960). **0 báo động giả** trên 15 ảnh
+còn lại.
+
+**Hướng**: thêm mã `NO_CROP_DETECTED` severity `fail`, hint hai tầng (người chụp: "đặt tài liệu
+lên nền tương phản rồi chụp lại"; vận hành: "detector không tách được tài liệu, cần xử lý tay").
+Kèm ca test dựng bằng ảnh giấy trắng trên nền trắng.
+
+---
+
+### 🧱 QC-12 · P0 · 🔴 · `CONTENT_CLIPPED` — mất viền thì được, mất CHỮ thì không {#qc-content-clipped}
+
+[EX-1](need_exchange.md) chốt tiêu chí "đạt" nằm ở **nội dung**, không ở hình học: mất viền
+trắng chấp nhận được, mất chữ thì không.
+
+`CLIPPED_EDGE` hiện chỉ đếm số góc chạm mép ảnh — nó **không biết** chỗ bị cắt có chữ hay chỉ
+có viền trắng. Vì thế nó vừa báo thừa (ảnh chỉ mất viền vẫn bị `warn`, đúng 5/17 ảnh đã thử),
+vừa báo thiếu (ảnh mất hẳn một dòng chữ vẫn chỉ `warn`, không `fail`).
+
+**Hướng**: sau khi nắn, dò pixel mực (nhị phân hoá thích nghi) trong dải sát bốn biên; có mực
+chạm biên → `CONTENT_CLIPPED` severity `fail`. Bề rộng dải và ngưỡng mật độ mực phải chốt bằng
+số đo trên tập vàng. `CLIPPED_EDGE` giữ nguyên mức `warn` cho ca chỉ mất viền.
+
+⚠️ Với hoá đơn thì mã này quan trọng nhất: mất dòng tổng tiền là hỏng cả bản ghi.
+
+---
+
+### 🧱 QC-13 · P1 · 🔴 · Hint hai tầng: người chụp / vận hành {#qc-two-tier-hint}
+
+[EX-3](need_exchange.md) chốt **cả hai luồng**: batch cho kho ảnh cũ (không ai chụp lại được)
+và realtime cho ảnh chụp mới (chụp lại được ngay).
+
+Hiện mỗi `Reason` chỉ có **một** `hint` và **một** `audience`. Với ảnh kho, hint kiểu "đặt tài
+liệu lên nền tối rồi chụp lại" là **vô dụng** — không ai chụp lại được. Đúng thứ
+[nguyên tắc §3.4 roadmap](overall_roadmap.md) cấm: thông điệp không hành động được.
+
+**Hướng**: mỗi mã có `hints: {capturer: ..., operator: ...}`; luồng gọi khai báo bối cảnh
+(realtime hay batch) và chỉ nhận hint hợp với mình. Test hợp đồng phải đòi **cả hai** tầng có
+nội dung, không chỉ một.
+
+---
+
+### 📦 N-11 · P1 · 🔴 · Công cụ hỗ trợ gán nhãn tập vàng {#n-label-tool}
+
+[EX-2](need_exchange.md) chốt: **khách cấp ảnh, bên làm gán nhãn, khách duyệt**. Nghĩa là công
+việc gán nhãn ~100 ảnh rơi về phía mình, và cần công cụ chứ không gán tay từng toạ độ.
+
+**Hướng**: (1) nạp sẵn tứ giác qc_scanner đoán được làm điểm khởi đầu — phần lớn ảnh chỉ cần
+sửa nhẹ thay vì click từ đầu; (2) sửa 4 góc bằng chuột, xuất JSONL đúng format
+[test_eval.md §5](test_eval.md); (3) gắn verdict + reason kỳ vọng; (4) xuất bản đối chiếu để
+khách duyệt. Có thể dùng SAM/SAM2 hỗ trợ nếu gán tay quá chậm.
+
+Dựng **trước** khi ảnh về — để ảnh về là gán được ngay, không mất thêm một vòng chờ.
+
 
 ## B. ISSUES — Bảo mật & đúng đắn {#b-issues--bảo-mật--đúng-đắn}
 
@@ -370,22 +474,35 @@ tận dụng thứ đã có. Chỉ làm sau khi S-2/S-3 xong.
 
 ---
 
-### 🔬 S-5 · P3 · ⚪ · Dewarping: nắn giấy CONG, không chỉ phối cảnh phẳng {#s-dewarp}
+### 🔬 S-5 · **P1** · 🔴 · Dewarping: nắn giấy CONG, không chỉ phối cảnh phẳng {#s-dewarp}
 
 `four_point_transform` chỉ sửa được biến dạng **phẳng**. Giấy cong, gập nếp, sách đóng gáy →
 sau khi nắn **vẫn méo**, dòng chữ vẫn cong → OCR vẫn sai. Họ phương pháp giải quyết: dự đoán
 **lưới biến dạng** thay vì 4 điểm — UVDoc, DocTr++, DocRes, D²Dewarp/DocMatcher (2025).
 
-**Chưa quyết**: đắt và phức tạp, và **có thể không giải quyết vấn đề nào của khách** nếu hồ sơ
-đều được ép phẳng. Chốt qua [need_exchange.md EX-5](need_exchange.md) trước, đo sau, làm sau cùng.
+**✅ Đã chốt qua [EX-5](need_exchange.md) — và câu trả lời là CÓ**: hoá đơn thường cong/nhăn.
+Mục này chuyển từ P3 "chưa quyết" lên **P1, trong phạm vi**.
+
+Hệ quả cần nói rõ: với nhóm ảnh hoá đơn cong, **dò biên chuẩn đến mấy cũng không đủ** — nắn
+xong dòng chữ vẫn cong, OCR vẫn sai. Không có mục nào khác trong sổ này thay thế được nó.
+
+**Nhưng đừng nhảy thẳng vào**: 1 tuần+, và chưa biết bao nhiêu phần trăm ảnh thật sự bị ảnh
+hưởng. **Bước tiếp theo là ĐO**, không phải làm: trên tập ảnh EX-2, đo độ cong (độ lệch của
+dòng chữ so với đường thẳng sau khi nắn) và đếm tỉ lệ ảnh vượt ngưỡng OCR chịu được. Có số rồi
+mới quyết đáng hay không đáng.
 
 ---
 
 ### 🎯 QUAL-3 · P2 · ⚪ · Chưa quét ngưỡng trên tập vàng {#qual-sweep}
 
-Mọi ngưỡng trong §7 algorithm (0.20 diện tích, 1.8 skew, 150 DPI, ngưỡng blur) hiện là **ước
+Mọi ngưỡng trong §7 algorithm (0.20 diện tích, 1.8 skew, ngưỡng glare/độ sáng) hiện là **ước
 đoán**. Phải chốt bằng số đo trên tập vàng thật của khách — xem
 [test_eval.md §5](test_eval.md) và `need_exchange.md` EX-2.
+
+**Mục tiêu đã đổi theo [EX-7](need_exchange.md)**: khách muốn **cân bằng** false pass và false
+fail, không phải ưu tiên chặn false pass. Nghĩa là quét ngưỡng phải tối ưu **tổng số lỗi**, chứ
+không phải siết một chiều rồi khoe. Giả định cũ (false pass ≤1% / false fail ≤10%) **không còn
+đúng** — cần sửa lại bảng chỉ tiêu trong test_eval.md §5 khi chốt ngưỡng thật.
 
 ---
 

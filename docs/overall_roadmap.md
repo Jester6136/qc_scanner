@@ -97,6 +97,9 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
   dữ liệu.
 - 9 ảnh thật trong `tmp/` là mẫu đầu tiên, **chưa có nhãn** nên chỉ dùng để so cấu hình với
   nhau, chưa dùng để chấm đúng/sai được.
+- **2026-08-05 đã chốt 12/13 câu hỏi với khách** → sinh ra Giai đoạn 6 (5 việc làm được ngay)
+  và Giai đoạn 7 (chờ tập vàng). Thay đổi phạm vi lớn nhất: **giấy hoá đơn có cong** nên
+  dewarping (S-5) vào phạm vi, và **bàn giao là Docker image kèm HTTP service**.
 
 ## 5. Bắc Nam của bài toán
 
@@ -193,14 +196,58 @@ Thứ tự bắt buộc: **đo trước, đổi sau.**
 - [x] **N-02** Tham số hóa qua CLI/env (ngưỡng, kích thước làm việc, bật/tắt rembg).
 - [x] **N-06** Tái dùng `rembg` session giữa các call (server/batch) — đòn bẩy tốc độ chính.
 
-### Giai đoạn 5 — Mở rộng ⏸ CHỜ CHỐT NHU CẦU
+### Giai đoạn 5 — Mở rộng ⏸ PHẦN LỚN ĐÃ CHUYỂN ĐI
+
+> Sau đợt chốt 2026-08-05: **S-5 dewarping đã có câu trả lời (CÓ) và chuyển sang GĐ 6/7**.
+> Phần còn lại vẫn chờ nhu cầu — riêng **PDF/đa trang chưa hỏi**, là câu duy nhất còn thiếu
+> ngoài EX-9.
 - [ ] Tách **nhiều tài liệu** trong một ảnh thành nhiều đầu ra (nối tiếp QC-9).
 - [ ] Đầu vào PDF / đa trang.
-- [ ] **S-5 Dewarping** (UVDoc / DocTr++ / DocRes) — nắn cả giấy **cong/gập**, không chỉ phối
-      cảnh phẳng. Chỉ làm nếu khảo sát ảnh khách thấy biến dạng cong đáng kể → chốt qua
-      [EX-5](need_exchange.md). Đắt và phức tạp: **không nhảy thẳng lên đây.**
+- [x] ~~**S-5 Dewarping** — chờ chốt EX-5~~ → **đã chốt: CÓ cong**. Chuyển sang GĐ 6 (đo) và
+      GĐ 7 (làm).
 - [ ] Hậu xử lý làm nét/khử bóng (adaptive threshold, shadow removal) cho đầu ra "giống bản scan".
 - [ ] onnxruntime-gpu tùy chọn.
+
+
+### Giai đoạn 6 — Việc phát sinh từ đợt chốt yêu cầu khách (2026-08-05) 🎯 LÀM TIẾP
+
+12/13 câu hỏi trong [need_exchange.md](need_exchange.md) đã có câu trả lời. Sáu việc dưới đây
+sinh ra từ đó; **năm việc đầu không chờ gì cả**, làm được ngay.
+
+- [ ] **OPS-3** `docker build` thật + chạy thử service + kiểm ngắt mạng + **tài liệu API** +
+      **test hợp đồng API** + thêm build image vào CI.
+      *Vì sao trước hết*: [EX-13](need_exchange.md) chốt bàn giao là **Docker image có sẵn HTTP
+      service**. Dockerfile hiện **chưa build thử lần nào** — thứ bàn giao chính lại là thứ
+      chưa có bằng chứng chạy được. Đây là rủi ro lớn nhất hiện tại.
+- [ ] **QC-11** `NO_CROP_DETECTED` (fail) — bắt ca detector trả nguyên khung hình.
+      Dấu hiệu đã đo: `quad_area_ratio > 0.90` và `touches_border == 4` → đúng 2/17 ảnh, 0 báo
+      động giả.
+- [ ] **QC-12** `CONTENT_CLIPPED` (fail) — dò pixel mực chạm mép cắt.
+      [EX-1](need_exchange.md): mất viền trắng thì được, mất **chữ** thì không. Quan trọng nhất
+      với hoá đơn — mất dòng tổng tiền là hỏng cả bản ghi.
+- [ ] **QC-13** Hint hai tầng (người chụp / vận hành).
+      [EX-3](need_exchange.md): có cả ảnh kho lẫn ảnh chụp mới. Hint "chụp lại trên nền tối"
+      vô dụng với ảnh kho — vi phạm chính nguyên tắc §3.4 bên dưới.
+- [ ] **N-11** Công cụ hỗ trợ gán nhãn tập vàng.
+      [EX-2](need_exchange.md): khách cấp ảnh, **bên mình gán nhãn**, khách duyệt. Dựng trước
+      để ảnh về là gán được ngay.
+- [ ] **S-5 (bước đo)** Đo độ cong dòng chữ sau khi nắn trên tập ảnh thật; đếm tỉ lệ ảnh vượt
+      ngưỡng OCR chịu được. **Chỉ đo, chưa làm dewarping.**
+      [EX-5](need_exchange.md) xác nhận hoá đơn có cong → dewarping vào phạm vi, nhưng 1 tuần+
+      nên phải có số trước khi cam kết.
+
+**Tiêu chí ra**: khách `docker run` lên là gọi được API theo đúng tài liệu; ảnh crop sai không
+còn lọt xuống mức `warn`; mỗi mã lý do hành động được với **cả hai** nhóm người dùng.
+
+### Giai đoạn 7 — Chỉ chạy được khi có tập vàng (EX-2)
+
+- [ ] **QUAL-3** Quét ngưỡng, tối ưu **tổng** false pass + false fail ([EX-7](need_exchange.md)
+      chốt cân bằng, không ưu tiên một chiều như giả định cũ).
+- [ ] **S-1** Chốt model nền bằng số (đã đo sơ bộ: isnet chậm gấp 3, đổi 2 verdict).
+- [ ] **S-3** Thử DocAligner làm đường chính. *Không còn bắt buộc vì tốc độ* —
+      [EX-10](need_exchange.md) chốt ngân sách <1s mà hiện đã đạt 0.4s — nhưng vẫn là ứng viên
+      cho chất lượng, nhất là ca giấy trắng nền sáng mà rembg thua.
+- [ ] **S-5 (bước làm)** Dewarping, nếu số đo ở Giai đoạn 6 cho thấy đáng.
 
 ---
 
@@ -216,6 +263,10 @@ Thứ tự bắt buộc: **đo trước, đổi sau.**
 | rembg tải model lần đầu (chậm/không mạng) | request đầu timeout, môi trường offline chết | Pre-warm trong Docker image (N-04) |
 | Thư mục local không có `.git` | mất thay đổi, không rollback được | `git init` ngay ở Giai đoạn 0 |
 | Sửa vendor `rembg` | lệch bản gốc, khó nâng cấp | Bọc ở `doc.py`, không sửa vendor |
+| **Docker image chưa từng build thử** mà lại là thứ bàn giao | khách nhận về không chạy được | OPS-3 — làm trước tiên ở Giai đoạn 6 |
+| **Giấy cong** (hoá đơn) — nắn phối cảnh không sửa được | cả một nhóm ảnh không bao giờ đạt, dù dò biên chuẩn | Đo tỉ lệ trước (GĐ 6), rồi mới quyết dewarping (S-5) |
+| rembg tách nhầm **vật khác** (bàn trắng thay vì giấy trắng) | crop sai mà chỉ báo `warn` | QC-11 đưa ca này lên `fail`; dài hạn là S-3 |
+| Hint viết cho người chụp, nhưng ảnh là ảnh kho | QC ra thông điệp không ai làm gì được | QC-13 hint hai tầng |
 
 ## 8. Tài liệu liên quan
 - [algorithm.md](algorithm.md) — thuật toán từng bước + hợp đồng QC + danh mục mã lý do.
