@@ -39,13 +39,23 @@ services:
       # lệ — nó là lỗi cấu hình đang giả trang thành thành công, và nó sống được nhiều
       # tháng vì healthcheck vẫn xanh. Đã dính đúng lần dựng đầu trên máy H100.
       QC_SCANNER_REQUIRE_GPU: "1"
-      # Nới hơn bản CPU: khi suy luận chạy trên GPU thì nút cổ chai chuyển sang phần
-      # CPU (giải mã ảnh, mã hoá PNG), nên chồng nhiều request lên nhau mới có lợi.
-      # Đo trên máy 64 nhân: `scan_qc` trực tiếp đạt 8.7 ảnh/s ở 16 luồng và VẪN CÒN
-      # đang tăng, trong khi đường HTTP với van đặt 4 chỉ ra 4.9 req/s. Nâng lên 16.
-      # Vẫn là ước đoán cho tới khi đo lại lúc GPU chạy thật:
-      #     docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
+      # HAI van cho HAI tài nguyên khác nhau — đừng gộp.
+      #
+      # Đo trên H100 thật: phần CPU chiếm 62% thời gian mỗi ảnh, GPU 38%. Muốn nhanh
+      # thì phải cho nhiều ảnh làm việc CPU song song → MAX_CONCURRENCY cao.
+      # Nhưng VRAM là tài nguyên DÙNG CHUNG: trên chính máy đó một service vLLM đã
+      # giữ 77.8/81.5 GB, chỉ chừa ~2.9GB. Thả 16 lần suy luận cùng lúc vào chỗ đó
+      # thì nhận CUBLAS_STATUS_ALLOC_FAILED → GPU_CONCURRENCY phải thấp.
+      #
+      # Gộp làm một van thì luôn phải hy sinh một bên: hoặc bỏ phí 64 nhân CPU, hoặc
+      # làm sập cả service vLLM bên cạnh.
       QC_SCANNER_MAX_CONCURRENCY: "16"
+      QC_SCANNER_GPU_CONCURRENCY: "2"
+      # Trần bộ nhớ GPU. Mặc định onnxruntime để arena tự lớn dần và có thể giành hết
+      # phần còn trống — trên GPU dùng chung, đó là cách làm chết service bên cạnh.
+      # 1536MB chọn theo ~2.9GB còn trống trên máy hiện tại; ĐO LẠI trên máy của bạn
+      # bằng `nvidia-smi` rồi chỉnh, đừng chép nguyên con số này.
+      QC_SCANNER_GPU_MEM_LIMIT_MB: "1536"
 
     deploy:
       resources:

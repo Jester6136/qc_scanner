@@ -76,3 +76,56 @@ def test_server_url_fetch_endpoint_is_gone(client):
     """SEC-1: `GET /?url=` đọc được file nội bộ — nhánh này phải biến mất hẳn."""
     resp = client.get("/?url=file:///etc/passwd")
     assert resp.status_code == 405
+
+
+def test_gpu_out_of_memory_is_not_reported_as_a_broken_image(monkeypatch):
+    """Lỗi model ≠ lỗi ảnh. Đây là bug thật, lộ ra trên máy H100.
+
+    GPU hết bộ nhớ (`CUBLAS_STATUS_ALLOC_FAILED`) từng ra `DECODE_FAILED` — "không
+    giải mã được dữ liệu thành ảnh" — trong khi ảnh hoàn toàn bình thường.
+    """
+    import qc_scanner.doc as doc
+    from conftest import PAIRS
+
+    def oom(*a, **kw):
+        raise RuntimeError("CUBLAS failure 3: CUBLAS_STATUS_ALLOC_FAILED")
+
+    monkeypatch.setattr(doc, "segment_mask", oom)
+    with pytest.raises(ScanError) as exc:
+        doc.scan_qc(PAIRS[0].input_bytes)
+    assert exc.value.code == "INFERENCE_FAILED"
+    # Hint phải nói rõ đừng loại ảnh — đó mới là chỗ ngăn thiệt hại thật.
+    assert "không phải lỗi ảnh" in exc.value.to_dict()["hint"].lower()
+
+
+def test_server_returns_503_for_resource_failures(client, monkeypatch):
+    """`400` bảo phía gọi "file hỏng, đừng thử lại" — sai hoàn toàn cho lỗi tài nguyên.
+
+    Hậu quả thật: ảnh tốt bị loại vĩnh viễn vì một sự cố nhất thời của máy chủ.
+    """
+    import qc_scanner.doc as doc
+    from conftest import PAIRS
+
+    def oom(*a, **kw):
+        raise RuntimeError("CUBLAS_STATUS_ALLOC_FAILED")
+
+    monkeypatch.setattr(doc, "segment_mask", oom)
+    resp = client.post("/", files={"file": ("a.jpg", PAIRS[0].input_bytes)})
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "INFERENCE_FAILED"
+    assert resp.headers["Retry-After"]  # nói luôn khi nào thử lại được
+
+
+def test_gpu_concurrency_is_separate_from_cpu_concurrency():
+    """Hai tài nguyên khác nhau, hai van khác nhau.
+
+    Đo trên H100: CPU chiếm 62% thời gian mỗi ảnh nên muốn nhanh phải cho nhiều ảnh
+    chạy song song. Nhưng VRAM là tài nguyên dùng chung — trên chính máy đó một
+    service vLLM giữ 77.8/81.5 GB. Gộp hai van làm một thì luôn phải hy sinh một bên.
+    """
+    from qc_scanner import rembg_session
+    from qc_scanner.cmd import server
+
+    assert rembg_session.GPU_CONCURRENCY >= 1
+    assert server.MAX_CONCURRENCY >= 1
+    assert hasattr(rembg_session, "_gpu_slots")

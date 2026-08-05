@@ -188,11 +188,22 @@ def _decode(data):
 
 
 def _segment(image, cfg):
-    """rembg → mask xám cùng cỡ ảnh vào. Gọi **đúng một lần** cho mọi mặt tiền."""
+    """rembg → mask xám cùng cỡ ảnh vào. Gọi **đúng một lần** cho mọi mặt tiền.
+
+    **Lỗi model KHÔNG phải lỗi ảnh.** Trước đây mọi exception ở đây đều thành
+    `DECODE_FAILED` — "không giải mã được dữ liệu thành ảnh". Đo trên máy H100 mới lộ:
+    GPU hết bộ nhớ (`CUBLAS_STATUS_ALLOC_FAILED`) cũng ra đúng thông báo đó, tức là
+    **nói dối** — ảnh hoàn toàn bình thường. Và qua HTTP nó thành `400`, nghĩa là bảo
+    phía gọi "file của bạn hỏng, đừng thử lại", trong khi việc đúng phải làm là **thử
+    lại**. Ảnh tốt bị loại vĩnh viễn vì một sự cố nhất thời của máy chủ.
+
+    Ảnh đã qua `_decode()` trước khi tới đây, nên tới bước này thì "không giải mã
+    được" vốn đã không còn là cách giải thích hợp lý cho bất cứ lỗi nào.
+    """
     try:
         return segment_mask(image, cfg.rembg_model, cfg.onnx_providers)
     except Exception as exc:
-        raise ScanError("DECODE_FAILED", str(exc)) from exc
+        raise ScanError("INFERENCE_FAILED", str(exc)) from exc
 
 
 def _to_work_size(img, cfg: Config):

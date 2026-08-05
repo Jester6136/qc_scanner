@@ -79,6 +79,15 @@ REASONS: dict[str, ReasonSpec] = {
             "system",
         ),
         _spec(
+            "INFERENCE_FAILED",
+            "fail",
+            "Model tách nền chạy lỗi (thiếu tài nguyên hoặc hỏng thiết bị).",
+            "Lỗi phía máy chủ, không phải do ảnh của bạn. Thử lại sau ít phút.",
+            "Lỗi tài nguyên phía máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. "
+            "Ảnh này vẫn dùng được — cho chạy lại, đừng loại nó.",
+            "system",
+        ),
+        _spec(
             "LOW_RESOLUTION",
             "fail",
             "Độ phân giải ước lượng thấp hơn ngưỡng OCR đọc được.",

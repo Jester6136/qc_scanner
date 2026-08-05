@@ -24,6 +24,8 @@ Phần nặng còn lại là `inner_session.run()` — bản thân model, ~90% t
 scan trên CPU. Đó là lý do `QC_SCANNER_ONNX_PROVIDERS` tồn tại.
 """
 
+import contextlib
+import os
 import threading
 
 import cv2
@@ -35,6 +37,30 @@ from rembg.bg import remove as _rembg_remove
 _lock = threading.Lock()
 _sessions = {}
 
+#: Tên provider được coi là chạy trên phần cứng tăng tốc.
+ACCELERATED = ("CUDA", "Tensorrt", "TensorRT", "ROCM", "MIGraphX")
+
+#: Bao nhiêu lần suy luận được lên GPU cùng lúc. **Tách riêng khỏi số ảnh xử lý đồng
+#: thời** — đó là cả điểm của biến này.
+#:
+#: Đo trên máy H100 thật: phần CPU chiếm 62% thời gian mỗi ảnh, phần GPU 38%. Nên
+#: muốn chạy nhanh thì phải cho nhiều ảnh làm việc CPU song song. Nhưng bộ nhớ GPU là
+#: tài nguyên **dùng chung và có hạn** — trên chính máy đó, một service vLLM đã chiếm
+#: sẵn 77.8/81.5 GB, chỉ chừa lại ~2.9GB. Thả 16 lần suy luận cùng lúc vào chỗ đó thì
+#: nhận `CUBLAS_STATUS_ALLOC_FAILED`.
+#:
+#: Hai giới hạn cho hai tài nguyên khác nhau: `MAX_CONCURRENCY` theo số nhân CPU,
+#: `GPU_CONCURRENCY` theo VRAM còn trống. Gộp làm một thì luôn phải hy sinh một bên.
+GPU_CONCURRENCY = max(1, int(os.environ.get("QC_SCANNER_GPU_CONCURRENCY", "2")))
+_gpu_slots = threading.BoundedSemaphore(GPU_CONCURRENCY)
+
+#: Trần bộ nhớ GPU cho onnxruntime, tính bằng MB. 0 = không đặt trần.
+#:
+#: Đáng đặt khi GPU dùng chung: mặc định onnxruntime để arena tự lớn dần và có thể
+#: giành hết phần còn trống, làm service bên cạnh chết theo. Đặt trần thì phần vượt
+#: rơi về CPU thay vì làm sập cả hai.
+GPU_MEM_LIMIT_MB = int(os.environ.get("QC_SCANNER_GPU_MEM_LIMIT_MB", "0"))
+
 
 def _parse_providers(providers):
     """`"CUDAExecutionProvider,CPUExecutionProvider"` → list; rỗng → để rembg tự chọn."""
@@ -45,15 +71,38 @@ def _parse_providers(providers):
     return [p.strip() for p in providers if p.strip()] or None
 
 
+def _with_options(names):
+    """Gắn `gpu_mem_limit` vào provider CUDA nếu có khai trần bộ nhớ."""
+    if not names or not GPU_MEM_LIMIT_MB:
+        return names
+    out = []
+    for name in names:
+        if name == "CUDAExecutionProvider":
+            out.append(
+                (
+                    name,
+                    {
+                        "gpu_mem_limit": GPU_MEM_LIMIT_MB * 1024 * 1024,
+                        # Xin đúng phần cần thay vì nhân đôi arena mỗi lần thiếu —
+                        # trên GPU chật thì lần nhân đôi đó chính là lần chết.
+                        "arena_extend_strategy": "kSameAsRequested",
+                    },
+                )
+            )
+        else:
+            out.append(name)
+    return out
+
+
 def get_session(model_name: str = "u2net", providers=None):
     wanted = _parse_providers(providers)
-    key = (model_name, tuple(wanted) if wanted else None)
+    key = (model_name, tuple(wanted) if wanted else None, GPU_MEM_LIMIT_MB)
     session = _sessions.get(key)
     if session is None:
         with _lock:
             session = _sessions.get(key)
             if session is None:
-                kwargs = {"providers": wanted} if wanted else {}
+                kwargs = {"providers": _with_options(wanted)} if wanted else {}
                 session = new_session(model_name, **kwargs)
                 _sessions[key] = session
     return session
@@ -77,8 +126,17 @@ def segment_mask(image_bgr: np.ndarray, model_name: str = "u2net", providers=Non
     ghép/mã hoá/giải mã lại chính là chỗ tiết kiệm (xem docstring module).
     """
     pil = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-    mask = get_session(model_name, providers).predict(pil)[0]
+    session = get_session(model_name, providers)
+    # Chỉ chặn khi thật sự chạy trên GPU. Trên CPU thì `MAX_CONCURRENCY` đã chặn rồi,
+    # thêm một van nữa chỉ làm chậm mà không giữ được gì.
+    gate = _gpu_slots if _is_accelerated(session) else contextlib.nullcontext()
+    with gate:
+        mask = session.predict(pil)[0]
     return np.asarray(mask)
+
+
+def _is_accelerated(session) -> bool:
+    return any(p.startswith(ACCELERATED) for p in session.inner_session.get_providers())
 
 
 def remove_background(data: bytes, model_name: str = "u2net", providers=None) -> bytes:

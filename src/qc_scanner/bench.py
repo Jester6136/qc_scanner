@@ -143,12 +143,24 @@ def bench_parallel(blobs, cfg, jobs_list):
     best = 0.0
     for jobs in jobs_list:
         t = time.perf_counter()
-        if jobs == 1:
-            for b in blobs:
-                scan_qc(b, config=cfg)
-        else:
-            with ThreadPoolExecutor(jobs) as ex:
-                list(ex.map(lambda b: scan_qc(b, config=cfg), blobs))
+        try:
+            if jobs == 1:
+                for b in blobs:
+                    scan_qc(b, config=cfg)
+            else:
+                with ThreadPoolExecutor(jobs) as ex:
+                    list(ex.map(lambda b: scan_qc(b, config=cfg), blobs))
+        except Exception as exc:
+            # Không để một mức luồng hỏng làm mất luôn các mục đo phía sau. Ca thật:
+            # GPU hết bộ nhớ ở jobs=8 và cả script chết, mang theo cả mục BATCH — đúng
+            # mục cần nhất. Một công cụ đo mà tự sát vì phép đo thất bại thì vô dụng
+            # đúng lúc nó đáng giá nhất.
+            print(f"  jobs={jobs:3d}  THẤT BẠI: {type(exc).__name__}: {str(exc)[:90]}")
+            if "ALLOC" in str(exc).upper() or "memory" in str(exc).lower():
+                print("       → hết bộ nhớ GPU. Hạ QC_SCANNER_GPU_CONCURRENCY, hoặc đặt")
+                print("         QC_SCANNER_GPU_MEM_LIMIT_MB.")
+                print("       → xem ai đang giữ VRAM: nvidia-smi")
+            break
         d = time.perf_counter() - t
         rate = len(blobs) / d
         best = max(best, rate)
@@ -308,6 +320,10 @@ def main(argv=None):
     print(f"  CPU              {os.cpu_count()} nhân")
     concurrency = os.environ.get("QC_SCANNER_MAX_CONCURRENCY", "2")
     print(f"  MAX_CONCURRENCY  {concurrency} (chỉ ảnh hưởng đường HTTP)")
+    from .rembg_session import GPU_CONCURRENCY, GPU_MEM_LIMIT_MB
+
+    limit = f"{GPU_MEM_LIMIT_MB}MB" if GPU_MEM_LIMIT_MB else "(không đặt)"
+    print(f"  GPU_CONCURRENCY  {GPU_CONCURRENCY} · mem_limit={limit}")
 
     blobs, source = load_images(args.images, args.count)
     sizes = [

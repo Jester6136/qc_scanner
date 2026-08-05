@@ -165,7 +165,14 @@ def scan_endpoint(
         with _scan_slots:
             result = scan_qc(content, config=Config.from_env(**overrides))
     except ScanError as err:
-        return JSONResponse({"error": err.to_dict()}, status_code=400)
+        # `400` nói "đầu vào của bạn sai, sửa rồi hãy gửi lại" — đúng cho ảnh hỏng,
+        # **sai hoàn toàn** cho lỗi tài nguyên máy chủ. Trên máy H100 (GPU dùng chung
+        # với một service vLLM) gặp `CUBLAS_STATUS_ALLOC_FAILED`, và nếu trả `400` thì
+        # phía gọi sẽ loại vĩnh viễn một tấm ảnh hoàn toàn tốt. `503` nói đúng chuyện
+        # đang xảy ra: máy chủ đang quá tải, **thử lại**.
+        status = 503 if err.code == "INFERENCE_FAILED" else 400
+        headers = {"Retry-After": "5"} if status == 503 else None
+        return JSONResponse({"error": err.to_dict()}, status_code=status, headers=headers)
 
     # 200 cho pass/warn (ảnh dùng được, có thể kèm cảnh báo);
     # 422 cho fail — ảnh hợp lệ nhưng đầu ra không đáng tin cho OCR.

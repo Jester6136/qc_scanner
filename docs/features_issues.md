@@ -818,6 +818,47 @@ phải đo lại trên máy thật.
 
 ---
 
+### ⚡ SPD-6 · P1 · 🟢 XONG · GPU hết bộ nhớ bị báo thành "ảnh hỏng" {#spd-oom}
+
+Trên máy H100, `bench` ở `jobs=8` cho:
+
+```
+CUBLAS failure 3: CUBLAS_STATUS_ALLOC_FAILED
+  → ScanError: DECODE_FAILED: Không giải mã được dữ liệu thành ảnh.
+```
+
+**Thông báo đó là nói dối** — ảnh hoàn toàn bình thường, GPU mới là thứ hết chỗ. Và qua HTTP nó
+thành `400`, tức bảo phía gọi *"file của bạn hỏng, đừng thử lại"*. Hậu quả thật: **ảnh tốt bị
+loại vĩnh viễn** vì một sự cố nhất thời của máy chủ, và người vận hành đi tìm lỗi ở đúng chỗ
+không có lỗi.
+
+Gốc rễ: `_segment()` bắt `except Exception` rồi gán cứng một mã. Ảnh đã qua `_decode()` trước
+đó rồi, nên tới bước này "không giải mã được" vốn đã không còn là cách giải thích hợp lý cho
+bất cứ lỗi nào.
+
+**✅ Đã làm**: mã mới `INFERENCE_FAILED` (audience `system`, hint nói thẳng *"không phải lỗi
+ảnh — cho chạy lại, đừng loại nó"*), HTTP `503` + `Retry-After` thay vì `400`.
+
+**Nguyên nhân bên dưới**: GPU là tài nguyên **dùng chung**. `nvidia-smi` cho thấy một service
+`VLLM::EngineCore` đang giữ **77.8 / 81.5 GB** (vLLM mặc định pre-allocate `gpu_memory_utilization=0.9`),
+chỉ chừa ~2.9GB. Van cũ `MAX_CONCURRENCY=16` thả 16 lần suy luận cùng lúc vào chỗ đó.
+
+**Tách hai van cho hai tài nguyên** — đây mới là bài học kiến trúc:
+
+| Van | Theo cái gì | Vì sao |
+|---|---|---|
+| `MAX_CONCURRENCY` | số nhân CPU | phần CPU chiếm **62%** thời gian mỗi ảnh, cần song song để nhanh |
+| `GPU_CONCURRENCY` | VRAM còn trống | VRAM dùng chung với service khác, tràn là **cả hai cùng chết** |
+
+Gộp làm một thì luôn phải hy sinh một bên: hoặc bỏ phí 64 nhân CPU, hoặc làm sập vLLM bên cạnh.
+Thêm `QC_SCANNER_GPU_MEM_LIMIT_MB` đặt trần arena (mặc định onnxruntime để arena tự lớn dần theo
+luỹ thừa 2 và có thể giành hết phần còn trống).
+
+`bench` cũng thôi tự sát khi một mức luồng thất bại — ca thật: OOM ở `jobs=8` làm chết cả script,
+mang theo mục BATCH, đúng mục cần nhất.
+
+---
+
 ### ⚡ SPD-5 · P1 · 🟡 ĐÃ ĐO SƠ BỘ, CHỜ SỐ TRÊN MÁY H100 · Dynamic batching cho 700 CCU {#spd-batching}
 
 **Câu hỏi**: API có thể phải chịu ~700 CCU; gom nhiều ảnh thành một batch rồi đẩy lên GPU một
