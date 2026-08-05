@@ -14,6 +14,7 @@ Chuyện này từng được ghi ngược trong comment của `server.py` ("MAX
 chặn số nhân đó"), nên bộ test ở đây đo thẳng con số thay vì tin vào lời kể.
 """
 
+import pathlib
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -191,8 +192,6 @@ def test_compose_does_not_hardcode_concurrency():
     Biến môi trường **đè lên** giá trị tự suy, nên đặt nó trong file dùng chung là vô
     hiệu hoá hoàn toàn phép suy theo số nhân.
     """
-    import pathlib
-
     root = pathlib.Path(__file__).resolve().parent.parent
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     offenders = [
@@ -204,3 +203,38 @@ def test_compose_does_not_hardcode_concurrency():
         f"docker-compose.yml ghi cứng {offenders} — để trống cho máy đích tự suy, "
         "cần ép tay thì đặt lúc chạy"
     )
+
+
+def test_bench_reports_the_same_limits_the_server_actually_runs():
+    """Công cụ đo phải nói đúng con số service đang chạy.
+
+    `bench.py` từng tự đọc lại `QC_SCANNER_MAX_CONCURRENCY` với default `"2"` ghi cứng
+    **của riêng nó**, nên nó báo cáo `MAX_CONCURRENCY 2` trong khi service chạy 16 —
+    nói dối về đúng thứ nó sinh ra để đo. (Và vì đó là *chuỗi*, phép so sánh với số
+    nhân còn làm cả script `TypeError` giữa chừng.)
+
+    Đây là lần thứ hai cùng một lớp lỗi: `docker-compose.yml` cũng từng giữ một bản
+    sao của số `2`. Cả hai lần đều không phải lỗi logic — chỉ là con số đúng bị chép
+    ra nhiều bản rồi các bản trôi khỏi nhau.
+    """
+    import qc_scanner.bench as bench
+    from qc_scanner import limits
+    from qc_scanner.cmd import server
+
+    assert server.MAX_CONCURRENCY == limits.MAX_CONCURRENCY
+    assert server.MAX_IN_FLIGHT == limits.MAX_IN_FLIGHT
+
+    source = pathlib.Path(bench.__file__).read_text(encoding="utf-8")
+    assert "QC_SCANNER_MAX_CONCURRENCY" not in source.replace(
+        "QC_SCANNER_MAX_CONCURRENCY trong compose/env", ""
+    ), "bench.py lại tự đọc biến môi trường thay vì lấy từ limits.py"
+
+
+def test_limits_are_integers_everywhere():
+    """`TypeError: '<=' not supported between 'str' and 'int'` — bench chết giữa chừng
+    vì trần được giữ dưới dạng chuỗi. Kiểu dữ liệu là một phần của hợp đồng."""
+    from qc_scanner import limits
+
+    assert isinstance(limits.MAX_CONCURRENCY, int)
+    assert isinstance(limits.MAX_IN_FLIGHT, int)
+    assert isinstance(limits.default_concurrency(), int)

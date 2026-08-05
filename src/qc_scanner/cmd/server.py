@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import __version__
 from ..config import Config
 from ..doc import scan_document
+from ..limits import MAX_CONCURRENCY, MAX_IN_FLIGHT, default_concurrency
 from ..pdf import build_pdf
 from ..qc import ScanError
 from ..rembg_session import active_providers, warmup
@@ -51,63 +52,19 @@ MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 # ≈ 40 × 32MB = **1.28 GB**, không phải `MAX_CONCURRENCY` × 32MB. Xem OPS-4.
 starlette.formparsers.MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
 
+# Hai van sống ở `limits.py`, không phải ở đây: `bench.py` cũng cần đúng con số này,
+# và bản sao thứ hai của nó đã từng trôi khỏi bản gốc — công cụ đo báo cáo
+# `MAX_CONCURRENCY 2` trong khi service đang chạy 16. Xem docstring của module đó.
+#
+# Giữ tên cũ trong không gian tên này để mã và test đang trỏ vào `server.MAX_*` không
+# gãy; middleware bên dưới đọc biến toàn cục của module này nên monkeypatch vẫn ăn.
 def _default_concurrency():
-    """Suy theo số nhân, không để hằng số 2 cứng.
+    """Giữ lại tên cũ; nguồn sự thật là `limits.default_concurrency()`."""
+    return default_concurrency()
 
-    Vì sao phải chặn thay vì thả threadpool 40 luồng của Starlette chạy thoải mái:
-    phần nặng là onnxruntime và nó **vốn đã dùng hết số nhân CPU** cho một lần suy
-    luận. Thả 40 lần song song không tăng thông lượng, chỉ làm mọi request cùng chậm
-    và ngốn 40 × ảnh RAM. Chặn lại thì request thứ N+1 **xếp hàng** — chậm nhưng đoán
-    được, thay vì tất cả cùng chậm không đoán được.
-
-    Nhưng "onnxruntime đã dùng hết nhân" chỉ đúng một nửa, và số đo trên máy 64 nhân
-    nói rõ nửa còn lại — `scan_qc` trực tiếp:
-
-        jobs= 1  1.73 ảnh/s     jobs= 4  4.16 ảnh/s     jobs=16  7.64 ảnh/s
-        jobs= 2  2.84 ảnh/s     jobs= 8  5.80 ảnh/s
-
-    Tăng 4.4x từ 1 lên 16 luồng, và **vẫn chưa bão hoà ở 16**. Một lần suy luận không
-    hề dùng hết 64 nhân.
-
-    Quy tắc `cpu/4`, chặn trong [2, 32] — khớp cả hai điểm đã đo:
-
-    * 10 nhân → **2**, đúng mức tốt nhất đo được trên máy dev (1→14.2s · 2→11.8s ·
-      3→12.0s · 4→12.7s trên 37 ảnh);
-    * 64 nhân → **16**, mức cao nhất đo được trên máy server.
-
-    Trần cũ là 16 với lý do "mỗi ảnh đang xử lý giữ tới 32MB". Lý do đó không đứng
-    được: máy server có 231 GB RAM, 16 × 32MB = 512MB. Trần thật của bộ nhớ nay là
-    `MAX_IN_FLIGHT`, đúng chỗ của nó; trần ở đây chỉ còn để chặn ca bệnh lý.
-
-    ⚠️ Đây là giá trị **tự suy theo máy đích**. Đặt `QC_SCANNER_MAX_CONCURRENCY` là vô
-    hiệu hoá nó hoàn toàn — và ghi cứng biến đó vào `docker-compose.yml` từng làm máy
-    64 nhân chạy ở mức của máy 10 nhân, mất ~64% năng lực trong im lặng.
-    """
-    return max(2, min(32, (os.cpu_count() or 4) // 4))
-
-
-MAX_CONCURRENCY = max(
-    1, int(os.environ.get("QC_SCANNER_MAX_CONCURRENCY") or _default_concurrency())
-)
 
 _scan_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
-#: Trần **request đang bay** — đã nhận nhưng chưa trả lời xong. Đây là van chặn *bộ
-#: nhớ*, tách hẳn khỏi `MAX_CONCURRENCY` vốn chỉ chặn *xử lý* (OPS-4).
-#:
-#: Vì sao cần hai van: thân request nằm trong RAM **trước khi** ai xin được suất xử lý —
-#: FastAPI phân tích multipart trước khi hàm xử lý chạy. Đo được với
-#: `MAX_CONCURRENCY=2` và 24 client gọi cùng lúc: đúng 2 request đang xử lý, nhưng
-#: **24 thân request trong RAM**. Van cũ chưa bao giờ chặn con số đó.
-#:
-#: Mặc định `MAX_CONCURRENCY × 4`: đủ sâu để một đợt dồn ngắn vẫn được phục vụ (chờ
-#: khoảng 4 × thời gian xử lý một ảnh) mà vẫn chặn được trần RAM ở
-#: `MAX_IN_FLIGHT × 32MB`. Không có nó thì trần là threadpool của Starlette — 40 luồng,
-#: tức 1.28 GB, một con số không ai cố ý chọn.
-MAX_IN_FLIGHT = max(
-    1,
-    int(os.environ.get("QC_SCANNER_MAX_IN_FLIGHT") or MAX_CONCURRENCY * 4),
-)
 
 #: Không cần khoá: middleware là `async def` nên chạy trên **một** vòng lặp sự kiện,
 #: và giữa chỗ đọc và chỗ tăng không có `await` nào để nhường lượt.

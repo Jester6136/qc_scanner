@@ -347,19 +347,35 @@ def main(argv=None):
         print("      QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider")
         print("      (onnxruntime tụt về CPU trong im lặng — đây là chỗ nhìn ra).")
     print(f"  CPU              {os.cpu_count()} nhân")
-    concurrency = os.environ.get("QC_SCANNER_MAX_CONCURRENCY", "2")
+    # Lấy từ `limits.py`, KHÔNG tự đọc lại biến môi trường: bản sao trước đây ở đây có
+    # default `"2"` ghi cứng của riêng nó, nên công cụ đo báo cáo `MAX_CONCURRENCY 2`
+    # trong khi service thật đang chạy 16 — nói dối về đúng thứ nó đang đo.
+    from .limits import MAX_CONCURRENCY as concurrency
+    from .limits import MAX_IN_FLIGHT
+
     print(f"  MAX_CONCURRENCY  {concurrency} (chỉ ảnh hưởng đường HTTP)")
+    print(
+        f"  MAX_IN_FLIGHT    {MAX_IN_FLIGHT} · "
+        f"trần RAM ≈ {MAX_IN_FLIGHT * 32 / 1024:.1f} GB"
+    )
     # Cái bẫy đã xảy ra thật: `docker-compose.yml` ghi cứng "2" — con số đo trên máy
     # dev 10 nhân — và đem sang máy 64 nhân thì đường HTTP khoá ở 2.86 req/s trong khi
     # lõi chạy được 7.64 ảnh/s. Không có gì báo lỗi cả; mục SONG SONG vẫn đẹp, chỉ
     # HTTP là phẳng lì. Mất một vòng đo mới nhìn ra, nên nay nó tự nói.
-    cores = os.cpu_count() or 0
-    if cores and concurrency * 4 <= cores:
+    # So với **giá trị tự suy**, không so với số nhân: quy tắc là `cpu/4` nên
+    # `concurrency * 4 <= cores` đúng với mọi máy cấu hình chuẩn — điều kiện đó kêu cả
+    # khi không có gì sai. Cái đáng báo là đúng một chuyện: có ai đó đặt biến môi
+    # trường THẤP HƠN mức máy này tự chọn.
+    from .limits import default_concurrency
+
+    suggested = default_concurrency()
+    if concurrency < suggested:
         print(
-            f"  ⚠️  MAX_CONCURRENCY={concurrency} thấp bất thường so với {cores} nhân.\n"
-            "      Mục HTTP bên dưới sẽ phẳng ở đúng mức này bất kể gửi bao nhiêu\n"
-            "      request song song. Kiểm QC_SCANNER_MAX_CONCURRENCY trong compose/env —\n"
-            "      biến đó ĐÈ LÊN giá trị tự suy theo số nhân."
+            f"  ⚠️  MAX_CONCURRENCY={concurrency} trong khi máy {os.cpu_count()} nhân tự\n"
+            f"      chọn {suggested}. Mục HTTP bên dưới sẽ phẳng ở đúng mức {concurrency}\n"
+            "      bất kể gửi bao nhiêu request song song. Kiểm\n"
+            "      QC_SCANNER_MAX_CONCURRENCY trong compose/env — biến đó ĐÈ LÊN\n"
+            "      giá trị tự suy theo số nhân."
         )
     from .rembg_session import GPU_CONCURRENCY, GPU_MEM_LIMIT_MB
 
