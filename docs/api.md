@@ -188,6 +188,15 @@ nút cổ chai đảo sang phần CPU (giải mã ảnh, mã hoá PNG) nên nên
 
 Ảnh upload nằm **trọn trong RAM**, không qua file tạm — trần bộ nhớ là 32MB × `MAX_CONCURRENCY`.
 
+Muốn biết máy đích chịu được bao nhiêu, **đo chứ đừng suy**:
+
+```bash
+docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
+```
+
+Nó in luôn bảng quy đổi ảnh/s → CCU. Về câu hỏi 700 CCU và dynamic batching, xem
+[SPD-5](features_issues.md#spd-batching) và [EX-16](need_exchange.md#ex-throughput).
+
 ### Chạy trên GPU NVIDIA
 
 ```bash

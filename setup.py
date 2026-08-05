@@ -42,6 +42,7 @@ setup(
             "qc-scanner=qc_scanner.cmd.cli:main",
             "qc-scanner-batch=qc_scanner.cmd.batch:main",
             "qc-scanner-server=qc_scanner.cmd.server:main",
+            "qc-scanner-bench=qc_scanner.bench:main",
         ],
     },
 )

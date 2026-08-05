@@ -751,6 +751,54 @@ phải đo lại trên máy thật.
 
 ---
 
+### ⚡ SPD-5 · P1 · 🟡 ĐÃ ĐO SƠ BỘ, CHỜ SỐ TRÊN MÁY H100 · Dynamic batching cho 700 CCU {#spd-batching}
+
+**Câu hỏi**: API có thể phải chịu ~700 CCU; gom nhiều ảnh thành một batch rồi đẩy lên GPU một
+lần có giúp không?
+
+**Phát hiện chặn đường**: file ONNX u2net xuất ra với **batch đóng cứng bằng 1**:
+
+```
+input : input.1 [1, 3, 320, 320]
+batch=2 → InvalidArgument: Got invalid dimensions for input: input.1
+```
+
+Nên dynamic batching hiện tại **không chạy được** dù có muốn. Sửa được: U²-Net toàn tích chập
+nên vá trục batch thành động (`dim_param = "N"`) là chấp nhận được — đã kiểm chạy batch 1/2/4
+trên CPU. Nhưng kết quả **không trùng bit** với chạy lẻ: lệch tối đa `2.086e-07`. Ở mức đó, sau
+khi min-max chuẩn hoá → ép uint8 → ngưỡng `>0` thì gần như chắc chắn cho mask giống hệt, nhưng
+"gần như chắc chắn" **không phải** thứ được phép giả định ở dự án này — phải chạy lại 37 ảnh và
+đối chiếu byte trước khi dùng.
+
+**Nhưng đó không phải lý do chính để dè dặt.** Batching chỉ nén được phần **suy luận**. Đo trên
+ảnh cỡ thật (3024×4032, đúng cỡ ảnh điện thoại — đây là chỗ dễ đo sai nhất, ảnh 500px sẽ cho
+một con số đẹp và vô dụng):
+
+| Chặng | ms/ảnh | Batching giúp? |
+|---|---|---|
+| giải mã ảnh | ~30 | ❌ CPU |
+| suy luận rembg | ~370 | ✅ |
+| phần còn lại (resize, mã hoá PNG…) | ~190 | ❌ CPU |
+
+Trên CPU thì suy luận áp đảo nên batching có vẻ hấp dẫn. **Trên H100 tỉ lệ đảo ngược**: phần
+suy luận co lại còn vài ms, và ~220ms CPU mỗi ảnh trở thành toàn bộ nút cổ chai — thứ mà
+batching **không chạm tới được**. Khi đó gom batch là tối ưu đúng vào chỗ đã hết chậm.
+
+**Cách chốt**: [`qc-scanner-bench`](../src/qc_scanner/bench.py) đo thẳng cả hai số trên máy đích
+và tự in ra kết luận. Con số cần so là *ms/ảnh tiết kiệm được nhờ batch* với *ms CPU mỗi ảnh* —
+không phải "batch nhanh gấp mấy lần".
+
+**Đường rẻ hơn nên thử trước**: nhân số tiến trình. Phần CPU song song hoá hoàn hảo giữa các
+container, u2net chỉ ~176MB nên nhiều container dùng chung một H100 thoải mái về VRAM, và
+không phải viết hàng đợi batching nào cả. `bench` in luôn bảng "cần bao nhiêu tiến trình cho
+700 CCU".
+
+**Còn phải chốt với khách**: "700 CCU" tự nó **chưa phải một yêu cầu về tải**. 700 người mỗi
+phút gửi một ảnh là 11.7 ảnh/s; 700 người gửi liên tục là hàng trăm ảnh/s. Chênh nhau hai bậc
+và ra hai kiến trúc khác hẳn nhau. Xem [EX-16](need_exchange.md#ex-throughput).
+
+---
+
 ## C. ISSUES — Chất lượng thuật toán
 
 ### 🎯 QUAL-1 · P1 · 🟢 XONG · Lấy tứ giác ĐẦU TIÊN, không lọc rác {#qual-quad-filter}

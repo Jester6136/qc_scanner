@@ -203,6 +203,34 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
 
 ---
 
+### EX-16 · ❓ "700 CCU" nghĩa là bao nhiêu ảnh mỗi giây? {#ex-throughput}
+
+*(Mở 2026-08-05, từ trao đổi về dynamic batching.)*
+
+- **Hỏi**: Con số 700 CCU là **700 người đang mở ứng dụng**, hay **700 ảnh đang được xử lý cùng
+  lúc**? Mỗi người gửi ảnh cách nhau bao lâu — vài giây một lần, hay vài phút một lần? Có giờ
+  cao điểm không, và cao gấp mấy lần trung bình?
+- **Vì sao**: đây là chênh lệch **hai bậc độ lớn**, và nó quyết định kiến trúc chứ không chỉ
+  quyết định cấu hình:
+
+  | Cách hiểu | Tải thật | Hướng xử lý |
+  |---|---|---|
+  | 700 người, mỗi phút một ảnh | ~11.7 ảnh/s | Vài container sau một bộ cân bằng tải |
+  | 700 người, mỗi 10s một ảnh | ~70 ảnh/s | Hàng chục container, cần GPU |
+  | 700 ảnh đồng thời thật sự | hàng trăm ảnh/s | Kiến trúc khác hẳn: hàng đợi bất đồng bộ, API trả job-id thay vì trả ảnh |
+
+  Cách thứ ba **phá hợp đồng API hiện tại** ([docs/api.md](api.md)): `POST /` đang trả thẳng ảnh
+  đã nắn trong cùng một request. Chịu tải kiểu đó thì phải đổi sang nhận-rồi-trả-sau, tức là
+  đổi cả phía tích hợp của khách. Đó là quyết định của khách, không phải chi tiết kỹ thuật.
+
+- **Trong lúc chờ**: [`qc-scanner-bench`](../src/qc_scanner/bench.py) đo thông lượng thật trên
+  máy đích và in bảng "bấy nhiêu ảnh/s thì gánh được bấy nhiêu CCU ở mỗi nhịp gửi". Chạy nó
+  trước rồi mang **bảng đó** đi hỏi khách — hỏi bằng số dễ chốt hơn hỏi bằng chữ.
+- **Chặn**: [SPD-5](features_issues.md#spd-batching) (có làm dynamic batching không) và mọi
+  quyết định về số container.
+
+---
+
 ## Cách dùng file này
 - Trước mỗi buổi làm việc với khách: lọc mục ❓, chuẩn bị câu hỏi + **tài liệu/dữ liệu cần xin**.
 - **Trạng thái 2026-08-05: 12/13 mục đã chốt.** Còn lại EX-9 (đa ngôn ngữ) — không chặn việc gì.

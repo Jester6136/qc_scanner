@@ -152,6 +152,22 @@ hơn mọi tối ưu CPU cộng lại.
 > thiếu thư viện CUDA thì nó không báo lỗi, chỉ lặng lẽ chạy CPU và chậm hơn vài chục lần.
 > Bản CPU thì đã build và chạy được trên máy server.
 
+### Đo tốc độ trên máy đích
+
+```bash
+docker exec qc-scanner-gpu qc-scanner-bench                          # tự sinh ảnh, không cần data
+docker exec qc-scanner-gpu qc-scanner-bench --url http://127.0.0.1:5000   # đo cả đường HTTP
+docker exec qc-scanner-gpu qc-scanner-bench --images /data -n 32     # đo trên ảnh thật
+```
+
+In ra bốn thứ: **CHẶNG** (thời gian đi đâu — GPU hay CPU), **SONG SONG** (trần thông lượng một
+tiến trình), **BATCH** (dynamic batching đáng bao nhiêu), **QUY RA CCU** (bấy nhiêu ảnh/s thì
+gánh được bấy nhiêu người dùng đồng thời).
+
+Mặc định **tự sinh ảnh 3024×4032** nên chạy được ngay trong container trắng — ảnh khách hàng
+không bao giờ được nướng vào image. Cỡ ảnh cố ý giữ như ảnh điện thoại thật: chi phí CPU tỉ lệ
+với số pixel, đo bằng ảnh nhỏ sẽ cho một con số đẹp và vô dụng.
+
 ### Usage as an HTTP server
 
 ```bash
@@ -211,6 +227,7 @@ byte 37/37:
 | [SPD-2](docs/features_issues.md#spd-event-loop) | `scan_qc()` từng chặn vòng lặp sự kiện → `/healthz` trễ **617ms → 2ms** dưới tải |
 | [SPD-3](docs/features_issues.md#spd-spool) | Upload > 1MB từng bị ghi ra **file tạm trên đĩa** — trái [EX-12](docs/need_exchange.md); nay ở trong RAM. `--jobs` cho chạy lô |
 | [SPD-4](docs/features_issues.md#spd-gpu) | Tuỳ chọn GPU NVIDIA — **đã viết, chưa chạy thử** |
+| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching cho 700 CCU: file ONNX u2net **đóng cứng batch=1**; và batching không chạm được ~220ms CPU mỗi ảnh. `qc-scanner-bench` đo để chốt |
 
 Sau SPD-1, bản thân model chiếm **81%** thời gian còn lại, nên GPU là đòn bẩy lớn nhất còn lại;
 mọi tối ưu CPU khác cộng lại không bằng.

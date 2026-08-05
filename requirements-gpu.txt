@@ -18,6 +18,7 @@ click>=8.1,<9
 fastapi>=0.115,<1
 imutils>=0.5.4,<0.6
 numpy>=1.26,<3
+onnx>=1.15,<2            # chỉ cho `qc-scanner-bench`: vá trục batch để đo dynamic batching
 onnxruntime-gpu>=1.17,<2
 opencv-python>=4.8,<6
 python-multipart>=0.0.9,<1
