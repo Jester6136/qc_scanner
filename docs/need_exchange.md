@@ -26,7 +26,7 @@
 - **Hỏi**: Ảnh đầu ra thế nào thì khách coi là **đạt**? Được phép mất bao nhiêu mép giấy? Có
   bắt buộc thấy trọn 4 góc không? Nghiêng bao nhiêu độ thì vẫn chấp nhận? DPI tối thiểu?
 - **Vì sao**: đây là **định nghĩa của toàn bộ hệ QC**. Mọi ngưỡng trong
-  [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes) (`TOO_SMALL` 0.20,
+  [algorithm.md §7](algorithm.md#ma-ly-do) (`TOO_SMALL` 0.20,
   `EXTREME_SKEW` 1.8, `LOW_RESOLUTION` 150 DPI) hiện là con số **ta tự đặt**.
 - **Nếu chưa rõ**: chấm điểm theo chuẩn của mình, nghiệm thu theo chuẩn của khách → lệch.
 
@@ -269,4 +269,4 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
 - Sau khi có câu trả lời: đổi trạng thái ✅ + ghi **quyết định đã chốt** (kèm ngày, nguồn tài liệu).
 - Quyết định chốt mà ảnh hưởng code → tạo issue/feature tương ứng trong
   [features_issues.md](features_issues.md); nếu chốt một **ngưỡng**, ghi thẳng vào
-  [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes) kèm nguồn.
+  [algorithm.md §7](algorithm.md#ma-ly-do) kèm nguồn.

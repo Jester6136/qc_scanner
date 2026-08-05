@@ -33,8 +33,8 @@ Ba mức, theo thứ tự ưu tiên:
 
 Vì sao QC quan trọng hơn crop: ở quy mô hàng vạn ảnh, **ảnh crop sai mà im lặng còn tệ hơn ảnh
 báo fail** — nó trôi xuống OCR, sinh dữ liệu sai, và không ai biết cho tới lúc nghiệm thu.
-Hợp đồng đầu ra QC đầy đủ: [algorithm.md §2](algorithm.md#2--hợp-đồng-đầu-ra-qc) ·
-danh mục mã lý do: [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes).
+Hợp đồng đầu ra QC đầy đủ: [algorithm.md §2](algorithm.md#hop-dong) ·
+danh mục mã lý do: [algorithm.md §7](algorithm.md#ma-ly-do).
 
 - Nguồn gốc: lõi bắt nguồn từ OSS `danielgatis/docscan` (MIT); dự án đã **đổi tên thành
   `qc_scanner`** (2026-08) để phản ánh định hướng QC. **Chưa publish** dưới tên mới.
@@ -80,31 +80,27 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
    tự quyết dùng hay bỏ; chỉ `fail` khi đầu ra chắc chắn vô dụng.
 6. **Vendor `rembg` nguyên trạng** — không sửa vendor; mọi tinh chỉnh bọc ở lớp `doc.py`.
 
-## 4. Hiện trạng (2026-08-05)
+## 4. Hiện trạng
 
-- Luồng lõi chạy được; **Giai đoạn 0, 1, 2, 4 đã xong**, Giai đoạn 3 làm được phần không cần
-  nhãn (QUAL-1/2, S-2, S-6, bộ eval).
-- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 26 mã
-  lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
-- **239 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
-  "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
-- **Đã đo** trên 8 ảnh mẫu + 9 ảnh thật (`tmp/`): 11 pass · 5 warn · 1 fail. Tốc độ
-  **~0.4s/ảnh** sau khi tái dùng session (trước ~3.0s).
-- Các lỗi chặn đã đóng hết: rembg gọi hai lần, nuốt lỗi trả `None`, SSRF `GET /?url=`,
-  so `bytes` với `str`, vỡ trên ảnh grayscale, dependency không ghim.
-- **Vẫn thiếu, và là thứ chặn nhiều nhất: tập vàng có nhãn của khách** (EX-2). Không có nó thì
-  không chốt được ngưỡng (QUAL-3), không dám đổi model nền (S-1) hay detector (S-3), và không
-  báo cáo được crop rate / false pass / false fail lúc nghiệm thu. Công cụ đã sẵn — chỉ thiếu
-  dữ liệu.
-- 9 ảnh thật trong `tmp/` là mẫu đầu tiên, **chưa có nhãn** nên chỉ dùng để so cấu hình với
-  nhau, chưa dùng để chấm đúng/sai được.
-- **2026-08-05 đã chốt 12/13 câu hỏi với khách** → sinh ra Giai đoạn 6 và Giai đoạn 7 (chờ tập
-  vàng). Bàn giao là **Docker image kèm HTTP service** → hợp đồng API là bề mặt bàn giao chính.
-- **Dewarping (S-5) đã đo và loại khỏi phạm vi** (cùng ngày). EX-5 nói hoá đơn có cong nên nó
-  từng được nâng lên P1, nhưng **đo trên 36 ảnh thật thì không ảnh nào cong quá sàn nhiễu của
-  mask**. Đây là ví dụ đúng của nguyên tắc "đo trước, làm sau": một câu trả lời phỏng vấn suýt
-  kéo theo 1 tuần+ công việc mà số đo không ủng hộ.
-- **Đã đo trên 29 ảnh thật của khách** (9 đợt 1 + 20 đợt 2), gồm cả CCCD, sổ đỏ, hoá đơn.
+**Chạy được và đã bàn giao được**: lõi QC, ba mặt tiền (CLI, HTTP, batch), Docker image có sẵn
+HTTP service, đầu vào/đầu ra PDF, chặn tải hai tầng. Đã build và chạy trên máy server 64 nhân.
+
+| | |
+|---|---|
+| Hợp đồng đầu ra | `ScanResult{image, verdict, reasons[], metrics}`; **26 mã lý do**, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons == []` ép ở mức code |
+| Bộ đo | **358 test** + CI (lint · test 3.9/3.12 · build wheel). Bài quan trọng nhất: *không false pass* trên 9 ảnh hỏng dựng bằng OpenCV |
+| Đã chạy trên ảnh thật | 8 ảnh mẫu + 29 ảnh khách (CCCD, sổ đỏ, hoá đơn, A4) → 13 pass · 14 warn · 10 fail |
+| Tốc độ | ~0.58s/ảnh; **8.4 ảnh/s** một tiến trình trên máy 64 nhân |
+
+**Thứ chặn nhiều nhất vẫn là tập vàng có nhãn của khách** ([EX-2](need_exchange.md)). Không có
+nó thì không chốt được ngưỡng (QUAL-3), không dám đổi model nền (S-1) hay detector (S-3), và
+không báo cáo được crop rate / false pass / false fail lúc nghiệm thu. Công cụ đo đã sẵn và chạy
+được — chỉ thiếu dữ liệu. 29 ảnh thật đang có **chưa có nhãn**, nên chỉ dùng để so hai cấu hình
+với nhau, không dùng để chấm đúng/sai.
+
+Bàn giao là **Docker image kèm HTTP service** ([EX-13](need_exchange.md)), nên
+[api.md](api.md) là bề mặt bàn giao chính và có test hợp đồng giữ.
+
 
 ## 5. Bắc Nam của bài toán
 
@@ -124,141 +120,41 @@ vài chục ms. Đòn bẩy tốc độ chỉ có 2: (a) tái dùng `rembg` sess
 
 ---
 
-## 6. Roadmap chi tiết
+## 6. Roadmap
 
-### Giai đoạn 0 — Chặn máu & dựng bộ đo ✅ XONG
-- [x] `git init` + commit hiện trạng trước khi sửa bất cứ thứ gì.
-- [x] **BUG-1** Bỏ `rembg` gọi hai lần ở CLI.
-- [x] **BUG-2** Thay "nuốt lỗi trả None" bằng lỗi có mã — nền móng của QC.
-- [x] **SEC-1** Tắt/allowlist `GET /?url=` ở server.
-- [x] Regression test trên 8 cặp trong `examples/` — [test_eval.md §2](test_eval.md).
-- **Tiêu chí ra**: `pytest` xanh trên máy sạch; CLI lỗi thì exit code ≠ 0 kèm mã lý do.
+**Đã xong** — Giai đoạn 0 (chặn máu + dựng bộ đo) · 1 (verdict + reason + hint) · 2 (QC nâng cao,
+tự khắc phục) · 4 (ổn định, đóng gói) · 6 (việc phát sinh từ đợt chốt yêu cầu khách). Chi tiết ở
+lịch sử commit; những gì còn hiệu lực nằm trong
+[features_issues.md](features_issues.md).
 
-### Giai đoạn 1 — Lõi QC: verdict + reason + hint ✅ XONG
-- [x] **QC-1** Kiểu `ScanResult{image, verdict, reasons[], metrics}` + `scan_qc()`.
-      Giữ `scan()` cũ làm lớp mỏng bọc ngoài (tương thích ngược).
-- [x] **QC-2** Cài **danh mục mã lý do** giai đoạn 1: `DECODE_FAILED`, `SUBJECT_NOT_FOUND`,
-      `QUAD_NOT_FOUND`, `TOO_SMALL`, `CLIPPED_EDGE`, `NOT_CONVEX`, `EXTREME_SKEW`.
-      — [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes)
-- [x] **QC-3** Mỗi mã kèm `hint` tiếng Việt + đối tượng nhận (người chụp / vận hành / hệ thống).
-- [x] **QC-4** Bề mặt hóa QC ra cả 3 mặt tiền:
-      CLI → exit code theo verdict + JSON ra stderr/`--report`;
-      server → header/`multipart` hoặc `?format=json` trả cả ảnh lẫn phán quyết;
-      library → trả `ScanResult`.
-- [x] **QC-5** Metric đo được kèm theo: `quad_area_ratio`, `skew_ratio`, `est_dpi`,
-      `blur_score` (variance of Laplacian), `contour_candidates`.
-- **Tiêu chí ra**: mọi ảnh trong tập thử ra đúng 1 verdict + ≥1 reason khi không phải `pass`;
-  không còn đường nào trả `None`.
+### Giai đoạn 3 — Chất lượng phát hiện biên 🎯 CHẶN Ở TẬP VÀNG
 
-### Giai đoạn 2 — QC nâng cao & tự khắc phục ("hơn cả thế") ✅ XONG
-- [x] **QC-6** Kiểm chất lượng ảnh (không chỉ hình học): `BLURRY`, `GLARE`, `TOO_DARK`,
-      `LOW_RESOLUTION` — chặn ảnh mà OCR chắc chắn đọc sai.
-- [x] **QC-7** **Fallback dò cạnh** khi rembg không tách được chủ thể (giấy trắng trên nền
-      trắng): Canny + HoughLines + giao điểm → tứ giác. Thành công thì hạ `fail` → `warn`
-      kèm reason `RECOVERED_BY_EDGE_FALLBACK`.
-- [x] **QC-8** Tự sửa nhẹ: nới biên vài pixel khi tứ giác chạm mép, tự xoay về chiều đứng.
-- [x] **QC-9** `MULTIPLE_DOCUMENTS` — phát hiện nhiều tứ giác lớn (nhiều tờ trong một khung),
-      báo rõ thay vì lặng lẽ lấy tờ to nhất.
-- [x] **QC-10** Chế độ debug: xuất ảnh trung gian (mask, contour vẽ chồng, tứ giác chọn) để
-      soi ca sai — công cụ chính khi tinh chỉnh ngưỡng.
-- **Tiêu chí ra**: false-pass giảm đo được; một phần ca `QUAD_NOT_FOUND` cũ chuyển thành
-  `warn` nhờ fallback.
+Phần không cần nhãn đã làm: lọc tứ giác, hằng số suy theo ảnh, tách interface `Detector`, đối
+chiếu chéo hai detector, bộ eval.
 
-### Giai đoạn 3 — Chất lượng phát hiện biên & nâng cấp lõi 🎯 CHẶN Ở TẬP VÀNG
+- [ ] **QUAL-3** quét ngưỡng — tối ưu **tổng** false pass + false fail
+      ([EX-7](need_exchange.md#ex-7) chốt cân bằng, không siết một chiều).
+- [ ] **S-1** chốt model nền bằng số (đã đo sơ bộ: isnet chậm gấp 3, đổi 2 verdict).
+- [ ] **S-3** thử DocAligner làm đường chính. *Không còn bắt buộc vì tốc độ* —
+      [EX-10](need_exchange.md) chốt ngân sách <1s mà hiện đã đạt — nhưng vẫn là ứng viên cho
+      **chất lượng**, nhất là ca giấy trắng nền sáng mà rembg thua.
+- [ ] **QUAL-4** vùng đệm cho ngưỡng `no_crop_area_ratio`.
 
-Lõi hiện tại viết ~2019 (rembg/U²-Net + contour). Khảo sát công nghệ 2026 kết luận **có khoảng
-cách đáng kể** so với hướng hiện đại (hồi quy 4 góc trực tiếp) —
-[algorithm.md §8](algorithm.md#8-khảo-sát-lõi-thuật-toán-có-còn-hợp-thời-2026).
-Thứ tự bắt buộc: **đo trước, đổi sau.**
+### Còn lại, không chờ tập vàng
 
-- [ ] Gán nhãn 4 điểm góc cho tập ảnh thật của khách → **tập vàng** (`need_exchange.md` EX-2).
-      Có thể dùng SAM/SAM2 hỗ trợ gán nhãn cho nhanh.
-- [x] Đo baseline: IoU tứ giác + crop rate + ma trận nhầm lẫn của verdict.
-- [x] **QUAL-1** Loại tứ giác rác: yêu cầu lồi (`isContourConvex`), diện tích ≥ X% ảnh, tỉ lệ
-      cạnh hợp lý — thay vì "lấy tứ giác đầu tiên gặp". Giữ giá trị **dù đổi detector nào**.
-- [x] **QUAL-2** `medianBlur` / `IMG_RESIZE_H` scale theo kích thước ảnh thay vì hằng số.
-- [~] **S-1** (đã đo, chưa đổi) Đổi model nền của rembg (`isnet-general-use`, rồi **BiRefNet**) — **một dòng**,
-      rủi ro ~0, đo ngay bằng bộ eval. Việc rẻ nhất trong toàn bộ roadmap.
-- [x] **S-2** Tách interface `Detector` (trả 4 điểm + confidence) → 3 cài đặt: rembg-contour ·
-      DocAligner · edge-Hough. Lõi QC không phụ thuộc detector.
-- [ ] **S-3** ⭐ Thử **DocAligner** (Apache-2.0, ONNXRuntime — đã là dependency sẵn) làm đường
-      chính: hồi quy thẳng 4 góc, **suy được góc bị che/ngoài khung**, có confidence tự nhiên
-      nạp vào QC. Giữ pipeline cũ làm đối chứng; chốt bằng số đo trên tập vàng.
-- [ ] **QUAL-3** Quét ngưỡng (`APPROX_POLY_DP_ACCURACY_RATIO`, diện tích tối thiểu) trên tập
-      vàng, chốt mặc định bằng số đo.
-- [x] **S-6** Khi có 2 detector: **bất đồng giữa chúng = tín hiệu QC miễn phí** → cùng tứ giác
-      thì tin cao; lệch nhau thì `warn` cho người soi.
-- **Tiêu chí ra**: chọn detector mặc định bằng **bảng số đo**, không bằng cảm tính.
+- [ ] **OPS-3** — gọi qua LAN từ máy khác · chạy khi ngắt mạng · build image trong CI ·
+      bật lại `read_only`. Xem [features_issues.md](features_issues.md#ops-docker-unverified).
 
-### Giai đoạn 4 — Ổn định, đóng gói, tiện dụng ✅ XONG
-- [x] **DEP-1** Ghim version `requirements.txt` (nhất là `rembg`, `opencv-python`, `onnxruntime`).
-- [x] **PKG-1** `python_requires` khớp thực tế (rembg/onnxruntime cần ≥3.9).
-- [x] **PKG-2** `__version__` trong package, nguồn sự thật duy nhất cho `setup.py`.
-- [x] **N-04** Dockerfile + pre-warm model rembg trong image (bỏ lần tải đầu chạy chậm).
-- [x] **N-05** CI: cài sạch + chạy test + build wheel.
-- [x] **N-01** Batch CLI (thư mục / glob — `glob` đã import sẵn mà chưa dùng) + **báo cáo QC
-      tổng hợp** (CSV: file, verdict, reason, metric) — đây là dạng "QC" mà vận hành cần nhất.
-- [x] **N-02** Tham số hóa qua CLI/env (ngưỡng, kích thước làm việc, bật/tắt rembg).
-- [x] **N-06** Tái dùng `rembg` session giữa các call (server/batch) — đòn bẩy tốc độ chính.
+### Chờ nhu cầu khách
 
-### Giai đoạn 5 — Mở rộng ⏸ PHẦN LỚN ĐÃ CHUYỂN ĐI
-
-> Sau đợt chốt 2026-08-05: **S-5 dewarping đã có câu trả lời (CÓ) và chuyển sang GĐ 6/7**.
-> Phần còn lại vẫn chờ nhu cầu — riêng **PDF/đa trang chưa hỏi**, là câu duy nhất còn thiếu
-> ngoài EX-9.
 - [ ] Tách **nhiều tài liệu** trong một ảnh thành nhiều đầu ra (nối tiếp QC-9).
-- [ ] Đầu vào PDF / đa trang.
-- [x] ~~**S-5 Dewarping** — chờ chốt EX-5~~ → **đã chốt: CÓ cong**. Chuyển sang GĐ 6 (đo) và
-      GĐ 7 (làm).
-- [ ] Hậu xử lý làm nét/khử bóng (adaptive threshold, shadow removal) cho đầu ra "giống bản scan".
-- [ ] onnxruntime-gpu tùy chọn.
-
-
-### Giai đoạn 6 — Việc phát sinh từ đợt chốt yêu cầu khách (2026-08-05) 🎯 LÀM TIẾP
-
-12/13 câu hỏi trong [need_exchange.md](need_exchange.md) đã có câu trả lời. Sáu việc dưới đây
-sinh ra từ đó. **Tính đến 2026-08-05: QC-11/12/13/14 đã xong, S-5 đã đo và chốt là không làm,
-N-11 bị bỏ theo yêu cầu. Chỉ còn OPS-3, và nó đợi máy server.**
-
-- [x] **QC-11** ✅ `NO_CROP_DETECTED` (fail) — bắt ca detector trả nguyên khung hình.
-      Dấu hiệu đã đo: `quad_area_ratio > 0.90` và `touches_border == 4` → đúng 2/17 ảnh, 0 báo
-      động giả.
-- [x] **QC-12** ✅ `CONTENT_CLIPPED` (fail) — dò pixel mực chạm mép cắt.
-      [EX-1](need_exchange.md): mất viền trắng thì được, mất **chữ** thì không. Quan trọng nhất
-      với hoá đơn — mất dòng tổng tiền là hỏng cả bản ghi.
-- [x] **QC-13** ✅ Hint hai tầng (người chụp / vận hành).
-      [EX-3](need_exchange.md): có cả ảnh kho lẫn ảnh chụp mới. Hint "chụp lại trên nền tối"
-      vô dụng với ảnh kho — vi phạm chính nguyên tắc §3.4 bên dưới.
-- [x] **QC-14** ✅ Cờ `pre_cropped` cho ảnh đã cắt sẵn. Khách xác nhận có gửi loại này
-      (EX-14). Không tự đoán được — đo 37 ảnh, hai nhóm trùng dải `alpha_coverage`.
-- ~~**N-11** Công cụ gán nhãn tập vàng~~ — **BỎ** theo yêu cầu khách 2026-08-05.
-- [x] **S-5 (bước đo)** ✅ Đã đo độ vồng mép giấy trên 36 ảnh. Không ảnh nào vượt sàn nhiễu
-      của mask (0.07, đo trên chính ảnh mẫu phẳng đã biết); 5 giá trị cao nhất đều là ảnh
-      **tách nền sai**, không phải giấy cong. → **Không làm dewarping**, S-5 hạ P1 → P3.
-      Tiết kiệm 1 tuần+. Mở lại khi có tập ảnh hoá đơn cuộn thật.
-- [ ] **OPS-3 — LÀM CUỐI, TRÊN MÁY SERVER.** `docker build` + chạy thử service + kiểm ngắt mạng
-      + thêm build image vào CI. **Máy phát triển hiện tại không build Docker** (chốt
-      2026-08-05) nên việc này dời xuống cuối, làm khi lên máy triển khai.
-      Hoãn **không** làm rủi ro nhỏ đi: [EX-13](need_exchange.md) chốt bàn giao là **Docker image
-      có sẵn HTTP service**, mà image đó vẫn chưa có bằng chứng dựng được.
-      ✅ **Phần không cần Docker đã xong**: [api.md](api.md) + 30 test hợp đồng. Còn lại đúng
-      phần phải có Docker mới làm được.
-
-**Tiêu chí ra**: ảnh crop sai không còn lọt xuống mức `warn`; mỗi mã lý do hành động được với
-**cả hai** nhóm người dùng; hợp đồng API có tài liệu và có test giữ. *(Phần `docker run` được
-của khách nằm ở OPS-3, kiểm trên máy server.)*
-
-### Giai đoạn 7 — Chỉ chạy được khi có tập vàng (EX-2)
-
-- [ ] **QUAL-3** Quét ngưỡng, tối ưu **tổng** false pass + false fail ([EX-7](need_exchange.md)
-      chốt cân bằng, không ưu tiên một chiều như giả định cũ).
-- [ ] **S-1** Chốt model nền bằng số (đã đo sơ bộ: isnet chậm gấp 3, đổi 2 verdict).
-- [ ] **S-3** Thử DocAligner làm đường chính. *Không còn bắt buộc vì tốc độ* —
-      [EX-10](need_exchange.md) chốt ngân sách <1s mà hiện đã đạt 0.4s — nhưng vẫn là ứng viên
-      cho chất lượng, nhất là ca giấy trắng nền sáng mà rembg thua.
-- [ ] **S-5 (bước làm)** Dewarping, nếu số đo ở Giai đoạn 6 cho thấy đáng.
+- [ ] Hậu xử lý làm nét / khử bóng cho đầu ra "giống bản scan".
+- [ ] Hàng đợi bất đồng bộ + `job_id` — **chỉ khi** [EX-16](need_exchange.md#ex-throughput) cho
+      thấy cần. Đo được: một tiến trình 8.4 ảnh/s, kịch bản 700 CCU nặng nhất cần 9 container
+      gọn trong một máy, nên hiện **chưa cần**.
 
 ---
+
 
 ## 7. Rủi ro & phụ thuộc
 

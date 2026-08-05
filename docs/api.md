@@ -310,7 +310,7 @@ phục. Có test chặn.
 ## 6. Danh mục mã lý do
 
 25 mã, kèm điều kiện phát hiện và hướng xử lý:
-[algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes). Danh mục đó được test giữ
+[algorithm.md §7](algorithm.md#ma-ly-do). Danh mục đó được test giữ
 cho khớp với code — mã nào chạy được thì chắc chắn có dòng trong đó.
 
 Nhóm theo hành động của phía gọi:

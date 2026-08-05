@@ -4,9 +4,9 @@
 > chạy được mọi nơi; qc_scanner may mắn là **PURE toàn bộ** — không DB, không hàng đợi, không
 > service ngoài. Rào cản duy nhất là cài được dependency và tải được model rembg lần đầu.
 >
-> ✅ Cập nhật 2026-08-05: bộ test **đã dựng xong** — 358 bài trong `tests/`, chạy bằng `pytest`,
-> kèm CI. §2–§3 mô tả bộ test đang chạy. §5 (eval trên tập vàng) vẫn **chưa chạy được** vì
-> chưa có ảnh có nhãn của khách — công cụ đã sẵn (`python -m qc_scanner.eval`), chỉ thiếu dữ liệu.
+> **358 bài** trong `tests/`, chạy bằng `pytest`, kèm CI. §5 (eval trên tập vàng) là phần
+> **chưa chạy được** — công cụ đã sẵn (`python -m qc_scanner.eval`), chỉ thiếu ảnh có nhãn của
+> khách ([EX-2](need_exchange.md)).
 
 ---
 
@@ -46,7 +46,7 @@ python3 -c "import cv2, rembg, imutils, numpy; print('deps ok', cv2.__version__)
 
 ---
 
-## 1. Smoke test tay (làm được ngay hôm nay)
+## 1. Smoke test tay
 
 Ba mặt tiền phải cho **cùng một kết quả** trên cùng ảnh. ✅ Nay **đúng** — BUG-1 đã sửa, và
 `tests/test_surfaces.py` giữ chốt chặn này tự động. Cách kiểm tay:
@@ -109,7 +109,7 @@ Exit code CLI: **0** pass · **1** warn · **2** fail · **3** đầu vào khôn
 
 ---
 
-## 2. Bộ regression trên `examples/` (cần dựng — ưu tiên 1)
+## 2. Bộ regression trên `examples/`
 
 ✅ **Đã dựng**. 8 cặp `doc-N.{jpg,png}` → `doc-N.out.png` trong [examples/](../examples/) là
 đầu ra đã được người kiểm mắt chấp nhận, nay dùng làm chốt chặn hồi quy.
@@ -166,7 +166,7 @@ một metric quá dễ dãi sẽ cho mọi thứ đi qua và cả bộ regressio
 
 ---
 
-## 3. Test cho luồng QC ✅ đã dựng
+## 3. Test cho luồng QC
 
 QC chỉ đáng tin nếu **chính nó** được test. Ba nhóm:
 
@@ -222,7 +222,7 @@ cũng xanh toàn bộ §3c.
 ## 4. Benchmark thời gian
 
 Chỉ có **một** con số đáng quan tâm: rembg chiếm bao nhiêu phần tổng thời gian (giả thuyết:
-~95%, [algorithm.md §5](algorithm.md#5-chi-phí-thời-gian) — **chưa đo lần nào**).
+~95%, [algorithm.md §5](algorithm.md#chi-phi) — **chưa đo lần nào**).
 
 ```bash
 python3 - <<'PY'

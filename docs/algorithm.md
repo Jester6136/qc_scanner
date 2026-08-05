@@ -12,86 +12,49 @@
 ## 0. Bức tranh tổng thể
 
 ```
-                         ┌──────────────────────────────────────────────┐
- ảnh chụp (bytes)  ────►  │  rembg: tách chủ thể  →  RGBA (alpha = giấy) │
-   jpg/png                └───────────────────┬──────────────────────────┘
-                                              │  kênh alpha
-                         ┌────────────────────▼──────────────────────────┐
-                         │  resize H=500 · threshold · medianBlur 15     │  ảnh nhị phân
-                         │  findContours → sort theo diện tích          │
-                         │  approxPolyDP → tìm đa giác 4 đỉnh           │
-                         └───────────────────┬──────────────────────────┘
-                                             │ 4 điểm × ratio
-                         ┌───────────────────▼──────────────────────────┐
-                         │  four_point_transform trên ảnh GỐC           │
-                         │  imencode(".png")                            │
-                         └───────────────────┬──────────────────────────┘
-                                             ▼
-                                        PNG bytes
+ ảnh / PDF (bytes)
+        │
+        ▼
+ ┌──────────────────────┐   PDF → lấy thẳng bitmap nhúng, hoặc render     (pdf.py)
+ │  đọc thành ảnh BGR   │   ảnh → cv2.imdecode, một lần duy nhất
+ └──────────┬───────────┘
+            ▼
+ ┌──────────────────────┐   rembg / U²-Net → mask xám cùng cỡ ảnh
+ │  tách chủ thể        │   (không đi vòng qua PNG RGBA toàn cỡ)   (rembg_session.py)
+ └──────────┬───────────┘
+            ▼
+ ┌──────────────────────┐   hạ về work_height · threshold · medianBlur
+ │  dò + chọn tứ giác   │   findContours → approxPolyDP → LỌC → chọn tốt nhất
+ └──────────┬───────────┘   rembg thua → đường lui edge-Hough        (detect.py)
+            ▼
+ ┌──────────────────────┐   metric hình học + nội dung + chất lượng
+ │  chấm điểm           │   → reasons[] → verdict                     (qc.py)
+ └──────────┬───────────┘
+            ▼
+ ┌──────────────────────┐   nới cạnh bao trọn mép giấy cong
+ │  nắn + mã hoá        │   four_point_transform trên ảnh GỐC → PNG   (geometry.py)
+ └──────────┬───────────┘
+            ▼
+   ScanResult{image, verdict, reasons[], metrics}
 ```
 
-Toàn bộ nằm trong **một hàm** `scan()` — [src/qc_scanner/doc.py:14-71](../src/qc_scanner/doc.py#L14-L71).
-Không state, không I/O ngoài (trừ rembg tải model lần đầu), không song song.
+Một lõi, ba mặt tiền gọi chung. Không state, không I/O ngoài (trừ rembg tải model lần đầu),
+không hàng đợi.
 
-Ba mặt tiền gọi cùng hàm này:
-- CLI — [src/qc_scanner/cmd/cli.py:20-21](../src/qc_scanner/cmd/cli.py#L20-L21)
-- HTTP server — [src/qc_scanner/cmd/server.py:14-41](../src/qc_scanner/cmd/server.py#L14-L41)
-- Library — `from qc_scanner.doc import scan`
-
----
-
-## 1. `scan()` — thuật toán **ban đầu** (giữ để đối chiếu)
-
-```
-scan(data: bytes) -> bytes | None
- 1. processed = rembg(data)                       # tách chủ thể → PNG RGBA
- 2. img = cv2.imdecode(frombuffer(processed), IMREAD_UNCHANGED)
-    nếu img is None: raise ValueError             # không decode được
- 3. orig  = img.copy()                            # giữ ảnh GỐC độ phân giải đầy đủ
-    ratio = img.height / 500.0                    # hệ số quy đổi ngược
-    img   = imutils.resize(img, height=500)       # làm việc trên ảnh nhỏ cho nhanh
- 4. nếu img.shape[2] == 4:                        # có kênh alpha
-        _, img = threshold(img[:,:,3], 0, 255, THRESH_BINARY)   # alpha → mask nhị phân
-    ngược lại: raise ValueError                   # "lacks an alpha channel"
- 5. img = medianBlur(img, 15)                     # khử răng cưa / lỗ nhỏ trong mask
- 6. cnts = findContours(img, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
-    cnts = sort(cnts, key=contourArea, desc)      # to nhất trước
- 7. outline = None
-    với mỗi c trong cnts:                         # LẤY TỨ GIÁC ĐẦU TIÊN GẶP
-        peri    = arcLength(c, closed=True)
-        polygon = approxPolyDP(c, 0.02 * peri, closed=True)
-        nếu len(polygon) == 4: outline = polygon.reshape(4,2); break
- 8. nếu outline is None: result = orig            # ⚠️ FALLBACK IM LẶNG
-    ngược lại:            result = four_point_transform(orig, outline * ratio)
- 9. _, buf = imencode(".png", result); return buf.tobytes()
-
- mọi exception  → print(stderr) + return None     # ⚠️ NUỐT LỖI
-```
-
-### Vì sao từng lựa chọn
-
-| Bước | Lựa chọn | Lý do |
+| Cửa vào | Nhận | Trả |
 |---|---|---|
-| 1 | Dùng **rembg** thay vì dò cạnh Canny | Ảnh chụp thật có nền lộn xộn (bàn gỗ, vân, chữ in trên tờ khác). Mask chủ thể cho biên **sạch hơn nhiều** so với dò cạnh, vốn bắt cả đường kẻ trong tài liệu. |
-| 3 | Dò biên trên ảnh **500px**, warp trên ảnh **gốc** | Dò trên ảnh nhỏ nhanh và **ổn định hơn** (nhiễu tần số cao bị dập). Nắn trên ảnh gốc để **không mất độ phân giải** — ảnh này còn phải đi vào OCR. `ratio` quy đổi 4 điểm ngược về hệ tọa độ gốc. |
-| 4 | Lấy **kênh alpha**, không lấy màu | Alpha do rembg sinh chính là "đâu là tờ giấy". Không phụ thuộc màu giấy / ánh sáng. |
-| 5 | `medianBlur` (không phải Gaussian) | Median giữ **cạnh sắc** trong khi xóa đốm — đúng nhu cầu mask nhị phân. Gaussian sẽ làm nhòe góc, hỏng approxPolyDP. |
-| 7 | `approxPolyDP` với ε = **2% chu vi** | Ramer–Douglas–Peucker: giản lược đa giác tới khi mọi điểm nằm trong ε. 2% đủ lớn để nuốt gợn sóng mép giấy, đủ nhỏ để giữ 4 góc thật. |
-| 8 | Warp bằng `four_point_transform` | Sắp 4 điểm theo thứ tự TL-TR-BR-BL rồi `getPerspectiveTransform` + `warpPerspective`; kích thước đích suy từ cạnh dài nhất mỗi chiều. |
+| `scan_document(bytes)` | ảnh **hoặc** PDF | `DocumentResult` — một `ScanResult` mỗi trang |
+| `scan_qc(bytes)` | ảnh, hoặc PDF **một trang** | `ScanResult` |
+| `scan_image(ndarray)` | ảnh BGR đã giải mã | `ScanResult` |
+| `scan(bytes)` | ảnh | `bytes` PNG — API cũ, **không mang phán quyết** |
 
-### Điểm yếu đã biết của thuật toán này
-
-- **B7 lấy tứ giác ĐẦU TIÊN**, không kiểm lồi / diện tích tối thiểu / tỉ lệ cạnh → một vệt
-  nhiễu vuông vắn có thể thắng. → [QUAL-1](features_issues.md#qual-quad-filter)
-- **B8 fallback im lặng**: không tìm được biên → trả ảnh gốc, caller **không biết**. Đây là
-  nguồn *false pass* lớn nhất. → [QC-1/QC-2](features_issues.md#qc-contract)
-- **Nuốt exception → `None`**: xóa sạch nguyên nhân. → [BUG-2](features_issues.md#bug-swallow)
-- **Hằng số cứng** (500px, ksize 15, 2%) không scale theo kích thước ảnh. → [QUAL-2](features_issues.md#qual-scale)
-- **Chỉ lấy 1 tứ giác** — nhiều tờ trong khung thì âm thầm mất tờ. → [QC-9](features_issues.md#qc-multi)
+Mặt tiền: [`cmd/cli.py`](../src/qc_scanner/cmd/cli.py) ·
+[`cmd/server.py`](../src/qc_scanner/cmd/server.py) ·
+[`cmd/batch.py`](../src/qc_scanner/cmd/batch.py) · library.
 
 ---
 
-## 1b. `scan_qc()` — luồng đang chạy
+## 1. `scan_qc()` — luồng đang chạy
 
 ```
 scan_qc(data, config) -> ScanResult
@@ -128,7 +91,7 @@ trường `QC_SCANNER_*`.
 
 ---
 
-## 2. ✅ Hợp đồng đầu ra QC (đã cài)
+## 2. Hợp đồng đầu ra QC {#hop-dong}
 
 Đây là thay đổi cốt lõi của dự án: **đầu ra không còn là ảnh, mà là một phán quyết kèm ảnh.**
 
@@ -186,68 +149,74 @@ phá người dùng PyPI hiện tại.
 
 ---
 
-## 3. Luồng CLI — [cmd/cli.py](../src/qc_scanner/cmd/cli.py)
+## 3. Mặt tiền CLI — [cmd/cli.py](../src/qc_scanner/cmd/cli.py)
 
-```
-input  = stdin nếu là pipe, ngược lại đối số file
-output = stdout nếu là pipe, ngược lại đối số file
-output.write( scan( rembg.remove( input.read() ) ) )
-```
+Ảnh ra stdout (hoặc file), **phán quyết đi theo exit code**: `0` pass · `1` warn · `2` fail ·
+`3` đầu vào không đánh giá được. Báo cáo JSON (reason + hint + metrics) ra stderr, hoặc ra file
+với `--report`. Pipe cũ (`cat a.jpg | qc-scanner > b.png`) không vỡ.
 
-✅ **Đã sửa**: `rembg` chỉ còn được gọi bên trong `scan_qc()`. CLI nay trả **exit code theo
-verdict** (0 pass · 1 warn · 2 fail · 3 đầu vào hỏng) và in báo cáo JSON (reason + hint) ra
-stderr, hoặc ra file với `--report`. Ảnh vẫn ra stdout như cũ nên pipe hiện có không vỡ.
+PDF nhiều trang: trang đầu vào OUTPUT, các trang sau thành `OUTPUT.p2.png`… — hoặc gộp cả vào
+một file nếu OUTPUT có đuôi `.pdf`. Ghi đè mọi trang lên cùng một đích sẽ để lại đúng trang cuối
+mà không báo gì, nên ca stdout + nhiều trang bị **từ chối** thay vì làm im lặng.
 
-Thêm `qc-scanner-batch` cho cả thư mục, xuất CSV báo cáo QC.
-
----
-
-## 4. Luồng HTTP server — [cmd/server.py](../src/qc_scanner/cmd/server.py)
-
-```
-POST /  form-data "file"     → file_content = file.read()
-GET  /  ?url=<url-encoded>   → file_content = urlopen(unquote_plus(url)).read()   🔴 SSRF
-nếu file_content == "":  400                                    🔴 so bytes với str
-send_file(BytesIO(scan(file_content)), mimetype="image/png")
-lỗi → log + {"error": "oops, something went wrong!"}, 500        🔴 phản-QC
-```
-
-✅ **Đã sửa cả ba**. Nhánh `GET /?url=` bị bỏ hẳn (405). Chốt chặn rỗng chuyển vào
-`scan_qc()` nên cả ba mặt tiền cùng được bảo vệ. `?format=json` trả `ScanResult` (ảnh base64
-+ verdict + reasons + metrics); mặc định trả PNG kèm header `X-QC-Scanner-Verdict` /
-`X-QC-Scanner-Reasons`. HTTP status theo verdict: 200 pass/warn, **422** fail, 400 đầu vào hỏng.
-
-Lưu ý về hành vi cũ: mô tả "500 oops" **chưa đúng**. Đo thực tế cho thấy server cũ trả
-**200 OK + PNG rỗng 0 byte** với ảnh hỏng, vì `BytesIO(None)` hợp lệ nên `send_file` không
-ném gì để rơi vào `except`. Đó là hỏng âm thầm — tệ hơn 500.
+`qc-scanner-batch` chạy cả thư mục, xuất CSV **một dòng mỗi trang** kèm toàn bộ metric — đây là
+hình thức QC mà vận hành tiêu thụ được ở quy mô hàng vạn ảnh.
 
 ---
 
-## 5. Chi phí thời gian
+## 4. Mặt tiền HTTP — [cmd/server.py](../src/qc_scanner/cmd/server.py)
 
-| Chặng | Tỉ trọng | Ghi chú |
-|---|---|---|
-| `rembg` (U²-Net, onnxruntime CPU) | **~95%+** | Lần chạy đầu còn cộng thời gian **tải model** |
-| resize + threshold + blur + contour | vài chục ms | không đáng tối ưu |
-| `warpPerspective` trên ảnh gốc | ~10–50ms | tỉ lệ với megapixel |
-| `imencode(".png")` | ~10–100ms | PNG nén chậm hơn JPEG — chấp nhận (xem nguyên tắc §3.3 roadmap) |
+Hợp đồng đầy đủ ở [api.md](api.md); `tests/test_api_contract.py` giữ đúng những gì tài liệu đó
+hứa. Tóm tắt phần thuật toán quan tâm:
 
-Hệ quả: **mọi tối ưu tốc độ đều nằm ở rembg** — tái dùng session, GPU provider.
-
-✅ **Đã đo** (9 ảnh thật, Apple Silicon, model đã cache):
-
-| Cấu hình | Thời gian/ảnh (median) |
+| Status | Nghĩa |
 |---|---|
-| Bản đầu (tạo session mới mỗi lần gọi) | ~3.0s |
-| **Tái dùng session (N-06, hiện tại)** | **0.395s** |
-| Tái dùng session + model `isnet-general-use` | 1.198s |
+| `200` | pass/warn — PNG kèm header `X-QC-Scanner-Verdict` / `-Reasons`, hoặc JSON/PDF nếu xin |
+| `422` | fail — **ảnh hợp lệ** nhưng đầu ra không đáng tin cho OCR. Đừng retry |
+| `400` | đầu vào không đánh giá được |
+| `503` | kín tải hoặc lỗi tài nguyên — **nên** retry, kèm `Retry-After` |
 
-Giả thuyết "rembg chiếm ~95%" **được xác nhận**: bỏ được phần nạp lại model là đủ để nhanh
-hơn ~7 lần, trong khi phần OpenCV không đổi. Đừng tối ưu OpenCV.
+Ba chỗ mà thuật toán quyết định hình dạng HTTP:
+
+* **`422` tách khỏi `400`** vì "ảnh xấu" và "request sai" đòi hai hành động khác nhau ở phía gọi.
+* **`503` tách khỏi `400`** vì lỗi tài nguyên máy chủ **không phải** lỗi ảnh; trả `400` ở đó là
+  bảo phía gọi loại vĩnh viễn một tấm ảnh tốt.
+* **PDF nhiều trang luôn trả JSON**, kể cả khi không xin — không có hình dạng "một file PNG" nào
+  chứa được N trang. Verdict gộp là **trang tệ nhất**.
 
 ---
 
-## 6. ✅ Fallback dò cạnh (đã cài)
+
+## 5. Chi phí thời gian {#chi-phi}
+
+Đo trên máy server 64 nhân, ảnh 3024×4032 (cỡ ảnh điện thoại thật — đây là chỗ dễ đo sai nhất,
+ảnh 500px cho một con số đẹp và vô dụng):
+
+| Chặng | ms/ảnh | Tỉ trọng |
+|---|---|---|
+| giải mã ảnh | ~52 | 9% |
+| suy luận rembg | ~301 | 52% |
+| phần còn lại (resize, contour, warp, mã hoá PNG) | ~231 | 39% |
+| **tổng** | **~584** | |
+
+**Kết luận đã đổi so với bản đầu.** Tài liệu này từng ghi "rembg chiếm ~95%, đừng tối ưu
+OpenCV". Con số đó đo trên bản **tạo lại session mỗi lần gọi** (~3.0s/ảnh), nên phần nạp model
+lấn át tất cả. Bỏ được nó rồi thì tỉ lệ thật lộ ra: **gần một nửa thời gian nằm ngoài rembg**,
+và SPD-1 lấy được 1.38x đúng ở phần "đừng tối ưu" đó.
+
+Hai hệ quả còn hiệu lực:
+
+* Phần ngoài rembg chạy trên CPU và **không batch được** — đây là lý do dynamic batching chỉ
+  đáng 0.8% ([SPD-5](features_issues.md#spd-batching)).
+* Thông lượng bão hoà ở ~16 luồng trong một tiến trình (8.4 ảnh/s). Muốn hơn thì **nhân số
+  container**, không phải tối ưu tiếp trong một tiến trình.
+
+Đo lại trên máy đích bằng `qc-scanner-bench` — số ở đây là của một máy cụ thể, không phải hằng số.
+
+---
+
+
+## 6. Đường lui dò cạnh {#duong-lui}
 
 Ca thường gặp nhất mà rembg chịu thua: **giấy trắng trên nền trắng/sáng** → `alpha_coverage`
 gần 0 hoặc gần 1 (nuốt cả ảnh). Khi đó thay vì `fail` ngay, chạy đường lui:
@@ -258,7 +227,7 @@ nếu alpha_coverage < 0.05 hoặc > 0.95:
     lines = HoughLinesP(...)
     gom line theo hướng → 2 cụm (ngang / dọc) → lấy 2 line ngoài cùng mỗi cụm
     4 giao điểm → tứ giác ứng viên
-    nếu qua được bộ lọc §7 (lồi, diện tích, tỉ lệ):
+    nếu qua được bộ lọc hình học (lồi, diện tích, tỉ lệ):
         dùng tứ giác này; verdict = warn
         reasons += RECOVERED_BY_EDGE_FALLBACK   # minh bạch: kết quả kém tin cậy hơn
     ngược lại:
@@ -270,7 +239,7 @@ không bao giờ giấu việc đã phải dùng đường lui.
 
 ---
 
-## 7. ✅ Danh mục mã lý do (đã cài)
+## 7. Danh mục mã lý do {#ma-ly-do}
 
 Nguyên tắc bất biến: **mã nào cũng phải có `hint` và `audience`**. Mã không hành động được
 là mã vô dụng.
@@ -346,7 +315,7 @@ là ước đoán** — cần tập vàng để chốt (QUAL-3, EX-2).
 
 ---
 
-## 8. Khảo sát: lõi thuật toán có còn hợp thời? (2026)
+## 8. Khảo sát: lõi thuật toán có còn hợp thời? (2026) {#khao-sat}
 
 > Code lõi viết ~2019 (7 năm trước). Câu hỏi: công nghệ hiện nay có phương pháp luận nào tốt
 > hơn không? Trả lời ngắn: **có, và khoảng cách khá lớn** — nhưng đúng một phần của lõi hiện tại

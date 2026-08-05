@@ -356,33 +356,6 @@ năng lực máy, và mất trong im lặng: service chạy đúng, healthcheck 
 Tiết kiệm 3.8 ms trên tổng 477 ms, tức **0.8%**, trong khi phần CPU 297 ms/ảnh không batch được.
 Xem [SPD-5](docs/features_issues.md#spd-batching).
 
-### Đợt tối ưu tốc độ
-
-| | |
-|---|---|
-| [SPD-1](docs/features_issues.md#spd-roundtrip) | Bỏ vòng "mã hoá PNG toàn cỡ rồi giải mã lại" của rembg — chặng tách nền nhanh 1.38x (đo ghép cặp, 111 lần) |
-| [SPD-2](docs/features_issues.md#spd-event-loop) | `scan_qc()` chạy trên vòng lặp sự kiện làm `/healthz` trễ 617ms dưới tải; nay 2ms |
-| [SPD-3](docs/features_issues.md#spd-spool) | Upload > 1MB bị ghi ra file tạm trên đĩa, trái [EX-12](docs/need_exchange.md); nay ở trong RAM |
-| [SPD-4](docs/features_issues.md#spd-gpu) | Đường GPU NVIDIA — đã chạy được trên H100 |
-| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching: đo trên H100, cải thiện 0.8% → không làm |
-| [SPD-6](docs/features_issues.md#spd-oom) | GPU hết bộ nhớ bị báo là "ảnh hỏng" (`400`); nay `INFERENCE_FAILED` + `503` |
-| [SPD-7](docs/features_issues.md#spd-resample) | "Chặng suy luận" phần lớn là resize của PIL, không phải GPU; có cờ tắt bớt, mặc định tắt |
-
-SPD-1 đến SPD-3 không đổi phán quyết trên ảnh nào, ảnh ra trùng byte 37/37.
-
-### Đợt chốt yêu cầu khách + soi ảnh thật (2026-08-05)
-
-| | |
-|---|---|
-| QC-11 | `NO_CROP_DETECTED` — ảnh không cắt được gì là `fail`, không phải `warn` |
-| QC-12 | `CONTENT_CLIPPED` — phân biệt mất viền trắng với mất chữ ([EX-1](docs/need_exchange.md)) |
-| QC-13 | Hint hai tầng: người chụp (chụp lại được) / người vận hành (không) |
-| QC-14 | Cờ `pre_cropped` cho ảnh đã cắt sẵn — đo 37 ảnh thấy không tự đoán được, phải khai báo |
-| QC-15 | Ngừng phát `SUBJECT_FILLS_FRAME` — giấy chiếm hết khung tự nó không phải lỗi |
-| QC-16 | Đường lui thôi ghi đè tứ giác đúng bằng tứ giác sai (thắng 0/3 trên ảnh thật) |
-| QC-17 | Nới cạnh bao trọn contour để không cắt lẹm vào mép giấy cong |
-| S-5 | Đo độ cong trên 36 ảnh → không làm dewarping |
-
 ### Việc còn lại
 
 - [OPS-3](docs/features_issues.md#ops-docker-unverified): chưa kiểm gọi từ máy khác qua LAN, chạy
@@ -391,6 +364,8 @@ SPD-1 đến SPD-3 không đổi phán quyết trên ảnh nào, ảnh ra trùng
   lật verdict hai lần; nhánh miễn trừ cần vùng đệm thay vì ngưỡng cứng.
 - [EX-2](docs/need_exchange.md): chốt ngưỡng và nâng cấp detector cần tập ảnh có nhãn.
 - [EX-15](docs/need_exchange.md#ex-multipage): giấy chứng nhận chụp từng mặt — ai ghép và kiểm đủ mặt.
+- [PKG-5](docs/features_issues.md#pkg-license): chưa có file giấy phép — README nói MIT nhưng
+  `LICENSE.txt` không tồn tại, và giấy phép của model đi kèm image cũng chưa liệt kê.
 - [EX-16](docs/need_exchange.md#ex-throughput): "700 CCU" là bao nhiêu ảnh/giây.
 - [EX-17](docs/need_exchange.md#ex-pdfkind): PDF của khách là bản scan hay ảnh chụp bọc lại —
   quyết định mặc định của `pdf_pre_cropped`.
