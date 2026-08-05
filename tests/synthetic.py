@@ -67,6 +67,20 @@ def clipped_margin_only():
     return _png(img)
 
 
+def document_fills_frame():
+    """QC-15: giấy chiếm gần hết khung nhưng KHÔNG mất gì → phải `pass`.
+
+    Chỉ chừa 10px nền quanh mép, nên `alpha_coverage` vượt `max_alpha_coverage`
+    (0.95) — trước QC-15 ca này ăn `SUBJECT_FILLS_FRAME` mức `warn` dù chữ nằm
+    gọn cách mép giấy 110px và không có gì bị cắt.
+    """
+    img = np.full((1200, 900, 3), 25, np.uint8)
+    paper = np.full((1180, 880, 3), 245, np.uint8)
+    paper[110:-110, 110:-110] = _paper(1180 - 220, 880 - 220)
+    img[10:-10, 10:-10] = paper
+    return _png(img)
+
+
 def skewed_document():
     """EXTREME_SKEW: nắn ảnh bằng ma trận phối cảnh nghiêng mạnh."""
     img = np.full((1400, 1000, 3), 25, np.uint8)

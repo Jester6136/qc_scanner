@@ -98,10 +98,13 @@ REASONS: dict[str, ReasonSpec] = {
             "sáng). Cắt tay theo mép giấy trước khi cho xuống OCR.",
             "capturer",
         ),
+        # ⚠️ KHÔNG CÒN ĐƯỢC PHÁT kể từ QC-15 (2026-08-05). Giữ định nghĩa lại để log
+        # và CSV cũ vẫn tra được mã này, và để bật lại chỉ là một dòng trong `doc.py`.
+        # Lý do bỏ: `border_ink_ratio` đo thẳng thứ mã này chỉ phỏng đoán.
         _spec(
             "SUBJECT_FILLS_FRAME",
             "warn",
-            "Tờ giấy chiếm gần hết khung hình.",
+            "Tờ giấy chiếm gần hết khung hình. (Mã đã ngừng phát — xem QC-15.)",
             "Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. "
             "Lùi ra để lộ viền nền quanh tài liệu.",
             "Giấy chiếm gần hết khung nên không chắc còn đủ 4 mép. "
@@ -345,6 +348,13 @@ class Metrics:
     is_convex: Optional[bool] = None
     touches_border: int = 0
     """Số góc nằm sát mép ảnh."""
+
+    corners_outside_px: float = 0.0
+    """Góc tứ giác lọt ra ngoài ảnh bao nhiêu pixel (theo ảnh làm việc).
+
+    > 0 nghĩa là detector suy ra một góc mà nó **không nhìn thấy** — dấu hiệu nó thua,
+    dùng để phân biệt "detector trả lại khung hình" với "người chụp lấy khung sát".
+    """
 
     border_ink_ratio: Optional[float] = None
     """Mật độ pixel mực sát mép ảnh, ở những cạnh tứ giác bị khung hình cắt (QC-12).

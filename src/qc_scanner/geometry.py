@@ -112,6 +112,15 @@ def median_brightness(image):
     return float(np.median(_gray(image)))
 
 
+def corners_outside(corners, shape):
+    """Góc nào lọt ra ngoài khung ảnh, và lọt bao xa (pixel). 0 nếu nằm gọn bên trong."""
+    height, width = shape[:2]
+    xs, ys = corners[:, 0], corners[:, 1]
+    return float(
+        max(0.0, -xs.min(), -ys.min(), xs.max() - (width - 1), ys.max() - (height - 1))
+    )
+
+
 def ink_mask(image, block_ratio=0.05, offset=15):
     """Pixel **mực** = tối hơn hẳn vùng giấy quanh nó.
 

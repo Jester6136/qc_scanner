@@ -56,24 +56,37 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     quad = _pick(detector, candidates, work, mask, cfg)
 
     # Đường lui: rembg không tách được chủ thể → thử dò cạnh trước khi bỏ cuộc.
-    subject_missing = (
-        metrics.alpha_coverage < cfg.min_alpha_coverage
-        or metrics.alpha_coverage > cfg.max_alpha_coverage
-    )
-    if (quad is None or subject_missing) and cfg.enable_edge_fallback:
+    #
+    # QC-16 — điều kiện kích hoạt trước đây gồm cả `alpha_coverage > 0.95`, và nó
+    # sai theo hướng đắt nhất: **ghi đè một tứ giác đúng bằng một tứ giác sai**.
+    # Ca thật (`04.57.20`): rembg cho tứ giác 0.964 khung, conf 0.9, đúng tờ giấy;
+    # alpha 0.969 vượt ngưỡng nên đường lui chạy và trả một dải 0.404 — mất nguyên
+    # nửa trên tài liệu. Chuỗi kết thúc bằng `CONTENT_CLIPPED` → `fail`.
+    #
+    # "Giấy chiếm gần hết khung" KHÔNG có nghĩa là rembg thất bại. Đường lui chỉ chạy
+    # khi rembg **không tìm thấy gì**, chứ không phải khi nó tìm thấy quá nhiều.
+    #
+    # Đã thử nới điều kiện sang cả ca "tứ giác gần trọn khung" và **đo thấy tệ hơn**:
+    # trên ba ảnh thật (04.56.41 · 04.57.20 · 04.58.02), rembg cho tứ giác đúng cả tờ
+    # còn edge-hough chỉ bắt được một mảnh (0.461 · 0.404 · 0.422) — lần lượt mất
+    # trang trong có chữ viết tay, mất nửa trên, và mất hẳn một trang. Đường lui thắng
+    # 0/3. Nới điều kiện ở đây là đổi một tứ giác đúng lấy một tứ giác sai.
+    fallback_needed = quad is None or metrics.alpha_coverage < cfg.min_alpha_coverage
+
+    if fallback_needed and cfg.enable_edge_fallback:
         recovered = get_detector("edge-hough").find_quad(work, mask, cfg)
         if recovered is not None and _passes_filters(recovered.corners, work, cfg):
             quad = recovered
             metrics.fallback_used = "edge_detect"
             reasons.append(Reason.of("RECOVERED_BY_EDGE_FALLBACK"))
 
-    if metrics.alpha_coverage > cfg.max_alpha_coverage:
-        reasons.append(
-            Reason.of(
-                "SUBJECT_FILLS_FRAME",
-                f"alpha_coverage={metrics.alpha_coverage:.3f}",
-            )
-        )
+    # QC-15: KHÔNG còn phát `SUBJECT_FILLS_FRAME`. "Giấy chiếm gần hết khung" là một
+    # *phỏng đoán* về việc có thể đã mất mép, ra đời khi chưa đo được điều đó. Nay
+    # `border_ink_ratio` đo thẳng: giấy đầy khung mà không cắt vào chữ thì **không
+    # mất gì** — báo warn ở đó là đẩy ảnh dùng được vào hàng chờ người soi.
+    # Đo trên 45 ảnh: mã này phát 4 lần, cả 4 lần đều đi kèm NO_CROP_DETECTED hoặc
+    # CONTENT_CLIPPED. Nó chưa bao giờ tự mình quyết verdict.
+    # `alpha_coverage` vẫn nằm nguyên trong metrics cho ai cần tra ngược.
 
     if quad is None:
         if metrics.alpha_coverage < cfg.min_alpha_coverage:
@@ -203,6 +216,7 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
     metrics.skew_ratio = geo.skew_ratio(corners)
     metrics.is_convex = geo.is_convex(corners)
     metrics.touches_border = geo.touches_border(corners, work.shape, cfg.border_margin_px)
+    metrics.corners_outside_px = geo.corners_outside(corners, work.shape)
 
     reasons = []
     if not metrics.is_convex:
@@ -215,19 +229,31 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
         reasons.append(
             Reason.of("EXTREME_SKEW", f"skew_ratio={metrics.skew_ratio:.2f}")
         )
-    # QC-11: tứ giác gần trọn khung *và* chạm cả 4 mép = detector trả lại chính khung
-    # hình, không phải tờ giấy. Ca này trước đây chỉ ra `warn` (CLIPPED_EDGE) nên ảnh
-    # chưa cắt vẫn trôi được xuống người dùng. Phát riêng một mã `fail` và **thay** cho
-    # CLIPPED_EDGE — chạm 4 mép ở đây là hệ quả, nói thêm chỉ làm loãng lý do thật.
+    # QC-11: tứ giác gần trọn khung *và* chạm gần hết mép = detector trả lại chính
+    # khung hình, không phải tờ giấy. Ca này trước đây chỉ ra `warn` (CLIPPED_EDGE) nên
+    # ảnh chưa cắt vẫn trôi được xuống người dùng. Phát riêng một mã `fail` và **thay**
+    # cho CLIPPED_EDGE — chạm mép ở đây là hệ quả, nói thêm chỉ làm loãng lý do thật.
+    #
+    # QC-16: nhưng chỉ khi detector THẬT SỰ thua. Tờ giấy chiếm gần hết khung mà biên
+    # vẫn dựng được đàng hoàng (4 đỉnh thật, `conf 0.9`, không góc nào lọt ra ngoài
+    # ảnh) là **người chụp lấy khung sát**, không phải lỗi — nội dung còn nguyên, chỉ
+    # là chẳng có gì để cắt.
+    struggled = (
+        metrics.detector_confidence is not None
+        and metrics.detector_confidence < cfg.no_crop_min_confidence
+    ) or metrics.corners_outside_px > cfg.border_margin_px
     if (
         metrics.quad_area_ratio > cfg.no_crop_area_ratio
-        and metrics.touches_border >= 4
+        and metrics.touches_border >= cfg.no_crop_touched_edges
+        and struggled
     ):
         reasons.append(
             Reason.of(
                 "NO_CROP_DETECTED",
                 f"quad_area_ratio={metrics.quad_area_ratio:.3f}, "
-                f"touches_border={metrics.touches_border}",
+                f"touches_border={metrics.touches_border}, "
+                f"confidence={metrics.detector_confidence}, "
+                f"corners_outside_px={metrics.corners_outside_px:.0f}",
             )
         )
     elif metrics.touches_border >= 1:
@@ -260,6 +286,16 @@ def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons)
     )
     if metrics.border_ink_ratio <= cfg.max_border_ink_ratio:
         return reasons
+
+    # QC-16: không cắt gì thì "chữ bị đường cắt chém" là câu hỏi sai — cái đo được
+    # là mép **tấm ảnh**, không phải mép crop. Tệ hơn, đúng ca đó tứ giác hay trùm cả
+    # nền (rembg không tách được), và ngưỡng thích nghi đọc mảng nền tối thành mực:
+    # ảnh `04.57.20` cho ink 0.213 tuy không mất chữ nào, chỉ vì dải trái là mặt bàn.
+    # `NO_CROP_DETECTED` đã nói đúng và đủ chuyện gì xảy ra; thêm mã thứ hai chỉ là
+    # khẳng định một điều mình không đo được.
+    if (metrics.quad_area_ratio or 0) > cfg.no_crop_area_ratio:
+        return reasons
+
     kept = [r for r in reasons if r.code != "CLIPPED_EDGE"]
     kept.append(
         Reason.of("CONTENT_CLIPPED", f"border_ink_ratio={metrics.border_ink_ratio:.3f}")

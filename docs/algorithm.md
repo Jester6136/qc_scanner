@@ -103,12 +103,15 @@ scan_qc(data, config) -> ScanResult
     metrics.alpha_coverage = tỉ lệ pixel alpha > 0
  5. candidates = detector.all_candidates(work, mask)   # contour ≥ 5% diện tích
     quad       = best_candidate(...)                   # LỌC rồi mới chọn, không lấy cái đầu
- 6. nếu quad None HOẶC alpha_coverage ngoài [0.05, 0.95]:
+ 6. nếu quad None HOẶC alpha_coverage < 0.05 (rembg KHÔNG tìm thấy gì):
         thử đường lui edge-hough → qua lọc thì dùng + RECOVERED_BY_EDGE_FALLBACK (warn)
+    (QC-16: KHÔNG chạy đường lui khi rembg tìm thấy *quá nhiều* — đo thấy nó ghi đè
+     tứ giác đúng bằng tứ giác sai, thắng 0/3 trên ảnh thật)
  7. vẫn không có quad → trả ảnh GỐC + QUAD_NOT_FOUND/SUBJECT_NOT_FOUND + FALLBACK_ORIGINAL
     (fail).  Khác bản cũ ở đúng một chỗ: **có nhãn**.
- 8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE · NO_CROP_DETECTED
-    tứ giác chạm mép ảnh mà chỗ chạm CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
+ 8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE
+    tứ giác gần trọn khung + chạm ≥3 mép + detector THUA → NO_CROP_DETECTED (thay CLIPPED_EDGE)
+    có cắt thật, mà chỗ cắt CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
     ≥2 ứng viên → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
  9. warp trên ảnh GỐC, PNG
@@ -284,7 +287,7 @@ là mã vô dụng.
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
 | `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Không tách được tờ giấy khỏi nền. Đặt tài liệu lên **nền tối, tương phản** (bàn sẫm màu) rồi chụp lại. | capturer |
-| `SUBJECT_FILLS_FRAME` | warn | `alpha_coverage > 0.95` | Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. Lùi ra để lộ viền nền quanh tài liệu. | capturer |
+| ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. Lùi ra để lộ viền nền quanh tài liệu. | capturer |
 | `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, nên soi mắt thường trước khi dùng. | operator |
 
 ### Hình học biên
@@ -294,8 +297,8 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
-| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08` (có mực sát mép ở cạnh bị khung cắt) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
-| `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border == 4` | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
+| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
+| `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border ≥ 3` **và** detector thua (`conf < 0.9` hoặc góc lọt ra ngoài ảnh) | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
 | `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |
 | `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. Chụp **từng tờ một**. | capturer |

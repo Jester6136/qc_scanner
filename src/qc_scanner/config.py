@@ -63,12 +63,40 @@ class Config:
     """
 
     no_crop_area_ratio: float = 0.90
-    """Tứ giác lớn hơn tỉ lệ này **và** chạm đủ 4 mép → coi như không cắt được gì (QC-11).
+    """Tứ giác lớn hơn tỉ lệ này **và** chạm ≥ `no_crop_touched_edges` mép → không cắt
+    được gì (QC-11).
 
     Đo trên 17 ảnh thật: dấu hiệu kép này bắt đúng 2 ảnh, cả hai đều thật sự không cắt
     được, 0 báo động giả. Riêng `quad_area_ratio > 0.90` thì không đủ — ảnh chụp sát tài
-    liệu vẫn cho tỉ lệ cao mà biên vẫn đúng; điều kiện `touches_border == 4` mới là thứ
-    phân biệt "tài liệu chiếm hết khung" với "detector trả lại chính khung hình".
+    liệu vẫn cho tỉ lệ cao mà biên vẫn đúng; điều kiện chạm mép mới là thứ phân biệt
+    "tài liệu chiếm hết khung" với "detector trả lại chính khung hình".
+    """
+
+    no_crop_min_confidence: float = 0.9
+    """Detector tự tin từ mức này trở lên thì "giấy đầy khung" KHÔNG bị coi là lỗi.
+
+    Phân biệt hai chuyện trước đây bị gộp làm một:
+
+    * **Detector thua** — không dựng nổi 4 đỉnh nên phải ép `minAreaRect` (`conf 0.6`),
+      hoặc góc rơi ra ngoài ảnh. Ảnh ra là ảnh vào, và chẳng ai biết tờ giấy ở đâu.
+      Đây mới là `NO_CROP_DETECTED`.
+    * **Người chụp lấy khung sát** — detector cho tứ giác 4 đỉnh đàng hoàng (`conf 0.9`)
+      nằm trong ảnh, chỉ là tờ giấy vốn chiếm gần hết khung nên chẳng có gì để cắt.
+      Nội dung còn nguyên → không phải lỗi.
+
+    Đo trên 45 ảnh, nhóm `area > 0.90 & tb >= 3`: `conf 0.6` gồm đúng những ca hỏng thật
+    (bắt mặt bàn, ảnh chưa cắt, góc lệch ra ngoài 18–59px); `conf 0.9` gồm những ca đã
+    soi mắt thường và **crop ra nguyên tờ, không mất gì** (04.56.41 · 04.57.20 · 04.58.02).
+    """
+
+    no_crop_touched_edges: int = 3
+    """Số mép tứ giác phải chạm để tính là không cắt được gì.
+
+    Ban đầu đặt 4. Đo lại trên 45 ảnh: hạ xuống 3 bắt thêm **3 ảnh**, cả ba đều cắt đi
+    dưới 10% khung (0.900 · 0.947 · 0.964) — tức ảnh ra gần y ảnh vào, đúng thứ mã này
+    sinh ra để bắt. Và **không ảnh nào** có diện tích > 0.90 mà chạm dưới 3 mép, nên
+    hạ ngưỡng không mở cửa cho ca mới nào. Vẫn giữ điều kiện chạm mép (thay vì bỏ hẳn)
+    để ảnh chụp sát tài liệu mà nằm trọn trong khung không bị vạ lây.
     """
 
     # --- Chất lượng ảnh ---

@@ -20,6 +20,10 @@ DEP-1 · PKG-1/2/3/4 · N-01/02/04/05/06 — cùng **vấn đề gốc** ở đ�
 ngày**: QC-11 · QC-12 · QC-13 · QC-14 🟢 · S-5 đã đo → chốt **không làm** ⚪ · N-11 **bỏ** theo
 yêu cầu ⚫. Chỉ còn **OPS-3**, để cuối vì máy phát triển không build Docker được.
 
+**Đợt soi ảnh thật 2026-08-05 (tmp_2)** mở và đóng thêm hai mục: **QC-15** (ngừng phát
+`SUBJECT_FILLS_FRAME`) và **QC-16** (đường lui ghi đè tứ giác đúng bằng tứ giác sai — ba sửa
+đổi, 6 ảnh chuyển `fail` → `warn`, tất cả đã soi mắt thường).
+
 **Còn mở, và lý do**:
 
 | Mã | Vì sao chưa làm |
@@ -304,6 +308,65 @@ chạm biên → `CONTENT_CLIPPED` severity `fail`. Bề rộng dải và ngư�
 số đo trên tập vàng. `CLIPPED_EDGE` giữ nguyên mức `warn` cho ca chỉ mất viền.
 
 ⚠️ Với hoá đơn thì mã này quan trọng nhất: mất dòng tổng tiền là hỏng cả bản ghi.
+
+---
+
+### 🧱 QC-15 · P1 · 🟢 · `SUBJECT_FILLS_FRAME` — chiếm hết khung, tự nó, không phải lỗi {#qc-fills-frame}
+
+> **✅ Đã làm 2026-08-05**, theo yêu cầu "cởi mở hơn: không chém vào chữ thì vẫn dùng được".
+
+Mã này phát khi `alpha_coverage > 0.95`, với thông điệp "có thể đã bị cắt mất mép". Nó là một
+**phỏng đoán**, ra đời khi chưa đo được điều nó phỏng đoán. Nay `border_ink_ratio` đo thẳng.
+
+Đo trên 45 ảnh: mã này phát **4 lần**, và cả 4 lần đều đi kèm `NO_CROP_DETECTED` hoặc
+`CONTENT_CLIPPED` — hai mã nói cùng chuyện đó nhưng có số đo đằng sau. Nó **chưa bao giờ tự
+mình quyết verdict**.
+
+**Đã làm**: ngừng phát. Định nghĩa vẫn nằm trong `REASONS` để log/CSV cũ tra được, và bật lại
+chỉ là một dòng trong `doc.py`. `alpha_coverage` vẫn nguyên trong metrics.
+
+---
+
+### 🧱 QC-16 · P0 · 🟢 · Đường lui ghi đè tứ giác ĐÚNG bằng tứ giác SAI {#qc-fallback-overrides}
+
+> **✅ Đã làm 2026-08-05.** Phát hiện khi soi ảnh `04.57.20` mà khách chỉ ra.
+
+Ảnh `04.57.20`: rembg cho tứ giác **0.964 khung, conf 0.9, đúng cả tờ**. Nhưng `alpha_coverage`
+0.969 vượt `max_alpha_coverage` nên điều kiện kích hoạt đường lui coi là "không tách được chủ
+thể", chạy `edge-hough`, nhận về một **dải 0.404** và **ghi đè**. Ảnh ra mất nguyên nửa trên
+(411×1344 từ 970×1364). Chuỗi kết thúc bằng `CONTENT_CLIPPED` → `fail`.
+
+Đây là kiểu sai đắt nhất: **đổi một kết quả đúng lấy một kết quả sai**, rồi báo lỗi vì chính
+cái sai mình vừa tạo ra.
+
+**Đã sửa ba chỗ, mỗi chỗ có số đo:**
+
+1. **Đường lui chỉ chạy khi rembg KHÔNG tìm thấy gì** (`quad is None` hoặc
+   `alpha < min_alpha_coverage`). Bỏ hẳn `alpha > max` khỏi điều kiện.
+   *Đã thử hướng ngược lại* — nới điều kiện sang cả ca "tứ giác gần trọn khung" — và **đo thấy
+   tệ hơn**: trên 3 ảnh thật (04.56.41 · 04.57.20 · 04.58.02), rembg đúng cả 3, edge-hough chỉ
+   bắt được một mảnh (0.461 · 0.404 · 0.422), lần lượt mất trang trong có chữ viết tay, mất nửa
+   trên, mất hẳn một trang. **Đường lui thắng 0/3.**
+
+2. **`NO_CROP_DETECTED` chỉ phát khi detector THẬT SỰ thua** — `conf < 0.9` (phải ép
+   `minAreaRect` vì không dựng nổi 4 đỉnh) hoặc có góc lọt ra ngoài ảnh. Tờ giấy chiếm gần hết
+   khung mà biên vẫn dựng đàng hoàng là **người chụp lấy khung sát**, nội dung còn nguyên.
+   Đo trên nhóm `area > 0.90 & tb >= 3`: `conf 0.6` gồm đúng các ca hỏng thật (bắt mặt bàn, góc
+   lệch ra ngoài 18–59px); `conf 0.9` gồm các ca đã soi mắt thường và **crop ra nguyên tờ**.
+   Kèm theo, hạ `touched_edges` từ 4 → 3: bắt thêm 3 ảnh cắt đi <10% khung, và **không ảnh nào**
+   có diện tích > 0.90 mà chạm dưới 3 mép nên không mở cửa cho ca mới.
+
+3. **`CONTENT_CLIPPED` không phát khi không có cắt thật** (`quad_area_ratio > 0.90`). Lúc đó
+   con số nó đo là mép **tấm ảnh**, không phải mép crop — và tứ giác thường trùm cả nền, khiến
+   ngưỡng thích nghi đọc mảng bàn tối thành "mực". `04.57.20` cho ink 0.213 tuy không mất chữ
+   nào, chỉ vì dải trái là mặt bàn.
+
+*Đã thử và bác*: lọc "nét mảnh" (mở hình thái để bỏ mảng dày, giữ nét chữ) để tách mực khỏi nền.
+**Tệ hơn**: ca báo oan cho 0.124 còn ca cắt thật chỉ 0.061–0.086 — thứ bị lọc đi là chữ, thứ còn
+lại là ranh giới giấy/bàn.
+
+**Kết quả trên 45 ảnh**: 21 fail → **15 fail**, 11 warn → 17 warn, pass giữ nguyên 13.
+Sáu ảnh chuyển `fail` → `warn`, **cả sáu đã soi mắt thường: crop ra nguyên tờ, không mất gì.**
 
 ---
 
