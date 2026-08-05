@@ -38,20 +38,44 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY requirements-gpu.txt ./
 RUN pip install --no-cache-dir -r requirements-gpu.txt
 
-# Chốt chặn lúc BUILD cho lỗi đóng gói hay gặp nhất: cài nhầm `onnxruntime` (bản CPU)
-# bên cạnh `onnxruntime-gpu`. Hai gói ghi đè lên nhau nên `import onnxruntime` lấy bản
-# nào là ngẫu nhiên — và bản CPU thì chạy đúng, chỉ chậm gấp mấy chục lần, không lỗi
-# nào để lần ra. Thà đứt build ở đây còn hơn phát hiện sau khi đã lên production.
-#
-# Đây thuần tuý là kiểm metadata gói, không đụng gì tới GPU (lúc build thường không có
-# GPU). Việc CUDA có chạy thật hay không thì `/healthz` mới trả lời được.
-RUN pip list --format=freeze | grep -q '^onnxruntime-gpu=' \
- && ! pip list --format=freeze | grep -q '^onnxruntime=' \
- || (echo "LỖI: phải có onnxruntime-gpu và KHÔNG được có onnxruntime (bản CPU)." \
-     && pip list | grep -i onnxruntime && exit 1)
-
 COPY . .
-RUN pip install --no-cache-dir .
+
+# `--no-deps` là điểm mấu chốt, không phải tối ưu.
+#
+# `setup.py` lấy `install_requires` từ **requirements.txt**, trong đó có `onnxruntime`
+# (bản CPU). Nên `pip install .` bình thường sẽ kéo bản CPU vào và **ghi đè lên
+# onnxruntime-gpu vừa cài** — hai gói dùng chung thư mục `onnxruntime/`, và
+# `onnxruntime_pybind11_state.so` của bản CPU không hề biết CUDA là gì.
+#
+# Kết quả đúng như đã dính trên máy H100: build xong, chạy được, healthcheck xanh, và
+#     get_available_providers() → ['AzureExecutionProvider', 'CPUExecutionProvider']
+# Không lỗi nào để lần ra, chỉ chậm gấp mấy chục lần.
+#
+# `--no-deps` an toàn ở đây vì requirements-gpu.txt đã cài đủ mọi phụ thuộc; có test
+# chốt hai file requirements không lệch nhau ngoài dòng onnxruntime.
+RUN pip install --no-cache-dir --no-deps .
+
+# Chốt chặn ĐẶT SAU CÙNG — có chủ đích. Bản trước đặt ngay sau requirements-gpu.txt và
+# vì thế **bỏ lọt đúng lỗi nó sinh ra để bắt**: lúc đó bản CPU chưa được kéo vào.
+# Chốt chặn phải chạy sau bước cài cuối cùng, nếu không nó chỉ chứng minh một trạng
+# thái trung gian mà không ai chạy.
+RUN set -e; \
+    if pip list --format=freeze | grep -qi '^onnxruntime=='; then \
+      echo "LỖI: onnxruntime (bản CPU) đã bị kéo vào, ghi đè lên onnxruntime-gpu."; \
+      pip list | grep -i onnx; \
+      exit 1; \
+    fi
+
+# Kiểm thứ hai, độc lập với metadata: thư viện CUDA EP phải còn nguyên trên đĩa. Bắt
+# được cả ca file bị ghi đè mà `pip list` vẫn trông bình thường.
+# Không kiểm `get_available_providers()` ở đây: lúc build không có `libcuda.so.1`
+# (driver do runtime bơm vào) nên CUDA EP không nạp được — kiểm sẽ hỏng oan.
+RUN python -c "\
+import glob, os, sys, onnxruntime; \
+d = os.path.join(os.path.dirname(onnxruntime.__file__), 'capi'); \
+found = glob.glob(os.path.join(d, 'libonnxruntime_providers_cuda*')); \
+print('CUDA EP:', found or 'KHÔNG THẤY'); \
+sys.exit(0 if found else 1)"
 
 # Nướng model vào image — bước này cần mạng lúc BUILD, không cần lúc chạy.
 ENV U2NET_HOME=/opt/u2net

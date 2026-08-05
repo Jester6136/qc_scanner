@@ -754,9 +754,31 @@ khác cộng lại cũng không bằng đổi chỗ chạy cho model**.
 Available providers: 'AzureExecutionProvider, CPUExecutionProvider'
 ```
 
-`onnxruntime-gpu` **có** cài (chốt chặn build đã pass), nhưng thư viện CUDA EP không nạp được —
-gần như luôn là **container không được cấp GPU** (thiếu NVIDIA Container Toolkit, hoặc
-`deploy.resources.reservations.devices` không có hiệu lực).
+Chẩn đoán trong container cho ra thủ phạm:
+
+```
+nvidia-smi        → H100 PCIe, nhìn thấy bình thường
+libcuda.so.1      → nạp được
+pip list          → onnxruntime 1.23.2  ← bản CPU
+                    onnxruntime-gpu 1.23.2
+```
+
+**Cả hai gói cùng có mặt.** Chúng dùng chung thư mục `onnxruntime/`, nên bản cài sau ghi đè
+`onnxruntime_pybind11_state.so` của bản cài trước — và bản CPU thì không biết CUDA là gì.
+
+Nguồn gốc: `setup.py` lấy `install_requires` từ **requirements.txt**, trong đó có `onnxruntime`.
+Nên dòng cuối `pip install .` kéo bản CPU vào và đè lên `onnxruntime-gpu` vừa cài.
+→ `pip install --no-cache-dir --no-deps .` (requirements-gpu.txt đã là danh sách phụ thuộc đầy đủ).
+
+**Và chốt chặn build đã có thì bỏ lọt, vì đặt sai chỗ**: nó nằm ngay sau
+`pip install -r requirements-gpu.txt`, tức là kiểm một trạng thái **trung gian** mà không ai
+chạy — lúc đó bản CPU chưa được kéo vào. Một chốt chặn chạy quá sớm còn tệ hơn không có: nó
+tạo cảm giác đã được kiểm. → chuyển xuống sau bước cài cuối cùng, thêm kiểm thứ hai độc lập với
+metadata (`libonnxruntime_providers_cuda*` phải còn trên đĩa).
+
+Cả hai điều kiện đó giờ có test giữ ở `tests/test_packaging.py`, kèm bài chốt hai file
+requirements không lệch nhau — vì `--no-deps` biến requirements-gpu.txt thành nguồn phụ thuộc
+duy nhất của image GPU.
 
 Bài học không nằm ở việc chẩn đoán, mà ở chỗ **nó suýt trôi qua**: service vẫn chạy, vẫn trả
 ảnh đúng, healthcheck vẫn xanh, chỉ chậm gấp mấy chục lần. `/healthz` có nói thật, nhưng phải
