@@ -152,10 +152,17 @@ Lệnh thứ hai phải in ra bảng GPU. Nếu báo `could not select device dr
 **2. Dựng**:
 
 ```bash
-docker compose down          # hạ bản CPU nếu đang chạy — cùng một service, cùng cổng
+docker compose down --remove-orphans      # xem ghi chú ngay dưới
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+docker compose ps                         # container tên `qc-scanner`, phải là Up
 docker compose logs -f qc-scanner
 ```
+
+> `--remove-orphans` cần cho ai nâng cấp từ bản compose cũ (bản dùng `profiles: gpu`).
+> Bản cũ tạo container tên `qc-scanner-gpu`; service đó không còn nên Docker để nó lại
+> làm **orphan** — vẫn chạy, vẫn chạy **image cũ**. Rất dễ `docker exec` nhầm vào nó rồi
+> kết luận sai về bản vừa build. Docker có in `WARN Found orphan containers`, nhưng nó
+> trôi mất giữa các dòng khác.
 
 Gõ dài thì đặt một lần cho cả phiên shell:
 
