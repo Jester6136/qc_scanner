@@ -139,13 +139,48 @@ service ở máy A – ứng dụng ở máy B.
 
 #### Máy có GPU NVIDIA
 
+**1. Kiểm host trước** (thiếu bước này là build 15 phút rồi mới biết hỏng):
+
+```bash
+nvidia-smi                                    # driver có chưa
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+
+Lệnh thứ hai phải in ra bảng GPU. Nếu báo `could not select device driver` thì thiếu
+**NVIDIA Container Toolkit** — cài rồi `sudo systemctl restart docker`.
+
+**2. Dựng**:
+
 ```bash
 docker compose --profile gpu up --build -d
-curl -s http://localhost:5000/healthz     # "providers" phải có CUDAExecutionProvider
+docker compose logs -f qc-scanner-gpu
+```
+
+Dòng log đầu tiên nói ngay nó đang chạy trên cái gì:
+
+```
+qc-scanner 0.2.0 · model=u2net · providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] · max_concurrency=4
+```
+
+**3. Xác nhận GPU thật sự đang chạy** — bước này **không được bỏ**:
+
+```bash
+curl -s http://localhost:5000/healthz
+nvidia-smi                                    # phải thấy tiến trình python chiếm VRAM
+```
+
+Chỉ thấy `CPUExecutionProvider` nghĩa là **build sai, không phải chạy chậm** — onnxruntime tụt
+về CPU trong im lặng.
+
+**4. Đo**:
+
+```bash
+docker exec qc-scanner-gpu qc-scanner-bench --url http://127.0.0.1:5000
 ```
 
 Bản model chiếm **~80% thời gian mỗi ảnh**, nên đây là đòn bẩy tốc độ lớn nhất còn lại — lớn
-hơn mọi tối ưu CPU cộng lại.
+hơn mọi tối ưu CPU cộng lại. Bản CPU và bản GPU **dùng chung cổng 5000**, đừng chạy cả hai:
+`docker compose down` trước khi đổi.
 
 > ⚠️ **Đường GPU chưa từng chạy thử** ([SPD-4](docs/features_issues.md#spd-gpu)) — máy phát
 > triển là macOS, không có CUDA. Và phải kiểm bằng `/healthz`, vì onnxruntime **hỏng âm thầm**:

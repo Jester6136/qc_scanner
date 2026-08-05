@@ -19,7 +19,10 @@ fastapi>=0.115,<1
 imutils>=0.5.4,<0.6
 numpy>=1.26,<3
 onnx>=1.15,<2            # chỉ cho `qc-scanner-bench`: vá trục batch để đo dynamic batching
-onnxruntime-gpu>=1.17,<2
+# >=1.19 chứ không phải >=1.17: wheel onnxruntime-gpu 1.17/1.18 trên PyPI dựng cho
+# CUDA 11.8, từ 1.19 mới là CUDA 12 — khớp base image 12.4 + cuDNN 9. Lấy nhầm bản
+# CUDA 11 thì nó KHÔNG báo lỗi, chỉ lặng lẽ chạy CPU.
+onnxruntime-gpu>=1.19,<2
 opencv-python>=4.8,<6
 python-multipart>=0.0.9,<1
 rembg>=2.0,<3

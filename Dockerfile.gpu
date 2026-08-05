@@ -22,15 +22,39 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Venv chứ không cài thẳng vào python hệ thống. Hai lý do, đều là lỗi thật:
+#
+# * pip của Ubuntu 22.04 là bản 22.x, **không có** cờ `--break-system-packages`
+#   (thêm từ pip 23.0.1) — dùng cờ đó ở đây là build đứt ngay.
+# * Base image sau này nâng lên 24.04 thì python hệ thống có dấu PEP 668
+#   (externally-managed) và `pip install` bị chặn. Venv miễn nhiễm cả hai.
+#
+# Đặt venv lên đầu PATH thì `qc-scanner-server`, `qc-scanner-bench` và `python3`
+# đều trỏ đúng vào đó, kể cả trong healthcheck và `docker exec`.
+RUN python3 -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
 COPY requirements-gpu.txt ./
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements-gpu.txt
+RUN pip install --no-cache-dir -r requirements-gpu.txt
+
+# Chốt chặn lúc BUILD cho lỗi đóng gói hay gặp nhất: cài nhầm `onnxruntime` (bản CPU)
+# bên cạnh `onnxruntime-gpu`. Hai gói ghi đè lên nhau nên `import onnxruntime` lấy bản
+# nào là ngẫu nhiên — và bản CPU thì chạy đúng, chỉ chậm gấp mấy chục lần, không lỗi
+# nào để lần ra. Thà đứt build ở đây còn hơn phát hiện sau khi đã lên production.
+#
+# Đây thuần tuý là kiểm metadata gói, không đụng gì tới GPU (lúc build thường không có
+# GPU). Việc CUDA có chạy thật hay không thì `/healthz` mới trả lời được.
+RUN pip list --format=freeze | grep -q '^onnxruntime-gpu=' \
+ && ! pip list --format=freeze | grep -q '^onnxruntime=' \
+ || (echo "LỖI: phải có onnxruntime-gpu và KHÔNG được có onnxruntime (bản CPU)." \
+     && pip list | grep -i onnxruntime && exit 1)
 
 COPY . .
-RUN pip3 install --no-cache-dir --break-system-packages .
+RUN pip install --no-cache-dir .
 
 # Nướng model vào image — bước này cần mạng lúc BUILD, không cần lúc chạy.
 ENV U2NET_HOME=/opt/u2net
-RUN python3 -c "from qc_scanner.rembg_session import warmup; warmup()"
+RUN python -c "from qc_scanner.rembg_session import warmup; warmup()"
 
 EXPOSE 5000
 ENV QC_SCANNER_WORK_HEIGHT=500
