@@ -28,7 +28,7 @@ better extraction downstream.
   <img src="examples/doc-8.out.png" width="100" />
 </p>
 
-### How it works
+## Cách hoạt động
 
 ```
 photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  lọc + chọn tứ giác  ──►  4 corners
@@ -38,13 +38,13 @@ photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  lọc + chọ
         edge-Hough fallback   reasons[] + verdict          four-point transform → PNG
 ```
 
-Một hàm lõi `scan_qc()`, ba mặt tiền (CLI, HTTP server, Python library) — tất cả gọi cùng nó.
-Không database, không hàng đợi. Chi tiết: [docs/algorithm.md](docs/algorithm.md).
+Một hàm lõi `scan_qc()`, ba mặt tiền (CLI, HTTP server, Python library) gọi chung nó. Không
+database, không hàng đợi. Chi tiết: [docs/algorithm.md](docs/algorithm.md).
 
-Đầu ra **luôn là PNG** — cố ý. Ảnh này đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ
-nhỏ làm giảm độ chính xác bóc dữ liệu.
+Đầu ra luôn là PNG. Ảnh này đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ nhỏ làm giảm
+độ chính xác bóc dữ liệu.
 
-### Mỗi lần xử lý trả về một phán quyết
+## Kết quả trả về
 
 ```python
 from qc_scanner import scan_qc
@@ -57,10 +57,17 @@ result.metrics.skew_ratio
 result.image            # PNG bytes
 ```
 
-Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mã lý do nào cũng kèm `hint` (làm gì tiếp
-theo) và `audience` (ai phải làm: người chụp / vận hành / hệ thống gọi).
+| Verdict | Nghĩa |
+|---|---|
+| `pass` | Ảnh ra dùng được, không có ghi chú nào |
+| `warn` | Ảnh ra dùng được, có ghi chú kèm theo |
+| `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
-### Installation
+Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **21 mã**, danh mục đầy
+đủ trong [docs/api.md](docs/api.md).
+
+## Cài đặt
 
 Chưa publish lên PyPI — cài từ nguồn:
 
@@ -69,19 +76,18 @@ pip install -r requirements.txt
 pip install .
 ```
 
-> ⚠️ **Lần chạy đầu tải model rembg** (~176MB, về `~/.u2net/`). Máy không có mạng sẽ fail ở
-> đây, không phải trong code. Dùng [Dockerfile](Dockerfile) / [docker-compose.yml](docker-compose.yml)
-> để có sẵn model trong image.
+Lần chạy đầu tải model rembg (~176MB, về `~/.u2net/`); máy không có mạng sẽ dừng ở bước này.
+[Dockerfile](Dockerfile) nướng sẵn model vào image nên container chạy được offline.
 
-### Usage as a CLI
+## CLI
 
 ```bash
 qc-scanner photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
-cat photo.jpg | qc-scanner > out.png  # pipe vẫn chạy như cũ
+cat photo.jpg | qc-scanner > out.png
 qc-scanner photo.jpg out.png --report qc.json
 ```
 
-Báo cáo QC ra stderr (hoặc `--report`):
+Báo cáo QC ra stderr, hoặc ra file với `--report`:
 
 ```json
 {
@@ -93,234 +99,224 @@ Báo cáo QC ra stderr (hoặc `--report`):
 }
 ```
 
-### Usage in batch (thứ vận hành cần nhất)
+## Chạy lô
 
 ```bash
 qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
-qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv -j 4    # nhiều luồng hơn
+qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv -j 4
 ```
 
-CSV có một dòng mỗi ảnh: file, verdict, reasons, và toàn bộ metric — đủ để lọc ra đúng những
-ảnh cần soi lại. `--jobs` mặc định 2 (đo trên CPU thì quá 2 không nhanh thêm — onnxruntime vốn
-đã dùng hết nhân); thứ tự dòng trong CSV không phụ thuộc số luồng.
+CSV một dòng mỗi ảnh: file, verdict, reasons và toàn bộ metric. `--jobs` mặc định 2; thứ tự dòng
+trong CSV không phụ thuộc số luồng.
 
-### Chạy bằng Docker (cách bàn giao chính)
+Đo trên 37 ảnh, CPU 10 nhân: 1 luồng 14.2s · **2 luồng 11.8s** · 3 luồng 12.0s · 4 luồng 12.7s.
+onnxruntime đã dùng hết số nhân cho một lần suy luận, nên thêm luồng chỉ chồng phần OpenCV lên
+phần suy luận.
 
-```bash
-# trên máy A (máy dựng service)
-docker compose up --build -d
-docker compose logs -f qc-scanner
-
-# macOS: cổng 5000 bị AirPlay Receiver chiếm → dùng cổng khác
-QC_SCANNER_PORT=8000 docker compose up --build -d
-
-# từ máy B trong cùng LAN
-curl -F "file=@photo.jpg" "http://<IP-máy-A>:5000/?format=json"
-```
-
-Model rembg được **nướng sẵn vào image** lúc build, nên container chạy được cả khi máy đích
-không ra Internet. Hợp đồng API đầy đủ: **[docs/api.md](docs/api.md)**.
-
-`docker-compose.yml` mở cổng `5000` trên **mọi giao diện mạng** của máy A, đúng cho mô hình
-service ở máy A – ứng dụng ở máy B.
-
-> ⚠️ Kèm theo đó: **bất cứ ai trong LAN cũng gọi được**, và thứ gửi lên là ảnh giấy tờ tuỳ thân.
-> Server không có xác thực — đây là đánh đổi đã chốt ở [EX-12](docs/need_exchange.md), và nó chỉ
-> an toàn chừng nào LAN là mạng tin được. Máy A có IP public hoặc bị NAT port-forward thì phải
-> chặn cổng 5000 ở firewall. Chỉ dùng ngay trên máy A thì đổi lại thành `"127.0.0.1:5000:5000"`.
-
-> **Bẫy trên macOS**: cổng 5000 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind được và
-> container vẫn báo `healthy` (healthcheck chạy *bên trong* container), nhưng gọi từ ngoài vào
-> nhận `403 Forbidden`. Nhận ra bằng `curl -sI http://localhost:5000/healthz | grep Server` —
-> thấy `AirTunes` là dính. Chữa bằng `QC_SCANNER_PORT=8000`.
->
-> Và lưu ý: **mở `/` bằng trình duyệt luôn ra 405**, kể cả khi mọi thứ đúng. Muốn thử bằng
-> trình duyệt thì vào **`/docs`** (Swagger UI). Nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF.
-
-#### Máy có GPU NVIDIA
-
-**1. Kiểm host trước** (thiếu bước này là build 15 phút rồi mới biết hỏng):
-
-```bash
-nvidia-smi                                    # driver có chưa
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
-```
-
-Lệnh thứ hai phải in ra bảng GPU. Nếu báo `could not select device driver` thì thiếu
-**NVIDIA Container Toolkit** — cài rồi `sudo systemctl restart docker`.
-
-**2. Dựng**:
-
-```bash
-docker compose down --remove-orphans      # xem ghi chú ngay dưới
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
-docker compose ps                         # container tên `qc-scanner`, phải là Up
-docker compose logs -f qc-scanner
-```
-
-> `--remove-orphans` cần cho ai nâng cấp từ bản compose cũ (bản dùng `profiles: gpu`).
-> Bản cũ tạo container tên `qc-scanner-gpu`; service đó không còn nên Docker để nó lại
-> làm **orphan** — vẫn chạy, vẫn chạy **image cũ**. Rất dễ `docker exec` nhầm vào nó rồi
-> kết luận sai về bản vừa build. Docker có in `WARN Found orphan containers`, nhưng nó
-> trôi mất giữa các dòng khác.
-
-Gõ dài thì đặt một lần cho cả phiên shell:
-
-```bash
-export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
-docker compose up --build -d              # từ đây trở đi là bản GPU
-```
-
-Dòng log đầu tiên nói ngay nó đang chạy trên cái gì:
-
-```
-qc-scanner 0.2.0 · model=u2net · providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] · max_concurrency=4
-```
-
-**3. Xác nhận GPU thật sự đang chạy** — bước này **không được bỏ**:
-
-```bash
-curl -s http://localhost:5000/healthz
-nvidia-smi                                    # phải thấy tiến trình python chiếm VRAM
-```
-
-Chỉ thấy `CPUExecutionProvider` nghĩa là **build sai, không phải chạy chậm** — onnxruntime tụt
-về CPU trong im lặng.
-
-**4. Đo**:
-
-```bash
-docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
-```
-
-Bản model chiếm **~80% thời gian mỗi ảnh**, nên đây là đòn bẩy tốc độ lớn nhất còn lại — lớn
-hơn mọi tối ưu CPU cộng lại.
-
-Bản CPU và bản GPU là **cùng một service** `qc-scanner` — file đè chỉ thay Dockerfile và biến
-môi trường. Nhờ vậy không thể chạy nhầm cả hai cùng lúc, và `docker exec qc-scanner …` dùng
-được cho cả hai.
-
-> ⚠️ **Đường GPU chưa từng chạy thử** ([SPD-4](docs/features_issues.md#spd-gpu)) — máy phát
-> triển là macOS, không có CUDA. Và phải kiểm bằng `/healthz`, vì onnxruntime **hỏng âm thầm**:
-> thiếu thư viện CUDA thì nó không báo lỗi, chỉ lặng lẽ chạy CPU và chậm hơn vài chục lần.
-> Bản CPU thì đã build và chạy được trên máy server.
-
-### Đo tốc độ trên máy đích
-
-```bash
-docker exec qc-scanner qc-scanner-bench                          # tự sinh ảnh, không cần data
-docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000   # đo cả đường HTTP
-docker exec qc-scanner qc-scanner-bench --images /data -n 32     # đo trên ảnh thật
-```
-
-In ra bốn thứ: **CHẶNG** (thời gian đi đâu — GPU hay CPU), **SONG SONG** (trần thông lượng một
-tiến trình), **BATCH** (dynamic batching đáng bao nhiêu), **QUY RA CCU** (bấy nhiêu ảnh/s thì
-gánh được bấy nhiêu người dùng đồng thời).
-
-Mặc định **tự sinh ảnh 3024×4032** nên chạy được ngay trong container trắng — ảnh khách hàng
-không bao giờ được nướng vào image. Cỡ ảnh cố ý giữ như ảnh điện thoại thật: chi phí CPU tỉ lệ
-với số pixel, đo bằng ảnh nhỏ sẽ cho một con số đẹp và vô dụng.
-
-### Usage as an HTTP server
+## HTTP server
 
 ```bash
 qc-scanner-server -a 127.0.0.1 -p 5000
+
 curl -F "file=@photo.jpg" http://127.0.0.1:5000/ -o out.png -D-
 # X-QC-Scanner-Verdict: warn
 # X-QC-Scanner-Reasons: CLIPPED_EDGE
 
-curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"   # ScanResult đầy đủ
+curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"
 ```
 
-HTTP status theo verdict: 200 pass/warn · **422** fail · 400 đầu vào hỏng.
+| Status | Khi nào |
+|---|---|
+| `200` | verdict `pass` hoặc `warn` |
+| `422` | verdict `fail` — ảnh hợp lệ, đầu ra không đáng tin |
+| `400` | đầu vào không đánh giá được (thiếu file, ảnh hỏng, tham số sai) |
+| `413` | file vượt 32MB |
+| `503` | lỗi tài nguyên máy chủ (hết bộ nhớ GPU) — kèm `Retry-After` |
 
-**CORS bật sẵn cho mọi origin** (thu hẹp bằng `QC_SCANNER_CORS_ORIGINS`), kèm
-`Access-Control-Expose-Headers` cho hai header phán quyết — thiếu nó thì `fetch()` vẫn `200`
-nhưng JS đọc `X-QC-Scanner-Verdict` ra `null`.
+FastAPI + uvicorn, có sẵn Swagger UI ở `/docs`. `GET /` trả `405`: API không có trang web, và
+nhánh `GET /?url=` cũ đã bỏ hẳn vì là lỗ SSRF ([SEC-1](docs/features_issues.md#sec-ssrf)).
 
-Service viết bằng **FastAPI** chạy trên **uvicorn**, nên có sẵn Swagger UI ở **`/docs`** — gọi
-thử `POST /` ngay trên trình duyệt, không cần `curl`. Riêng `GET /` luôn trả **405** *có chủ ý*:
-API không có trang web, và nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF ([SEC-1](docs/features_issues.md#sec-ssrf)).
+CORS bật cho mọi origin, thu hẹp bằng `QC_SCANNER_CORS_ORIGINS`. Hai header phán quyết nằm trong
+`Access-Control-Expose-Headers`; thiếu khai báo đó thì `fetch()` vẫn trả `200` nhưng JS đọc
+`X-QC-Scanner-Verdict` ra `null`.
 
-> ⚠️ Server **không có xác thực**. Mặc định bind `127.0.0.1`; đặt sau reverse proxy có xác
-> thực nếu cần truy cập từ máy khác.
+Hợp đồng API đầy đủ: **[docs/api.md](docs/api.md)**.
 
-### Cấu hình
+## Docker
 
-Mọi ngưỡng nằm trong [`config.py`](src/qc_scanner/config.py), override được bằng env:
+```bash
+docker compose up -d --build
+docker compose logs -f qc-scanner
+
+# từ máy khác trong cùng LAN
+curl -F "file=@photo.jpg" "http://<IP-máy-chạy>:5000/?format=json"
+```
+
+Model nướng sẵn vào image lúc build nên container chạy được khi máy đích không ra Internet.
+Cổng mở trên mọi giao diện mạng; đổi bằng `QC_SCANNER_PORT=8000 docker compose up -d`.
+
+Trên macOS, cổng 5000 do **AirPlay Receiver** chiếm sẵn. Docker vẫn bind được và container vẫn
+báo `healthy` (healthcheck chạy bên trong container), nhưng gọi từ ngoài vào nhận `403` kèm
+header `Server: AirTunes/...`. Kiểm bằng `curl -sI http://localhost:5000/healthz | grep Server`.
+
+### Bản GPU NVIDIA
+
+Bản CPU và bản GPU là **cùng một service** `qc-scanner`; file đè chỉ thay Dockerfile và biến môi
+trường, nên không chạy được cả hai cùng lúc và `docker exec qc-scanner …` dùng chung.
+
+Kiểm host trước khi build:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+
+Lệnh này in bảng GPU nếu **NVIDIA Container Toolkit** đã cài. Báo
+`could not select device driver` là chưa có.
+
+```bash
+docker compose down --remove-orphans
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+docker compose ps
+```
+
+Dòng log đầu tiên báo provider đang chạy:
+
+```
+qc-scanner 0.2.0 · model=u2net · providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] · max_concurrency=16
+```
+
+`QC_SCANNER_REQUIRE_GPU=1` (bật sẵn trong `docker-compose.gpu.yml`) làm container thoát với mã 3
+khi không có provider tăng tốc, kèm các lệnh chẩn đoán. Không có cờ này thì onnxruntime tụt về
+CPU mà không báo lỗi: service vẫn chạy đúng, healthcheck vẫn xanh, chỉ chậm hơn nhiều lần.
+
+`--remove-orphans` xoá container `qc-scanner-gpu` do bản compose cũ (dùng `profiles: gpu`) tạo ra.
+Container đó vẫn chạy image cũ nếu không xoá.
+
+## Đo tốc độ
+
+```bash
+docker exec qc-scanner qc-scanner-bench                                # tự sinh ảnh
+docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000    # đo cả đường HTTP
+docker exec qc-scanner qc-scanner-bench --images /data -n 32           # đo trên ảnh thật
+```
+
+Bốn mục: **CHẶNG** (thời gian đi đâu, GPU hay CPU) · **SONG SONG** (trần thông lượng một tiến
+trình) · **BATCH** (dynamic batching đáng bao nhiêu) · **QUY RA CCU** (ảnh/s quy ra số người
+dùng đồng thời).
+
+Mặc định tự sinh ảnh 3024×4032 nên chạy được trong container trắng. Cỡ ảnh giữ như ảnh điện
+thoại thật vì chi phí CPU tỉ lệ với số pixel.
+
+## Cấu hình
+
+Mọi tham số nằm trong [`config.py`](src/qc_scanner/config.py), override bằng
+`QC_SCANNER_<TÊN_TRƯỜNG>`:
 
 ```bash
 QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 qc-scanner photo.jpg out.png
 qc-scanner photo.jpg out.png --detector edge-hough --cross-check
 ```
 
+Các biến hay dùng nhất:
+
+| Biến | Mặc định | Tác dụng |
+|---|---|---|
+| `QC_SCANNER_HINT_AUDIENCE` | `capturer` | `hint` viết cho người chụp hay người vận hành |
+| `QC_SCANNER_PRE_CROPPED` | `false` | Ảnh đã cắt sát từ trước → bỏ qua các mã về biên |
+| `QC_SCANNER_MAX_CONCURRENCY` | `cpu/8`, trong [2, 16] | Số ảnh xử lý cùng lúc trên đường HTTP |
+| `QC_SCANNER_GPU_CONCURRENCY` | `2` | Số lần suy luận lên GPU cùng lúc |
+| `QC_SCANNER_GPU_MEM_LIMIT_MB` | `0` (không giới hạn) | Trần bộ nhớ GPU của onnxruntime |
+| `QC_SCANNER_ONNX_PROVIDERS` | tự dò | Ví dụ `CUDAExecutionProvider,CPUExecutionProvider` |
+| `QC_SCANNER_REQUIRE_GPU` | `false` | Không có GPU thì thoát thay vì chạy CPU |
+| `QC_SCANNER_CORS_ORIGINS` | `*` | Origin được phép gọi từ trình duyệt |
+| `QC_SCANNER_SEGMENT_AT_MODEL_SIZE` | `false` | Nhanh hơn ~43ms/ảnh, đổi lại metric trôi ~0.14% |
+
+`MAX_CONCURRENCY` và `GPU_CONCURRENCY` là hai van cho hai tài nguyên khác nhau: phần CPU chiếm
+62% thời gian mỗi ảnh nên cần song song theo số nhân, còn VRAM thường dùng chung với service
+khác nên phải giữ thấp.
+
 ---
 
-## Status & direction
+## Hiện trạng
 
 | | |
 |---|---|
-| ✅ Nói được vì sao | 20 mã lý do, mã nào cũng kèm `hint` + `audience` |
-| ✅ Không im lặng | Không tìm được biên → vẫn trả ảnh gốc, nhưng kèm `FALLBACK_ORIGINAL` (fail) |
-| ✅ Tự khắc phục | rembg thua → đường lui dò cạnh, kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| ✅ Có bộ đo | 267 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
-| ✅ Hợp đồng API có tài liệu | [docs/api.md](docs/api.md) + 30 test hợp đồng giữ đúng những gì tài liệu hứa |
-| ⚠️ Ngưỡng chưa chốt | Hai ngưỡng đã chốt bằng số đo; phần còn lại là **ước đoán** cho tới khi có tập vàng của khách |
-| ⚠️ Chưa đo được độ chính xác | Crop rate / false pass / false fail cần ảnh **có nhãn** — công cụ đã sẵn, thiếu dữ liệu |
+| Mã lý do | 21 mã, mỗi mã kèm `hint` + `audience` |
+| Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
+| Bộ đo | 282 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
+| Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
+| Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
 
-Đã đo trên **8 ảnh mẫu + 29 ảnh thật của khách** (CCCD, sổ đỏ, hoá đơn, giấy A4):
-13 pass · 17 warn · 15 fail, **~0.4s/ảnh** (trước khi tái dùng session rembg là ~3.0s).
+Đã chạy trên 8 ảnh mẫu + 29 ảnh thật của khách (CCCD, sổ đỏ, hoá đơn, giấy A4):
+13 pass · 14 warn · 10 fail.
 
-**Đợt tối ưu tốc độ** (SPD-1…4), tất cả đều **không đổi một phán quyết nào** — ảnh ra trùng
-byte 37/37:
+### Tốc độ
+
+Đo trên máy server 64 nhân + H100 (GPU dùng chung với một service vLLM giữ 77.8/81.5 GB):
+
+| | CPU | GPU |
+|---|---|---|
+| Thời gian mỗi ảnh | 574 ms | 477 ms |
+| — trong đó suy luận | 284 ms | 180 ms |
+| — trong đó phần CPU | 291 ms (51%) | 297 ms (62%) |
+| Thông lượng một tiến trình | **8.68 ảnh/s** (16 luồng) | 6.65 ảnh/s (4 luồng) |
+
+GPU cho thông lượng thấp hơn vì VRAM còn trống chỉ đủ 2 luồng suy luận, trong khi bản CPU dùng
+được 16 luồng. Nhả thêm VRAM (`gpu_memory_utilization` của vLLM) sẽ đảo lại tương quan này.
+
+**Dynamic batching**: đo trực tiếp trên H100 — batch 1 tốn 6.5 ms/ảnh, batch 32 tốn 2.73 ms/ảnh.
+Tiết kiệm 3.8 ms trên tổng 477 ms, tức **0.8%**, trong khi phần CPU 297 ms/ảnh không batch được.
+Xem [SPD-5](docs/features_issues.md#spd-batching).
+
+### Đợt tối ưu tốc độ
 
 | | |
 |---|---|
-| [SPD-1](docs/features_issues.md#spd-roundtrip) | Bỏ vòng "mã hoá PNG toàn cỡ rồi giải mã lại" của rembg — chặng tách nền nhanh **1.38x** (đo ghép cặp, 111 lần), cả lần scan ~1.2x |
-| [SPD-2](docs/features_issues.md#spd-event-loop) | `scan_qc()` từng chặn vòng lặp sự kiện → `/healthz` trễ **617ms → 2ms** dưới tải |
-| [SPD-3](docs/features_issues.md#spd-spool) | Upload > 1MB từng bị ghi ra **file tạm trên đĩa** — trái [EX-12](docs/need_exchange.md); nay ở trong RAM. `--jobs` cho chạy lô |
-| [SPD-4](docs/features_issues.md#spd-gpu) | Tuỳ chọn GPU NVIDIA — **đã viết, chưa chạy thử** |
-| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching cho 700 CCU: **đã đo trên H100 → không đáng làm**, cải thiện tối đa **0.8%** |
-| [SPD-6](docs/features_issues.md#spd-oom) | GPU hết bộ nhớ từng bị báo là "ảnh hỏng" (`400`) — ảnh tốt bị loại vĩnh viễn. Nay `INFERENCE_FAILED` + `503` |
-| [SPD-7](docs/features_issues.md#spd-resample) | "Chặng suy luận" hoá ra **96% là resize của PIL**, không phải GPU. Có cờ tắt bớt, mặc định tắt |
+| [SPD-1](docs/features_issues.md#spd-roundtrip) | Bỏ vòng "mã hoá PNG toàn cỡ rồi giải mã lại" của rembg — chặng tách nền nhanh 1.38x (đo ghép cặp, 111 lần) |
+| [SPD-2](docs/features_issues.md#spd-event-loop) | `scan_qc()` chạy trên vòng lặp sự kiện làm `/healthz` trễ 617ms dưới tải; nay 2ms |
+| [SPD-3](docs/features_issues.md#spd-spool) | Upload > 1MB bị ghi ra file tạm trên đĩa, trái [EX-12](docs/need_exchange.md); nay ở trong RAM |
+| [SPD-4](docs/features_issues.md#spd-gpu) | Đường GPU NVIDIA — đã chạy được trên H100 |
+| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching: đo trên H100, cải thiện 0.8% → không làm |
+| [SPD-6](docs/features_issues.md#spd-oom) | GPU hết bộ nhớ bị báo là "ảnh hỏng" (`400`); nay `INFERENCE_FAILED` + `503` |
+| [SPD-7](docs/features_issues.md#spd-resample) | "Chặng suy luận" phần lớn là resize của PIL, không phải GPU; có cờ tắt bớt, mặc định tắt |
 
-Sau SPD-1, bản thân model chiếm **81%** thời gian còn lại, nên GPU là đòn bẩy lớn nhất còn lại;
-mọi tối ưu CPU khác cộng lại không bằng.
+SPD-1 đến SPD-3 không đổi phán quyết trên ảnh nào, ảnh ra trùng byte 37/37.
 
-**Đợt 2026-08-05 chốt yêu cầu khách + soi ảnh thật** đóng gần hết Giai đoạn 6:
+### Đợt chốt yêu cầu khách + soi ảnh thật (2026-08-05)
 
 | | |
 |---|---|
-| QC-11 | `NO_CROP_DETECTED` — ảnh không cắt được gì phải là `fail`, không phải `warn` |
-| QC-12 | `CONTENT_CLIPPED` — mất viền trắng thì được, mất **chữ** thì không ([EX-1](docs/need_exchange.md)) |
-| QC-13 | Hint hai tầng: người chụp *(chụp lại được)* / người vận hành *(không)* |
-| QC-14 | Cờ `pre_cropped` cho ảnh đã cắt sẵn — **phải khai báo**, đo 37 ảnh thấy không tự đoán được |
-| QC-15 | Ngừng phát `SUBJECT_FILLS_FRAME` — chiếm hết khung, tự nó, không phải lỗi |
-| QC-16 | Đường lui thôi ghi đè tứ giác **đúng** bằng tứ giác **sai** (nó thắng 0/3 trên ảnh thật) |
-| QC-17 | Thôi cắt lẹm vào mép giấy **cong**: nới cạnh ra bao trọn contour |
-| S-5 | Đo độ cong trên 36 ảnh → **không làm dewarping**, tiết kiệm 1 tuần+ |
+| QC-11 | `NO_CROP_DETECTED` — ảnh không cắt được gì là `fail`, không phải `warn` |
+| QC-12 | `CONTENT_CLIPPED` — phân biệt mất viền trắng với mất chữ ([EX-1](docs/need_exchange.md)) |
+| QC-13 | Hint hai tầng: người chụp (chụp lại được) / người vận hành (không) |
+| QC-14 | Cờ `pre_cropped` cho ảnh đã cắt sẵn — đo 37 ảnh thấy không tự đoán được, phải khai báo |
+| QC-15 | Ngừng phát `SUBJECT_FILLS_FRAME` — giấy chiếm hết khung tự nó không phải lỗi |
+| QC-16 | Đường lui thôi ghi đè tứ giác đúng bằng tứ giác sai (thắng 0/3 trên ảnh thật) |
+| QC-17 | Nới cạnh bao trọn contour để không cắt lẹm vào mép giấy cong |
+| S-5 | Đo độ cong trên 36 ảnh → không làm dewarping |
 
-Còn lại trên máy server ([OPS-3](docs/features_issues.md#ops-docker-unverified)): image CPU đã
-build và chạy `healthy`; **chưa kiểm** gọi từ máy B qua LAN, chạy khi ngắt mạng, và build image
-trong CI. Thêm vào đó là đường GPU ([SPD-4](docs/features_issues.md#spd-gpu)) chưa chạy thử lần
-nào — kiểm bằng `providers` trong `/healthz`.
+### Việc còn lại
 
-Phần chốt ngưỡng và nâng cấp detector vẫn chặn ở **tập ảnh có nhãn**
-([EX-2](docs/need_exchange.md)), và có một câu hỏi đang chờ khách:
-[EX-15](docs/need_exchange.md#ex-multipage) — giấy chứng nhận chụp từng mặt thành nhiều ảnh,
-ai chịu trách nhiệm ghép và kiểm đủ mặt.
+- [OPS-3](docs/features_issues.md#ops-docker-unverified): chưa kiểm gọi từ máy khác qua LAN, chạy
+  khi ngắt mạng, và build image trong CI.
+- [QUAL-4](docs/features_issues.md#qual-knife-edge): ảnh `04.56.41` nằm cách ngưỡng 0.02% và đã
+  lật verdict hai lần; nhánh miễn trừ cần vùng đệm thay vì ngưỡng cứng.
+- [EX-2](docs/need_exchange.md): chốt ngưỡng và nâng cấp detector cần tập ảnh có nhãn.
+- [EX-15](docs/need_exchange.md#ex-multipage): giấy chứng nhận chụp từng mặt — ai ghép và kiểm đủ mặt.
+- [EX-16](docs/need_exchange.md#ex-throughput): "700 CCU" là bao nhiêu ảnh/giây.
 
-## Documentation · Tài liệu
+## Tài liệu
 
 Tài liệu dự án viết bằng tiếng Việt, đặt trong [docs/](docs/):
 
 | File | Nội dung |
 |---|---|
-| [overall_roadmap.md](docs/overall_roadmap.md) | Tổng quan dự án, nguyên tắc thiết kế, roadmap chi tiết theo giai đoạn |
-| [algorithm.md](docs/algorithm.md) | Thuật toán từng bước, hợp đồng đầu ra QC, danh mục mã lý do, **khảo sát công nghệ 2026** |
-| [features_issues.md](docs/features_issues.md) | Sổ tính năng + issue (BUG-\*/SEC-\*/QC-\*/QUAL-\*/S-\*/N-\*) kèm bằng chứng `path:line` |
+| [overall_roadmap.md](docs/overall_roadmap.md) | Tổng quan dự án, nguyên tắc thiết kế, roadmap theo giai đoạn |
+| [algorithm.md](docs/algorithm.md) | Thuật toán từng bước, hợp đồng đầu ra QC, danh mục mã lý do, khảo sát công nghệ 2026 |
+| [features_issues.md](docs/features_issues.md) | Sổ tính năng + issue (BUG-\*/SEC-\*/QC-\*/QUAL-\*/SPD-\*/S-\*/N-\*) kèm bằng chứng `path:line` |
 | [test_eval.md](docs/test_eval.md) | Smoke test, bộ regression, cách eval chất lượng & độ chính xác phán quyết |
-| [api.md](docs/api.md) | **Hợp đồng HTTP bàn giao cho khách**: endpoint, status theo verdict, schema JSON, bất biến |
+| [api.md](docs/api.md) | Hợp đồng HTTP bàn giao cho khách: endpoint, status theo verdict, schema JSON, bất biến |
 | [need_exchange.md](docs/need_exchange.md) | Câu hỏi cần làm rõ với khách hàng trước khi chốt thiết kế/nghiệm thu |
 
 ## Development
@@ -332,13 +328,14 @@ pip install -e .
 ```
 
 ```bash
-pytest                    # 267 bài, ~2 phút sau khi model đã cache
+pytest                    # 282 bài, ~45s sau khi model đã cache
 ruff check src tests
 ```
 
-Trước khi gửi thay đổi:
-- thay đổi thuật toán phải kèm **số đo trước/sau** (`python -m qc_scanner.eval ... --baseline`);
-- thêm reason code phải kèm `hint` + `audience` — `test_qc_contract.py` sẽ chặn nếu thiếu;
+Quy ước khi gửi thay đổi:
+
+- thay đổi thuật toán kèm số đo trước/sau (`python -m qc_scanner.eval ... --baseline`);
+- thêm reason code kèm `hint` + `audience` — `test_qc_contract.py` chặn nếu thiếu;
 - nâng dependency thì chạy bộ regression và ghi version cũ/mới trong commit.
 
 Chi tiết: [docs/test_eval.md](docs/test_eval.md).
