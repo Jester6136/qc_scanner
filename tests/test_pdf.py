@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 
+import cv2
 import pypdfium2 as pdfium
 import pytest
 from PIL import Image
@@ -343,3 +344,148 @@ def test_csv_has_a_page_column(tmp_path, three_pages):
     header = report.read_text(encoding="utf-8").splitlines()[0]
     assert "page" in header.split(",")
     assert "pdf_source" in header.split(",")
+
+
+# --------------------------------------------------------------------------- #
+# Đầu ra PDF
+
+
+def _pdf_pages(data):
+    return pdfium.PdfDocument(data)
+
+
+def test_pdf_output_keeps_every_pixel(one_page):
+    """Ghép PDF bằng JPEG là lặng lẽ lấy lại đúng thứ đầu-ra-PNG đã cố tránh: nhiễu
+    nén quanh nét chữ nhỏ làm OCR đọc sai. Mặc định phải là không mất dữ liệu."""
+    import numpy as np
+
+    from qc_scanner.pdf import build_pdf
+
+    result = scan_document(one_page).pages[0]
+    data = build_pdf([result.image], Config())
+
+    assert data.startswith(b"%PDF-")
+    rendered = list(page_images(data, Config()))
+    assert rendered[0].source == "embedded"  # đi lại đúng đường không resample
+
+    original = cv2.imdecode(np.frombuffer(result.image, np.uint8), cv2.IMREAD_COLOR)
+    assert np.array_equal(rendered[0].image, original)
+
+
+def test_pdf_output_is_not_bigger_than_the_png_it_replaces(one_page):
+    """Số đo chốt lựa chọn lossless: đo trên một trang 1053×1852, PNG 1276 KB →
+    PDF 988 KB. Không có đánh đổi dung lượng nào để cân ở đây."""
+    from qc_scanner.pdf import build_pdf
+
+    png = scan_document(one_page).pages[0].image
+    assert len(build_pdf([png], Config())) < len(png)
+
+
+def test_jpeg_knob_shrinks_the_file_when_asked(one_page):
+    from qc_scanner.pdf import build_pdf
+
+    png = scan_document(one_page).pages[0].image
+    lossless = build_pdf([png], Config())
+    lossy = build_pdf([png], Config(pdf_out_jpeg_quality=92))
+    assert len(lossy) < len(lossless) / 3
+
+
+def test_pdf_output_carries_all_pages_in_one_file(three_pages):
+    from qc_scanner.pdf import build_pdf
+
+    document = scan_document(three_pages)
+    data = build_pdf([p.image for p in document.pages], Config())
+    assert len(_pdf_pages(data)) == 3
+
+
+def test_out_dpi_only_changes_page_size_never_pixel_count(one_page):
+    """`pdf_out_dpi` là phỏng đoán về khổ giấy thật ([EX-4]) nên nó **không được**
+    đụng tới số điểm ảnh — đó mới là thứ OCR dùng."""
+    from qc_scanner.pdf import build_pdf
+
+    png = scan_document(one_page).pages[0].image
+    sizes, pixels = [], []
+    for dpi in (150, 300):
+        page = _pdf_pages(build_pdf([png], Config(pdf_out_dpi=dpi)))[0]
+        sizes.append(page.get_size())
+        pixels.append(next(iter(page.get_objects())).get_size())
+
+    assert pixels[0] == pixels[1]
+    assert sizes[0][0] == pytest.approx(sizes[1][0] * 2, rel=1e-3)
+
+
+# --------------------------------------------------------------------------- #
+# Đầu ra PDF qua các mặt tiền
+
+
+def test_http_format_pdf_returns_one_file_for_every_page(client, three_pages):
+    resp = client.post(
+        "/?format=pdf", files={"file": ("a.pdf", three_pages, "application/pdf")}
+    )
+    # Trang 2 là `fail` → theo cùng quy tắc của PNG, trả lý do chứ không trả file.
+    assert resp.status_code == 422
+    assert resp.headers["content-type"] == "application/json"
+
+
+def test_http_format_pdf_on_a_good_document(client, one_page):
+    resp = client.post(
+        "/?format=pdf", files={"file": ("a.pdf", one_page, "application/pdf")}
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF-")
+    assert resp.headers["X-QC-Scanner-Pages"] == "1"
+
+
+def test_http_pdf_output_works_for_plain_images_too(client):
+    """Ảnh vào → PDF ra là ca dùng thật: gộp giấy tờ chụp rời thành một file nộp."""
+    resp = client.post(
+        "/?format=pdf", files={"file": ("a.jpg", (EXAMPLES / "doc-1.jpg").read_bytes())}
+    )
+    assert resp.status_code == 200
+    assert resp.content.startswith(b"%PDF-")
+
+
+def test_http_rejects_an_unknown_format(client):
+    resp = client.post(
+        "/?format=tiff", files={"file": ("a.jpg", (EXAMPLES / "doc-1.jpg").read_bytes())}
+    )
+    assert resp.status_code == 400
+
+
+def test_cli_writes_a_pdf_when_the_output_ends_in_pdf(tmp_path, three_pages):
+    """Đuôi file là chỗ người dùng đã nói ý định — không bắt gõ thêm cờ."""
+    src = tmp_path / "in.pdf"
+    src.write_bytes(three_pages)
+    out = tmp_path / "out.pdf"
+    proc = _cli([str(src), str(out), "--quiet"])
+
+    assert proc.returncode == 2
+    assert out.read_bytes().startswith(b"%PDF-")
+    assert len(_pdf_pages(out.read_bytes())) == 3
+    # PDF chứa được nhiều trang, nên không sinh file phụ nào.
+    assert not list(tmp_path.glob("*.p2.*"))
+
+
+def test_cli_can_stream_a_multipage_pdf_to_stdout(tmp_path, three_pages):
+    """Ràng buộc "stdout chỉ chứa được một ảnh" biến mất khi đầu ra là PDF."""
+    src = tmp_path / "in.pdf"
+    src.write_bytes(three_pages)
+    proc = _cli([str(src), "-", "--format", "pdf", "--quiet"])
+    assert proc.stdout.startswith(b"%PDF-")
+    assert len(_pdf_pages(proc.stdout)) == 3
+
+
+def test_batch_pdf_output_is_one_file_in_one_file_out(tmp_path, three_pages, one_page):
+    from qc_scanner.cmd.batch import run
+
+    src = tmp_path / "in"
+    src.mkdir()
+    (src / "hoso.pdf").write_bytes(three_pages)
+    (src / "the.pdf").write_bytes(one_page)
+    out = tmp_path / "out"
+
+    run(str(src), str(out), Config(), quiet=True, out_format="pdf")
+
+    assert sorted(p.name for p in out.iterdir()) == ["hoso.pdf", "the.pdf"]
+    assert len(_pdf_pages((out / "hoso.pdf").read_bytes())) == 3

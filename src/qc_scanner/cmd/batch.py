@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ..config import Config
 from ..doc import scan_document
 from ..eval import DOCUMENT_SUFFIXES, write_csv
+from ..pdf import build_pdf
 from ..qc import ScanError
 from ..rembg_session import warmup
 
@@ -32,7 +33,10 @@ def iter_inputs(directory, recursive):
             yield path
 
 
-def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=False, jobs=1):
+def run(
+    directory, out_dir, config, recursive=False, skip_fail=False, quiet=False, jobs=1,
+    out_format="png",
+):
     out_path = pathlib.Path(out_dir) if out_dir else None
     if out_path:
         out_path.mkdir(parents=True, exist_ok=True)
@@ -55,6 +59,9 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
         # đọc như "chi phí một đơn vị công việc". Cộng cả cột lên vẫn ra tổng thật.
         elapsed = round((time.perf_counter() - started) / document.page_count, 3)
         rows = []
+        # Ảnh fail vẫn được ghi ra theo mặc định: chính người vận hành phải nhìn được
+        # nó mới quyết định được. `--skip-fail` cho ai muốn ngược lại.
+        keep = []
         for number, result in enumerate(document.pages, start=1):
             row = dict(result.metrics.to_dict())
             row.update(
@@ -64,13 +71,26 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
                 seconds=elapsed,
             )
             rows.append(row)
-            # Ảnh fail vẫn được ghi ra theo mặc định: chính người vận hành phải
-            # nhìn được nó mới quyết định được. `--skip-fail` cho ai muốn ngược lại.
-            if out_path and result.image and not (skip_fail and result.verdict == "fail"):
-                # Một trang thì giữ nguyên `{stem}.png` như trước; nhiều trang thì
-                # **mọi** trang đều mang số, để không có trang nào trông như "bản chính".
-                stem = path.stem if document.page_count == 1 else f"{path.stem}.p{number}"
-                (out_path / f"{stem}.png").write_bytes(result.image)
+            if result.image and not (skip_fail and result.verdict == "fail"):
+                keep.append((number, result.image))
+
+        if out_path and keep:
+            if out_format == "pdf":
+                # Một file vào → một file ra, kể cả hồ sơ 12 trang. Đây là lý do chính
+                # người ta chọn PDF: giữ nguyên ranh giới "một bộ hồ sơ".
+                (out_path / f"{path.stem}.pdf").write_bytes(
+                    build_pdf([image for _, image in keep], config)
+                )
+            else:
+                for number, image in keep:
+                    # Một trang thì giữ nguyên `{stem}.png` như trước; nhiều trang thì
+                    # **mọi** trang đều mang số, để không trang nào trông như "bản chính".
+                    stem = (
+                        path.stem
+                        if document.page_count == 1
+                        else f"{path.stem}.p{number}"
+                    )
+                    (out_path / f"{stem}.png").write_bytes(image)
         return path, rows
 
     paths = list(iter_inputs(directory, recursive))
@@ -108,7 +128,7 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
 
 def build_parser():
     ap = argparse.ArgumentParser(
-        description="Nắn phẳng cả một thư mục ảnh và xuất báo cáo QC dạng CSV."
+        description="Nắn phẳng cả một thư mục ảnh/PDF và xuất báo cáo QC dạng CSV."
     )
     ap.add_argument("input_dir")
     ap.add_argument("output_dir", nargs="?", help="Thư mục ghi ảnh PNG đã nắn.")
@@ -127,6 +147,13 @@ def build_parser():
         # 37 ảnh: 1→14.2s · 2→11.8s · 3→12.0s · 4→12.7s. Qua 2 là bắt đầu tệ đi.
         # Máy có GPU thì tỉ lệ đảo ngược (phần CPU thành nút cổ chai) — lúc đó nâng lên.
         help="Số ảnh xử lý song song (mặc định 2; đo trên CPU thì quá 2 không nhanh thêm).",
+    )
+    ap.add_argument(
+        "--format",
+        dest="out_format",
+        choices=["png", "pdf"],
+        default="png",
+        help="Định dạng ảnh ra. `pdf` gộp mọi trang của MỘT file vào MỘT file PDF.",
     )
     ap.add_argument("--detector", choices=["rembg-contour", "edge-hough"])
     ap.add_argument("--model", help="Model nền của rembg.")
@@ -163,6 +190,7 @@ def main(argv=None):
         skip_fail=args.skip_fail,
         quiet=args.quiet,
         jobs=args.jobs,
+        out_format=args.out_format,
     )
 
     if args.report:

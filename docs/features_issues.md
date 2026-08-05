@@ -1245,8 +1245,26 @@ thì chưa dùng được, dù 11 trang kia hoàn hảo.
 chạy thật (`INFERENCE_FAILED`, `MISSING_FILE`, `DETECTOR_DISAGREEMENT`). Đã bổ sung, và thêm
 test khoá danh mục cho khớp với `REASONS` để nó không trôi tiếp.
 
+**PDF ở đầu ra** (`?format=pdf` · `qc-scanner … out.pdf` · `qc-scanner-batch --format pdf`):
+mọi trang trong một file, dùng được cho cả ảnh lẫn PDF đầu vào. Ghép **không nén mất dữ liệu**,
+vì lý do y hệt lý do đầu ra mặc định là PNG chứ không phải JPEG. Và ở đây không có gì để đánh
+đổi — đo trên một trang 1053×1852:
+
+| | Dung lượng |
+|---|---|
+| PNG (đầu ra hiện tại) | 1276 KB |
+| **PDF lossless** | **988 KB** |
+| PDF JPEG q92 | 166 KB |
+
+PDF lossless *nhỏ hơn* PNG. Cửa JPEG vẫn có (`pdf_out_jpeg_quality`) nhưng mặc định đóng.
+`fail` thì trả lý do chứ không trả file: một PDF trông bình thường cho tài liệu không đọc được
+là cách chắc chắn nhất để nó bị dùng tiếp.
+
+Khổ trang là **phỏng đoán** (`pdf_out_dpi`, mặc định 300) vì khổ giấy thật chưa chốt được với
+khách ([EX-4](need_exchange.md)). Có test khoá việc nó **không** đụng tới số điểm ảnh.
+
 Phụ thuộc mới: `pypdfium2` (Apache-2.0/BSD, wheel thuần, không cần binary ngoài — khác
-`pdf2image` cần poppler và PyMuPDF là AGPL). 25 test ở
+`pdf2image` cần poppler và PyMuPDF là AGPL). 37 test ở
 [tests/test_pdf.py](../tests/test_pdf.py).
 
 ---

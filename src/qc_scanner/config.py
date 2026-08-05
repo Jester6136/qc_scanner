@@ -239,6 +239,28 @@ class Config:
     triệu điểm, đủ để cạn RAM worker.
     """
 
+    pdf_out_dpi: int = 300
+    """DPI giả định khi ghép ảnh đã nắn thành PDF — quyết định **khổ trang** của file ra.
+
+    Là phỏng đoán, và không tránh được: từ một ảnh đã cắt thì không biết tờ giấy thật
+    to bao nhiêu, mà khổ giấy chưa chốt được với khách ([EX-4]). 300 DPI là mặc định
+    của máy scan văn phòng, nên khổ trang ra thường đúng với A4/A5.
+
+    **Không ảnh hưởng chất lượng**: số điểm ảnh trong file không đổi dù đặt bao nhiêu,
+    và đó mới là thứ OCR dùng. Nó chỉ đổi con số "trang này to bằng chừng nào giấy".
+    """
+
+    pdf_out_jpeg_quality: int = 0
+    """0 = ghép PDF **không mất dữ liệu** (mặc định). 1–100 = nén JPEG ở mức đó.
+
+    Mặc định lossless vì cùng lý do đầu ra là PNG chứ không phải JPEG: file đi tiếp vào
+    OCR/VLM và nhiễu nén quanh nét chữ nhỏ làm giảm độ chính xác bóc dữ liệu.
+
+    Và ở đây gần như không có gì để đánh đổi — đo trên một trang 1053×1852: PNG gốc
+    1276 KB, **PDF lossless 988 KB** (nhỏ hơn PNG), JPEG q92 166 KB. Chỉ bật khi dung
+    lượng thật sự thành vấn đề, ví dụ trả PDF hàng chục trang qua đường mạng chậm.
+    """
+
     pdf_page_image_coverage: float = 0.9
     """Ảnh nhúng phải phủ ít nhất bấy nhiêu diện tích trang mới được coi là "trang scan".
 

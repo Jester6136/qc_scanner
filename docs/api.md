@@ -37,7 +37,7 @@ file, không từ tên file hay `Content-Type`.
 
 | Tham số query | Giá trị | Mặc định | Ý nghĩa |
 |---|---|---|---|
-| `format` | `json` | *(không có)* | Trả JSON đầy đủ thay vì file PNG |
+| `format` | `json` · `pdf` | *(không có)* | `json` = phán quyết đầy đủ; `pdf` = một file PDF chứa mọi trang |
 | `audience` | `capturer` · `operator` | `capturer` | Hint viết cho ai ([QC-13](features_issues.md#qc-two-tier-hint)) |
 | `pre_cropped` | `1` · `true` · `yes` | tắt | Ảnh **đã cắt sát từ trước** → bỏ qua kiểm tra về biên ([QC-14](features_issues.md#qc-precropped)) |
 
@@ -133,6 +133,32 @@ Mỗi phần tử `pages[]` có đúng hình dạng của phản hồi `?format=
 
 Phân biệt hai dạng phản hồi bằng `page_count` (hoặc bằng `Content-Type`: `image/png` với một
 trang, `application/json` với nhiều trang).
+
+### `?format=pdf` — nhận về một file PDF
+
+Dùng được cho **cả ảnh lẫn PDF** đầu vào: ảnh rời ra PDF một trang (gộp giấy tờ chụp rời thành
+một file nộp), PDF nhiều trang ra PDF nhiều trang.
+
+```
+Content-Type:          application/pdf
+X-QC-Scanner-Verdict:  pass | warn
+X-QC-Scanner-Reasons:  CLIPPED_EDGE,GLARE      (gộp mọi trang, không lặp)
+X-QC-Scanner-Pages:    3
+```
+
+Theo đúng quy tắc của PNG: `verdict` là `fail` thì trả **JSON lý do**, không trả file. Đưa ra
+một PDF trông bình thường cho một tài liệu không đọc được là cách chắc chắn nhất để nó bị dùng
+tiếp.
+
+Ảnh vào PDF **không bị nén mất dữ liệu** (pdfium nén Flate), vì lý do y hệt lý do đầu ra mặc
+định là PNG chứ không phải JPEG: file đi tiếp vào OCR/VLM và nhiễu nén quanh nét chữ nhỏ làm
+giảm độ chính xác bóc dữ liệu. Ở đây gần như không có gì để đánh đổi — đo trên một trang
+1053×1852: PNG 1276 KB · **PDF lossless 988 KB** (nhỏ hơn PNG) · JPEG q92 166 KB. Cần file nhỏ
+thì bật `QC_SCANNER_PDF_OUT_JPEG_QUALITY`.
+
+Khổ trang suy từ `QC_SCANNER_PDF_OUT_DPI` (mặc định 300) và là **phỏng đoán**: từ một ảnh đã
+cắt thì không biết tờ giấy thật to bao nhiêu ([EX-4](need_exchange.md)). Nó chỉ đổi con số
+"trang này to bằng chừng nào giấy" — **số điểm ảnh không đổi**, và đó mới là thứ OCR dùng.
 
 ### PDF được đọc như thế nào
 
@@ -311,6 +337,10 @@ curl -X POST -F file=@anh.jpg \
 
 # PDF: cùng một endpoint, không cần tham số gì thêm
 curl -X POST -F file=@hoso.pdf http://localhost:5000/ | jq '.verdict, .page_count'
+
+# Nhận về PDF: ảnh vào cũng được, PDF vào cũng được
+curl -f -X POST -F file=@hoso.pdf 'http://localhost:5000/?format=pdf' -o daxuly.pdf
+curl -f -X POST -F file=@anh.jpg  'http://localhost:5000/?format=pdf' -o daxuly.pdf
 
 # Chỉ lấy những trang không đạt
 curl -X POST -F file=@hoso.pdf http://localhost:5000/ \

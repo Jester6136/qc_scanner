@@ -44,8 +44,8 @@ database, không hàng đợi. Chi tiết: [docs/algorithm.md](docs/algorithm.md
 Đầu vào nhận ảnh (JPG · PNG · WebP · BMP · TIFF) hoặc **PDF**, nhận ra từ nội dung file chứ
 không từ tên file. PDF nhiều trang cho một phán quyết mỗi trang — xem [PDF](#pdf) bên dưới.
 
-Đầu ra luôn là PNG. Ảnh này đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ nhỏ làm giảm
-độ chính xác bóc dữ liệu.
+Đầu ra mặc định là PNG, hoặc **PDF** khi yêu cầu. Cả hai đều **không nén mất dữ liệu**: ảnh này
+đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ nhỏ làm giảm độ chính xác bóc dữ liệu.
 
 ## Kết quả trả về
 
@@ -88,7 +88,8 @@ Lần chạy đầu tải model rembg (~176MB, về `~/.u2net/`); máy không c�
 qc-scanner photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
 cat photo.jpg | qc-scanner > out.png
 qc-scanner photo.jpg out.png --report qc.json
-qc-scanner hoso.pdf out.png           # PDF: trang 1 → out.png, trang 2 → out.p2.png, …
+qc-scanner hoso.pdf out.png           # PDF vào: trang 1 → out.png, trang 2 → out.p2.png, …
+qc-scanner hoso.pdf out.pdf           # PDF ra: mọi trang trong một file
 ```
 
 Báo cáo QC ra stderr, hoặc ra file với `--report`:
@@ -108,6 +109,7 @@ Báo cáo QC ra stderr, hoặc ra file với `--report`:
 ```bash
 qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
 qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv -j 4
+qc-scanner-batch anh-vao/ anh-ra/ --format pdf     # một file vào → một file ra
 ```
 
 CSV một dòng mỗi **trang**: file, verdict, reasons và toàn bộ metric; một PDF 12 trang cho 12
@@ -128,6 +130,7 @@ curl -F "file=@photo.jpg" http://127.0.0.1:5000/ -o out.png -D-
 # X-QC-Scanner-Reasons: CLIPPED_EDGE
 
 curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"
+curl -F "file=@hoso.pdf"  "http://127.0.0.1:5000/?format=pdf" -o daxuly.pdf
 ```
 
 | Status | Khi nào |
@@ -246,6 +249,26 @@ Trang PDF **chính là** tờ giấy, nên `pre_cropped` bật sẵn cho mọi t
 Trần 50 trang một file. Vượt trần thì **không trang nào được xử lý** (`PDF_TOO_MANY_PAGES`) —
 trả về 50 trang đầu của một file 200 trang mà không nói gì sẽ khiến phía gọi tưởng đã soi hết.
 
+### PDF ở đầu ra
+
+```bash
+qc-scanner hoso.pdf out.pdf                          # CLI: suy từ đuôi file
+qc-scanner anh.jpg out.pdf                           # ảnh vào cũng ra PDF được
+curl -F "file=@hoso.pdf" "…:5000/?format=pdf" -o daxuly.pdf
+qc-scanner-batch vao/ ra/ --format pdf               # một file vào → một file ra
+```
+
+Mọi trang nằm gọn trong một file, nên ràng buộc "stdout chỉ chứa được một ảnh" cũng biến mất.
+Khi verdict là `fail` thì trả lý do chứ không trả file — một PDF trông bình thường cho tài liệu
+không đọc được là cách chắc chắn nhất để nó bị dùng tiếp.
+
+Ảnh vào PDF **không bị nén mất dữ liệu**, và ở đây không có gì để đánh đổi: đo trên một trang
+1053×1852, PNG 1276 KB → **PDF lossless 988 KB**, tức nhỏ hơn cả PNG. (JPEG q92 xuống 166 KB,
+mở bằng `QC_SCANNER_PDF_OUT_JPEG_QUALITY` khi dung lượng thật sự thành vấn đề.)
+
+Khổ trang suy từ `QC_SCANNER_PDF_OUT_DPI` và là **phỏng đoán** — từ một ảnh đã cắt thì không
+biết tờ giấy thật to bao nhiêu ([EX-4](docs/need_exchange.md)). Số điểm ảnh không đổi.
+
 Chi tiết: [N-08](docs/features_issues.md#n-pdf) · [docs/api.md](docs/api.md).
 
 ## Cấu hình
@@ -274,6 +297,8 @@ Các biến hay dùng nhất:
 | `QC_SCANNER_PDF_PRE_CROPPED` | `true` | Coi mỗi trang PDF là ảnh đã cắt sẵn |
 | `QC_SCANNER_PDF_MAX_PAGES` | `50` | Trần số trang một file |
 | `QC_SCANNER_PDF_RENDER_DPI` | `200` | DPI khi phải render (trang không phải bản scan) |
+| `QC_SCANNER_PDF_OUT_DPI` | `300` | Khổ trang của PDF ra — không đổi số điểm ảnh |
+| `QC_SCANNER_PDF_OUT_JPEG_QUALITY` | `0` (lossless) | Nén JPEG khi ghép PDF, nếu cần file nhỏ |
 
 `MAX_CONCURRENCY` và `GPU_CONCURRENCY` là hai van cho hai tài nguyên khác nhau: phần CPU chiếm
 62% thời gian mỗi ảnh nên cần song song theo số nhân, còn VRAM thường dùng chung với service
@@ -287,7 +312,7 @@ khác nên phải giữ thấp.
 |---|---|
 | Mã lý do | 25 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 328 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 340 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |

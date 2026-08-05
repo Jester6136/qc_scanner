@@ -37,6 +37,7 @@ sẽ **biến mất không báo gì** khỏi ảnh đem chấm. Bỏ 13% độ n
 nhiều so với chấm QC trên một trang thiếu nội dung.
 """
 
+import io
 from dataclasses import dataclass
 
 import cv2
@@ -206,6 +207,74 @@ def _bitmap_to_bgr(bitmap):
     if bitmap.format == 4:  # BGRx — kênh thứ tư là đệm, không mang thông tin
         return array[:, :, :3].copy()
     return _composite_on_white(array)
+
+
+# --------------------------------------------------------------------------- #
+# Chiều ngược lại: nhiều trang đã nắn → một file PDF
+
+
+def build_pdf(images, cfg) -> bytes:
+    """PNG bytes của từng trang → một PDF nhiều trang.
+
+    **Không nén mất dữ liệu.** Ảnh đi vào PDF nguyên vẹn từng điểm ảnh (pdfium nén
+    Flate), vì lý do y hệt lý do đầu ra là PNG chứ không phải JPEG: file này đi tiếp
+    vào OCR/VLM, và nhiễu nén quanh nét chữ nhỏ làm giảm độ chính xác bóc dữ liệu.
+    Ghép PDF bằng JPEG là lặng lẽ lấy lại đúng thứ vừa cố tránh.
+
+    Đo trên một trang 1053×1852: PNG gốc 1276 KB → **PDF lossless 988 KB**, tức
+    *nhỏ hơn* PNG. Nên ở đây không có đánh đổi nào để cân: JPEG q92 xuống 166 KB
+    nhưng đó là thứ chỉ đáng đổi khi dung lượng thật sự thành vấn đề —
+    `pdf_out_jpeg_quality` mở cửa đó, mặc định đóng.
+    """
+    import pypdfium2 as pdfium
+
+    doc = pdfium.PdfDocument.new()
+    for data in images:
+        if data:
+            _append_page(doc, data, cfg)
+    if len(doc) == 0:
+        raise ScanError("PDF_NO_PAGES", "không có trang nào dựng được ảnh")
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+def _append_page(doc, png_bytes, cfg):
+    import pypdfium2 as pdfium
+
+    image = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ScanError("PDF_DECODE_FAILED", "không giải mã được ảnh trang để ghép PDF")
+
+    height, width = image.shape[:2]
+    # Khổ trang là **phỏng đoán**: từ một ảnh đã cắt thì không biết tờ giấy thật to bao
+    # nhiêu (khổ giấy chưa chốt được với khách — EX-4). `pdf_out_dpi` chỉ nói "coi như
+    # đây là bản scan ở bấy nhiêu DPI". Số điểm ảnh mới là thứ OCR dùng, và nó nguyên vẹn.
+    scale = 72.0 / cfg.pdf_out_dpi
+    page = doc.new_page(width * scale, height * scale)
+
+    obj = pdfium.PdfImage.new(doc)
+    if cfg.pdf_out_jpeg_quality:
+        buf = io.BytesIO()
+        ok, encoded = cv2.imencode(
+            ".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, cfg.pdf_out_jpeg_quality]
+        )
+        if not ok:
+            raise ScanError("PDF_DECODE_FAILED", "cv2.imencode JPEG thất bại")
+        buf.write(encoded.tobytes())
+        buf.seek(0)
+        obj.load_jpeg(buf)
+    else:
+        bitmap = pdfium.PdfBitmap.new_native(
+            width, height, pdfium.raw.FPDFBitmap_BGR, rev_byteorder=False
+        )
+        bitmap.to_numpy()[:] = image
+        obj.set_bitmap(bitmap)
+
+    obj.set_matrix(pdfium.PdfMatrix().scale(page.get_width(), page.get_height()))
+    page.insert_obj(obj)
+    page.gen_content()
+    page.close()
 
 
 def _composite_on_white(bgra):

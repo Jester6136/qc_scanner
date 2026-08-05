@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import __version__
 from ..config import Config
 from ..doc import scan_document
+from ..pdf import build_pdf
 from ..qc import ScanError
 from ..rembg_session import active_providers, warmup
 
@@ -97,7 +98,11 @@ app.add_middleware(
     # liệt kê ở đây — `fetch()` sẽ chạy thành công mà `X-QC-Scanner-Verdict` là
     # `null`, và phía gọi tưởng ảnh nào cũng không có phán quyết. Đây là kiểu hỏng
     # âm thầm, không có thông báo lỗi nào cả.
-    expose_headers=["X-QC-Scanner-Verdict", "X-QC-Scanner-Reasons"],
+    expose_headers=[
+        "X-QC-Scanner-Verdict",
+        "X-QC-Scanner-Reasons",
+        "X-QC-Scanner-Pages",
+    ],
     # Không bật `allow_credentials`: service không có phiên đăng nhập nào để gửi
     # kèm, và bật lên thì `allow_origins=["*"]` bị trình duyệt từ chối.
     allow_credentials=False,
@@ -142,7 +147,12 @@ def scan_endpoint(
         )
 
     params = request.query_params
-    as_json = params.get("format") == "json"
+    out_format = params.get("format")
+    if out_format not in (None, "json", "pdf"):
+        return JSONResponse(
+            {"error": "format phải là 'json' hoặc 'pdf'"}, status_code=400
+        )
+    as_json = out_format == "json"
 
     # QC-13: hệ gọi vào khai báo ai sẽ đọc hint. Luồng realtime (người dùng vừa
     # chụp) để mặc định `capturer`; luồng xử lý kho ảnh truyền `?audience=operator`
@@ -179,6 +189,28 @@ def scan_endpoint(
     # Với PDF nhiều trang, `verdict` là **trang tệ nhất**: một hồ sơ có 1 trang không
     # đọc được thì chưa dùng được, dù 11 trang kia hoàn hảo.
     status = 422 if document.verdict == "fail" else 200
+
+    # `?format=pdf` là hình dạng đầu ra duy nhất chứa được nhiều trang trong **một
+    # file**, nên nó theo cùng quy tắc của PNG: `fail` thì trả JSON lý do, không trả
+    # file — đưa ra một PDF trông bình thường cho một tài liệu không đọc được là cách
+    # chắc chắn nhất để nó bị dùng tiếp.
+    if out_format == "pdf" and document.verdict != "fail":
+        cfg = Config.from_env(**overrides)
+        try:
+            content = build_pdf([p.image for p in document.pages], cfg)
+        except ScanError as err:
+            return JSONResponse({"error": err.to_dict()}, status_code=400)
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={
+                "X-QC-Scanner-Verdict": document.verdict,
+                "X-QC-Scanner-Reasons": ",".join(
+                    dict.fromkeys(c for p in document.pages for c in p.codes)
+                ),
+                "X-QC-Scanner-Pages": str(document.page_count),
+            },
+        )
 
     # N-08: PDF nhiều trang không có hình dạng "một file PNG" nào để trả về, nên nó
     # **luôn** ra JSON, kể cả khi không có `?format=json`. Ảnh rời và PDF một trang
