@@ -16,8 +16,8 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 from ..config import Config
-from ..doc import scan_qc
-from ..eval import IMAGE_SUFFIXES, write_csv
+from ..doc import scan_document
+from ..eval import DOCUMENT_SUFFIXES, write_csv
 from ..qc import ScanError
 from ..rembg_session import warmup
 
@@ -28,7 +28,7 @@ def iter_inputs(directory, recursive):
     root = pathlib.Path(directory)
     paths = root.rglob("*") if recursive else root.iterdir()
     for path in sorted(paths):
-        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES:
+        if path.is_file() and path.suffix.lower() in DOCUMENT_SUFFIXES:
             yield path
 
 
@@ -42,26 +42,36 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
     def process(path):
         started = time.perf_counter()
         try:
-            result = scan_qc(path.read_bytes(), config=config)
+            document = scan_document(path.read_bytes(), config=config)
+        except ScanError as err:
+            return path, [{
+                "file": str(path),
+                "verdict": "fail",
+                "reasons": err.code,
+                "seconds": round(time.perf_counter() - started, 3),
+            }]
+
+        # Thời gian chia đều cho các trang: đồng hồ đo cả file, mà cột `seconds` được
+        # đọc như "chi phí một đơn vị công việc". Cộng cả cột lên vẫn ra tổng thật.
+        elapsed = round((time.perf_counter() - started) / document.page_count, 3)
+        rows = []
+        for number, result in enumerate(document.pages, start=1):
             row = dict(result.metrics.to_dict())
             row.update(
                 file=str(path),
                 verdict=result.verdict,
                 reasons="|".join(result.codes),
-                seconds=round(time.perf_counter() - started, 3),
+                seconds=elapsed,
             )
+            rows.append(row)
             # Ảnh fail vẫn được ghi ra theo mặc định: chính người vận hành phải
             # nhìn được nó mới quyết định được. `--skip-fail` cho ai muốn ngược lại.
             if out_path and result.image and not (skip_fail and result.verdict == "fail"):
-                (out_path / f"{path.stem}.png").write_bytes(result.image)
-        except ScanError as err:
-            row = {
-                "file": str(path),
-                "verdict": "fail",
-                "reasons": err.code,
-                "seconds": round(time.perf_counter() - started, 3),
-            }
-        return path, row
+                # Một trang thì giữ nguyên `{stem}.png` như trước; nhiều trang thì
+                # **mọi** trang đều mang số, để không có trang nào trông như "bản chính".
+                stem = path.stem if document.page_count == 1 else f"{path.stem}.p{number}"
+                (out_path / f"{stem}.png").write_bytes(result.image)
+        return path, rows
 
     paths = list(iter_inputs(directory, recursive))
 
@@ -79,11 +89,16 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
 
     rows = []
     try:
-        for path, row in results:
-            rows.append(row)
-            if not quiet:
-                line = f"{row['verdict']:5} {row['reasons'] or '-':40} {path.name}"
-                print(line, file=sys.stderr)
+        for path, file_rows in results:
+            rows.extend(file_rows)
+            if quiet:
+                continue
+            for row in file_rows:
+                page = f" tr.{row['page']}" if row.get("page") else ""
+                print(
+                    f"{row['verdict']:5} {row['reasons'] or '-':40} {path.name}{page}",
+                    file=sys.stderr,
+                )
     finally:
         if pool is not None:
             pool.shutdown()
@@ -155,7 +170,8 @@ def main(argv=None):
 
     counts = Counter(r["verdict"] for r in rows)
     print(
-        f"\n{len(rows)} ảnh: "
+        # "trang" chứ không "ảnh": một PDF 12 trang đóng góp 12 dòng.
+        f"\n{len(rows)} trang: "
         f"{counts.get('pass', 0)} pass · {counts.get('warn', 0)} warn · "
         f"{counts.get('fail', 0)} fail",
         file=sys.stderr,

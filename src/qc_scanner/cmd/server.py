@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import __version__
 from ..config import Config
-from ..doc import scan_qc
+from ..doc import scan_document
 from ..qc import ScanError
 from ..rembg_session import active_providers, warmup
 
@@ -163,7 +163,7 @@ def scan_endpoint(
     content = file.file.read()  # `.file`, không `await`: đây là endpoint đồng bộ
     try:
         with _scan_slots:
-            result = scan_qc(content, config=Config.from_env(**overrides))
+            document = scan_document(content, config=Config.from_env(**overrides))
     except ScanError as err:
         # `400` nói "đầu vào của bạn sai, sửa rồi hãy gửi lại" — đúng cho ảnh hỏng,
         # **sai hoàn toàn** cho lỗi tài nguyên máy chủ. Trên máy H100 (GPU dùng chung
@@ -176,7 +176,17 @@ def scan_endpoint(
 
     # 200 cho pass/warn (ảnh dùng được, có thể kèm cảnh báo);
     # 422 cho fail — ảnh hợp lệ nhưng đầu ra không đáng tin cho OCR.
-    status = 422 if result.verdict == "fail" else 200
+    # Với PDF nhiều trang, `verdict` là **trang tệ nhất**: một hồ sơ có 1 trang không
+    # đọc được thì chưa dùng được, dù 11 trang kia hoàn hảo.
+    status = 422 if document.verdict == "fail" else 200
+
+    # N-08: PDF nhiều trang không có hình dạng "một file PNG" nào để trả về, nên nó
+    # **luôn** ra JSON, kể cả khi không có `?format=json`. Ảnh rời và PDF một trang
+    # giữ nguyên hợp đồng cũ từng byte — phía tích hợp hiện tại không phải sửa gì.
+    if document.page_count != 1:
+        return JSONResponse(document.to_dict(include_image=True), status_code=status)
+
+    result = document.pages[0]
 
     if as_json:
         return JSONResponse(result.to_dict(include_image=True), status_code=status)

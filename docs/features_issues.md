@@ -32,7 +32,7 @@ yêu cầu ⚫. Chỉ còn **OPS-3**, để cuối vì máy phát triển không
 | S-1 đổi model nền | **Đã đo** (xem mục S-1). isnet chậm gấp 3 và đổi 2 verdict; không có nhãn thì không biết đổi là tốt hay tệ. |
 | S-3 DocAligner | Chỗ cắm đã sẵn (S-2). Nguyên tắc "đo trước, đổi sau" cấm đổi đường chính khi chưa có tập vàng. |
 | S-5 dewarping | **Đã đo, chốt là KHÔNG làm.** 36 ảnh thật, không ảnh nào cong quá sàn nhiễu của mask. Mở lại khi có ảnh hoá đơn cuộn. |
-| N-03/07/08/09/10 | Chờ nhu cầu khách (EX-3/EX-5/EX-10). |
+| N-03/07/09/10 | Chờ nhu cầu khách (EX-3/EX-5/EX-10). |
 
 Mọi **ngưỡng** trong `config.py` vẫn là ước đoán, trừ hai cái đã chốt bằng số đo (cạnh dài
 tối thiểu, ngưỡng mờ) — xem [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes).
@@ -545,7 +545,7 @@ nội dung, không chỉ một.
 
 > **⚫ Bỏ 2026-08-05 theo yêu cầu.** Không dựng công cụ gán nhãn.
 >
-> Hệ quả phải nhớ: [QUAL-3](#qual-thresholds) (quét ngưỡng), [S-1](#s-model-swap) (đổi model)
+> Hệ quả phải nhớ: [QUAL-3](#qual-sweep) (quét ngưỡng), [S-1](#s-model-swap) (đổi model)
 > và [S-3](#s-docaligner) (đổi detector) vẫn cần nhãn để quyết bằng số. Bỏ công cụ **không** bỏ
 > nhu cầu đó — chỉ có nghĩa là khi cần nhãn thì sẽ gán bằng cách khác, hoặc chấp nhận chốt
 > những mục kia bằng cảm tính. Ghi ra đây để lúc đó không ai ngạc nhiên.
@@ -1190,6 +1190,67 @@ ruff + pytest trên 3.9/3.12 + build wheel, có cache model rembg).
 
 ---
 
+### 📄 N-08 · P3 · 🟢 XONG · Đầu vào PDF, nhiều trang {#n-pdf}
+
+Khách yêu cầu nhận PDF (2026-08-05). Trước đó mục này nằm trong backlog chờ nhu cầu.
+
+**Bề mặt**: cùng một endpoint, cùng một CLI, cùng một batch — định dạng nhận ra từ **nội dung
+file**, không từ tên file hay `Content-Type`. Ảnh rời và PDF một trang giữ hợp đồng cũ **từng
+byte**; phía tích hợp hiện tại không phải sửa gì.
+
+| Mặt tiền | PDF một trang | PDF nhiều trang |
+|---|---|---|
+| `POST /` | như ảnh: PNG + 2 header | JSON `{source, verdict, page_count, pages[]}` — kể cả khi không có `?format=json` |
+| `qc-scanner` | như ảnh | trang 1 → `OUTPUT`, còn lại → `OUTPUT.p2.png`… · `--page N` chọn một trang |
+| `qc-scanner-batch` | `{stem}.png` | `{stem}.p1.png`… · **một dòng CSV mỗi trang**, có cột `page` |
+| `scan_qc()` | như ảnh | ném `PDF_MULTIPAGE` — xem dưới |
+
+**Quyết định 1 — không render ở một DPI chọn sẵn.** Đây là chỗ dễ làm sai nhất, và cái sai
+không lộ ra ở khâu đọc file mà ở phán quyết QC. Đo trên một trang scan 300 DPI
+(`min_blur_score` = 25):
+
+| Đường đọc | `blur_score` |
+|---|---|
+| ảnh gốc, chưa qua PDF | 42.65 |
+| **lấy thẳng bitmap nhúng** | **44.41** |
+| render đúng DPI thật (300) | 36.91 |
+| render lệch 1 DPI (301) | 27.38 |
+| render gấp đôi (600) | **3.46** |
+
+DPI chọn sẵn gần như không bao giờ trùng DPI thật của ảnh bên trong, và lệch lên trên thì
+`blur_score` rơi xuống dưới ngưỡng **7 lần** — tức **mọi trang đều `BLURRY`**, một lớp
+false-fail sinh ra hoàn toàn từ khâu đọc file. Nên trang scan được lấy thẳng bitmap nhúng ra,
+không resample lần nào. Chỉ trang không phải bản scan mới render, ở `pdf_render_dpi`.
+
+Đường lấy-thẳng đòi trang chỉ có **đúng một đối tượng**, chứ không phải "có một ảnh chiếm trọn
+trang": nới ra thì mọi thứ vẽ đè lên tấm scan (con dấu, chữ điền bằng máy) **biến mất không
+báo gì**. Bỏ 13% `blur_score` rẻ hơn nhiều so với chấm QC trên một trang thiếu nội dung.
+
+**Quyết định 2 — trang PDF là tờ giấy, nên `pre_cropped` bật sẵn** (`pdf_pre_cropped`). Tắt
+thì mọi trang scan đều `NO_CROP_DETECTED` → `fail`: `quad_area_ratio` 0.994, chạm 4/4 mép —
+dấu hiệu "không cắt được gì" đúng theo nghĩa đen với mọi trang PDF. Cái giá là mất
+`CLIPPED_EDGE` khi PDF chỉ là ảnh chụp bọc lại. Chọn theo cùng cân nhắc của
+[EX-7](need_exchange.md#ex-7): false fail đắt hơn thiếu một cảnh báo. Chờ khách xác nhận loại
+PDF thật — [EX-17](need_exchange.md#ex-pdfkind).
+
+**Quyết định 3 — không cắt bớt trong im lặng.** Quá `pdf_max_pages` (50) thì **không trang nào
+được xử lý** (`PDF_TOO_MANY_PAGES`), và `scan_qc()` — vốn trả đúng một kết quả — **từ chối**
+PDF nhiều trang (`PDF_MULTIPAGE`) thay vì chấm trang đầu rồi bỏ phần còn lại. Cả hai đều là
+cùng một lỗi: phía gọi nhận một câu trả lời và tưởng đã soi hết hồ sơ.
+
+**Verdict gộp là trang tệ nhất**, không phải trang đầu: một bộ hồ sơ có 1 trang không đọc được
+thì chưa dùng được, dù 11 trang kia hoàn hảo.
+
+**Bắt được nhân tiện**: `algorithm.md §7` tự nhận là *danh mục* mã lý do nhưng thiếu 3 mã đang
+chạy thật (`INFERENCE_FAILED`, `MISSING_FILE`, `DETECTOR_DISAGREEMENT`). Đã bổ sung, và thêm
+test khoá danh mục cho khớp với `REASONS` để nó không trôi tiếp.
+
+Phụ thuộc mới: `pypdfium2` (Apache-2.0/BSD, wheel thuần, không cần binary ngoài — khác
+`pdf2image` cần poppler và PyMuPDF là AGPL). 25 test ở
+[tests/test_pdf.py](../tests/test_pdf.py).
+
+---
+
 ## E. FEATURES — Đã có (đã ship)
 
 | Mã | Tính năng | Ghi chú |
@@ -1216,7 +1277,7 @@ ruff + pytest trên 3.9/3.12 + build wheel, có cache model rembg).
 | ~~N-05~~ | 🟢 CI | P2 | Xong: lint + test 3.9/3.12 + build wheel |
 | ~~N-06~~ | 🟢 Tái dùng `rembg` session | P2 | Xong. **Đo được: ~3.0s → ~0.4s mỗi ảnh** |
 | N-07 | Tách nhiều tài liệu trong một ảnh thành nhiều đầu ra | P3 | Nối tiếp QC-9 |
-| N-08 | Đầu vào PDF / đa trang | P3 | Chờ nhu cầu khách (`need_exchange.md` EX-3) |
+| ~~N-08~~ | 🟢 **Đầu vào PDF / đa trang** | P3 | Xong — xem [N-08](#n-pdf) bên dưới |
 | N-09 | Hậu xử lý làm nét/khử bóng (adaptive threshold, shadow removal) | P3 | Đầu ra "giống bản scan"; chờ chốt EX-5 |
 | ~~N-10~~ | 🟡 onnxruntime-gpu tùy chọn | P3 | Đã viết, **chưa chạy thử** — xem [SPD-4](#spd-gpu) |
 

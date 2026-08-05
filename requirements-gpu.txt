@@ -24,6 +24,7 @@ onnx>=1.15,<2            # chỉ cho `qc-scanner-bench`: vá trục batch để 
 # CUDA 11 thì nó KHÔNG báo lỗi, chỉ lặng lẽ chạy CPU.
 onnxruntime-gpu>=1.19,<2
 opencv-python>=4.8,<6
+pypdfium2>=4.25,<5
 python-multipart>=0.0.9,<1
 rembg>=2.0,<3
 uvicorn[standard]>=0.30,<1

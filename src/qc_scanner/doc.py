@@ -5,6 +5,7 @@ Nguyên tắc chi phối file này: **không im lặng**. Mọi nhánh không-l�
 `reasons`. Trả ảnh gốc mà không báo gì là bug, không phải fallback.
 """
 
+import dataclasses
 from typing import Optional
 
 import cv2
@@ -15,12 +16,42 @@ from imutils import perspective
 from . import geometry as geo
 from .config import DEFAULT, Config
 from .detect import get_detector
-from .qc import Metrics, Reason, ScanError, ScanResult
+from .pdf import is_pdf, page_images
+from .qc import DocumentResult, Metrics, Reason, ScanError, ScanResult
 from .rembg_session import segment_mask
 
 # Giữ lại cho mã cũ import trực tiếp; nguồn sự thật nay là Config.
 APPROX_POLY_DP_ACCURACY_RATIO = DEFAULT.approx_poly_epsilon_ratio
 IMG_RESIZE_H = float(DEFAULT.work_height)
+
+
+def scan_document(
+    data: bytes, config: Optional[Config] = None, debug=None
+) -> DocumentResult:
+    """Đầu vào **bất kỳ** (ảnh rời hoặc PDF) → kết quả cho cả file, một mục mỗi trang.
+
+    N-08. Đây là cửa vào nên dùng ở mọi mặt tiền mới: nó là hàm duy nhất không phải
+    biết trước file có mấy trang. `scan_qc()` vẫn nguyên chữ ký cũ cho mã đã có.
+    """
+    cfg = config or Config.from_env()
+    if not data:
+        raise ScanError("FILE_EMPTY")
+
+    if not is_pdf(data):
+        return DocumentResult(pages=[scan_qc(data, cfg, debug)], source="image")
+
+    # Trang PDF **chính là** tờ giấy, không phải ảnh chụp tờ giấy: không có nền quanh
+    # mép để dò biên, nên mọi kiểm tra về "giấy chạm mép khung" đều báo nhầm. Xem
+    # `Config.pdf_pre_cropped` để biết số đo và cái giá của lựa chọn này.
+    page_cfg = dataclasses.replace(cfg, pre_cropped=True) if cfg.pdf_pre_cropped else cfg
+
+    pages = []
+    for page in page_images(data, cfg):
+        result = scan_image(page.image, page_cfg, debug)
+        result.metrics.page = page.number
+        result.metrics.pdf_source = page.source
+        pages.append(result)
+    return DocumentResult(pages=pages, source="pdf")
 
 
 def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanResult:
@@ -29,13 +60,20 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     Ném `ScanError` chỉ với lỗi đầu vào không thể đánh giá được (rỗng, không
     decode nổi). Mọi thất bại khác trả `ScanResult` có `verdict="fail"` kèm mã
     lý do — người gọi biết chuyện gì xảy ra và phải làm gì.
+
+    Nhận PDF **một trang** như một tấm ảnh. PDF nhiều trang thì ném `PDF_MULTIPAGE`
+    thay vì lặng lẽ chấm trang đầu: một chữ ký trả về đúng một kết quả thì không có
+    chỗ chứa 11 trang còn lại, và bỏ chúng đi mà không nói là kiểu hỏng tệ nhất —
+    phía gọi tưởng đã soi hết cả hồ sơ.
     """
     cfg = config or Config.from_env()
     metrics = Metrics()
-    reasons: list[Reason] = []
 
     if not data:
         raise ScanError("FILE_EMPTY")
+
+    if is_pdf(data):
+        return _single_pdf_page(data, cfg, debug)
 
     # SPD-1: giải mã ảnh **một lần duy nhất**, và lấy thẳng mask thay vì bytes PNG.
     # Đường cũ giải mã 2 lần (OpenCV cho `orig`, PIL bên trong rembg) rồi ghép +
@@ -44,7 +82,29 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     # Phụ phẩm đáng kể: mọi thứ giờ suy ra từ CÙNG một mảng. Đường cũ tính `ratio`
     # giữa ảnh PIL giải mã và ảnh OpenCV giải mã, tức ngầm tin hai thư viện xoay
     # EXIF giống hệt nhau — đúng trên thực tế, nhưng là giả định không ai kiểm.
-    orig = _decode(data)
+    return scan_image(_decode(data), cfg, debug, metrics=metrics)
+
+
+def _single_pdf_page(data, cfg, debug):
+    document = scan_document(data, cfg, debug)
+    if document.page_count != 1:
+        raise ScanError("PDF_MULTIPAGE", f"{document.page_count} trang")
+    return document.pages[0]
+
+
+def scan_image(
+    image, config: Optional[Config] = None, debug=None, metrics: Optional[Metrics] = None
+) -> ScanResult:
+    """Ảnh BGR **đã giải mã** → phán quyết. Lõi thật sự; `scan_qc()` chỉ thêm bước giải mã.
+
+    Tách ra để đường PDF không phải mã hoá lại từng trang thành PNG chỉ để `scan_qc()`
+    giải mã ngược — đúng vòng phí phạm mà SPD-1 đã bỏ đi ở chỗ khác.
+    """
+    cfg = config or Config.from_env()
+    metrics = metrics if metrics is not None else Metrics()
+    reasons: list[Reason] = []
+
+    orig = image
     alpha = _segment(orig, cfg)
 
     work = _to_work_size(orig, cfg)

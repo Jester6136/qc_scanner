@@ -190,6 +190,62 @@ class Config:
     tách được chúng, nên đoán mò chỉ đổi loại lỗi này lấy loại lỗi khác.
     """
 
+    # --- Đầu vào PDF (N-08) ---
+    pdf_pre_cropped: bool = True
+    """Coi mỗi trang PDF là ảnh **đã cắt sẵn** → bỏ qua các kiểm tra về biên (QC-14).
+
+    Với PDF thì `pre_cropped` gần như luôn đúng, vì trang PDF **chính là** tờ giấy:
+    máy scan (hay app scan trên điện thoại) cắt xong mới đóng thành PDF. Không có nền
+    quanh mép để mà dò.
+
+    Đo trên một trang scan đặt kín khổ:
+
+    | | `pdf_pre_cropped` tắt | bật |
+    |---|---|---|
+    | phán quyết | `fail` — `NO_CROP_DETECTED` | `pass` |
+    | `quad_area_ratio` | 0.994 | — |
+    | `touches_border` | 4/4 | — |
+
+    Tức là để tắt thì **mọi trang PDF scan đều `fail`**, vì dấu hiệu "tứ giác trùm gần
+    kín khung và chạm cả 4 mép" đúng theo nghĩa đen với mọi trang PDF.
+
+    Cái giá của việc bật: PDF chỉ là ảnh chụp bọc lại (trang rộng hơn tờ giấy, có nền
+    quanh mép) thì mất `CLIPPED_EDGE` — đo trên cùng bộ: `warn` → `pass`. Chọn bật
+    làm mặc định vì hai sai lầm không cùng giá: bên tắt là **false fail** trên ca phổ
+    biến (ảnh tốt bị loại hẳn), bên bật là **thiếu một cảnh báo** trên ca hiếm.
+
+    Chưa hỏi được khách PDF của họ thuộc loại nào — xem [EX-17].
+    """
+
+    pdf_max_pages: int = 50
+    """Trần số trang cho một file. Vượt → `PDF_TOO_MANY_PAGES`, **không xử lý trang nào**.
+
+    Có trần vì một request giữ một suất `MAX_CONCURRENCY` suốt thời gian chạy: ~0.5s
+    mỗi trang, nên 50 trang là ~25s. Đặt cao hơn thì phải nâng cả timeout ở tầng proxy.
+    """
+
+    pdf_render_dpi: int = 200
+    """DPI khi phải render — chỉ dùng cho trang **không** có ảnh nhúng chiếm trọn.
+
+    Tức là PDF sinh từ máy tính (hoá đơn điện tử, chữ vector), nơi không có "DPI thật"
+    nào để bám vào. Trang scan đi đường khác, ở đúng DPI của ảnh nhúng — xem `pdf.py`.
+    200 DPI cho khổ A4 ra 1654×2339, thừa xa `min_long_side_px`.
+    """
+
+    pdf_max_dpi: int = 400
+    """Trần DPI khi render theo DPI thật của ảnh nhúng.
+
+    Chặn ca một trang nhỏ chứa ảnh siêu nét: render đúng 1200 DPI thì ra ảnh vài trăm
+    triệu điểm, đủ để cạn RAM worker.
+    """
+
+    pdf_page_image_coverage: float = 0.9
+    """Ảnh nhúng phải phủ ít nhất bấy nhiêu diện tích trang mới được coi là "trang scan".
+
+    Dưới mức này thì nó là hình minh hoạ trong một trang có bố cục, không phải bản
+    scan — render cả trang mới đúng.
+    """
+
     # --- Bối cảnh người dùng (QC-13) ---
     hint_audience: str = "capturer"
     """Ai sẽ đọc `hint`: `capturer` (chụp lại được) hay `operator` (soi trong hàng chờ).

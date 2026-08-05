@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.txt)
 
-**Take a photo of a document and get back a flat, cropped scan.**
+**Take a photo of a document — or a PDF — and get back a flat, cropped scan.**
 
 QC Scanner finds the sheet of paper in a photo — shot at an angle, on a cluttered desk — detects its
 four corners, and applies a perspective transform so the page comes out flat and trimmed. It is a
@@ -41,6 +41,9 @@ photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  lọc + chọ
 Một hàm lõi `scan_qc()`, ba mặt tiền (CLI, HTTP server, Python library) gọi chung nó. Không
 database, không hàng đợi. Chi tiết: [docs/algorithm.md](docs/algorithm.md).
 
+Đầu vào nhận ảnh (JPG · PNG · WebP · BMP · TIFF) hoặc **PDF**, nhận ra từ nội dung file chứ
+không từ tên file. PDF nhiều trang cho một phán quyết mỗi trang — xem [PDF](#pdf) bên dưới.
+
 Đầu ra luôn là PNG. Ảnh này đi tiếp vào OCR/VLM, và nhiễu nén JPEG quanh nét chữ nhỏ làm giảm
 độ chính xác bóc dữ liệu.
 
@@ -64,7 +67,7 @@ result.image            # PNG bytes
 | `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
 Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
-`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **21 mã**, danh mục đầy
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **25 mã**, danh mục đầy
 đủ trong [docs/api.md](docs/api.md).
 
 ## Cài đặt
@@ -85,6 +88,7 @@ Lần chạy đầu tải model rembg (~176MB, về `~/.u2net/`); máy không c�
 qc-scanner photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
 cat photo.jpg | qc-scanner > out.png
 qc-scanner photo.jpg out.png --report qc.json
+qc-scanner hoso.pdf out.png           # PDF: trang 1 → out.png, trang 2 → out.p2.png, …
 ```
 
 Báo cáo QC ra stderr, hoặc ra file với `--report`:
@@ -106,8 +110,9 @@ qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
 qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv -j 4
 ```
 
-CSV một dòng mỗi ảnh: file, verdict, reasons và toàn bộ metric. `--jobs` mặc định 2; thứ tự dòng
-trong CSV không phụ thuộc số luồng.
+CSV một dòng mỗi **trang**: file, verdict, reasons và toàn bộ metric; một PDF 12 trang cho 12
+dòng, phân biệt bằng cột `page`. `--jobs` mặc định 2; thứ tự dòng trong CSV không phụ thuộc số
+luồng.
 
 Đo trên 37 ảnh, CPU 10 nhân: 1 luồng 14.2s · **2 luồng 11.8s** · 3 luồng 12.0s · 4 luồng 12.7s.
 onnxruntime đã dùng hết số nhân cho một lần suy luận, nên thêm luồng chỉ chồng phần OpenCV lên
@@ -207,6 +212,42 @@ dùng đồng thời).
 Mặc định tự sinh ảnh 3024×4032 nên chạy được trong container trắng. Cỡ ảnh giữ như ảnh điện
 thoại thật vì chi phí CPU tỉ lệ với số pixel.
 
+## PDF
+
+Cùng một endpoint, cùng một CLI, cùng một batch — không có tham số nào phải bật.
+
+```bash
+qc-scanner hoso.pdf out.png              # trang 1 → out.png, trang 2 → out.p2.png, …
+qc-scanner hoso.pdf out.png --page 2     # chỉ một trang
+curl -F "file=@hoso.pdf" http://127.0.0.1:5000/ | jq '.verdict, .page_count'
+```
+
+Ảnh rời và PDF một trang giữ nguyên hợp đồng cũ. PDF nhiều trang trả JSON kể cả khi không có
+`?format=json`, vì không có hình dạng "một file PNG" nào để trả về:
+
+```jsonc
+{"source": "pdf", "verdict": "fail", "page_count": 3,
+ "pages": [{"page": 1, "verdict": "pass", "reasons": [], "metrics": {...}, "image": "..."}, ...]}
+```
+
+`verdict` gộp là **trang tệ nhất**: một bộ hồ sơ có 1 trang không đọc được thì chưa dùng được,
+dù 11 trang kia hoàn hảo. `qc-scanner-batch` ghi một dòng CSV mỗi trang, có cột `page`.
+
+Trang scan được lấy **thẳng bitmap nhúng** ra, không render, không resample. Chọn sẵn một DPI
+để render thì gần như không bao giờ trùng DPI thật của ảnh bên trong, và lệch lên trên là mọi
+trang đều `BLURRY` — đo trên một trang 300 DPI, `blur_score` 44.4 (lấy thẳng) · 36.9 (render
+đúng DPI) · **3.5** (render gấp đôi), với ngưỡng là 25. Trang không phải bản scan mới render, ở
+`QC_SCANNER_PDF_RENDER_DPI`. Cột `metrics.pdf_source` nói mỗi trang đi đường nào.
+
+Trang PDF **chính là** tờ giấy, nên `pre_cropped` bật sẵn cho mọi trang PDF
+(`QC_SCANNER_PDF_PRE_CROPPED=0` để tắt). Không có nó thì "tứ giác trùm gần kín khung và chạm cả
+4 mép" đúng theo nghĩa đen với mọi trang scan, và mọi trang đều `fail`.
+
+Trần 50 trang một file. Vượt trần thì **không trang nào được xử lý** (`PDF_TOO_MANY_PAGES`) —
+trả về 50 trang đầu của một file 200 trang mà không nói gì sẽ khiến phía gọi tưởng đã soi hết.
+
+Chi tiết: [N-08](docs/features_issues.md#n-pdf) · [docs/api.md](docs/api.md).
+
 ## Cấu hình
 
 Mọi tham số nằm trong [`config.py`](src/qc_scanner/config.py), override bằng
@@ -230,6 +271,9 @@ Các biến hay dùng nhất:
 | `QC_SCANNER_REQUIRE_GPU` | `false` | Không có GPU thì thoát thay vì chạy CPU |
 | `QC_SCANNER_CORS_ORIGINS` | `*` | Origin được phép gọi từ trình duyệt |
 | `QC_SCANNER_SEGMENT_AT_MODEL_SIZE` | `false` | Nhanh hơn ~43ms/ảnh, đổi lại metric trôi ~0.14% |
+| `QC_SCANNER_PDF_PRE_CROPPED` | `true` | Coi mỗi trang PDF là ảnh đã cắt sẵn |
+| `QC_SCANNER_PDF_MAX_PAGES` | `50` | Trần số trang một file |
+| `QC_SCANNER_PDF_RENDER_DPI` | `200` | DPI khi phải render (trang không phải bản scan) |
 
 `MAX_CONCURRENCY` và `GPU_CONCURRENCY` là hai van cho hai tài nguyên khác nhau: phần CPU chiếm
 62% thời gian mỗi ảnh nên cần song song theo số nhân, còn VRAM thường dùng chung với service
@@ -241,9 +285,9 @@ khác nên phải giữ thấp.
 
 | | |
 |---|---|
-| Mã lý do | 21 mã, mỗi mã kèm `hint` + `audience` |
+| Mã lý do | 25 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 282 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 328 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
@@ -305,6 +349,8 @@ SPD-1 đến SPD-3 không đổi phán quyết trên ảnh nào, ảnh ra trùng
 - [EX-2](docs/need_exchange.md): chốt ngưỡng và nâng cấp detector cần tập ảnh có nhãn.
 - [EX-15](docs/need_exchange.md#ex-multipage): giấy chứng nhận chụp từng mặt — ai ghép và kiểm đủ mặt.
 - [EX-16](docs/need_exchange.md#ex-throughput): "700 CCU" là bao nhiêu ảnh/giây.
+- [EX-17](docs/need_exchange.md#ex-pdfkind): PDF của khách là bản scan hay ảnh chụp bọc lại —
+  quyết định mặc định của `pdf_pre_cropped`.
 
 ## Tài liệu
 

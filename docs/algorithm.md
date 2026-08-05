@@ -281,7 +281,18 @@ là mã vô dụng.
 |---|---|---|---|---|
 | `DECODE_FAILED` | fail | `imdecode` trả None | File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG. | system |
 | `FILE_EMPTY` | fail | `len(data) == 0` | Không nhận được dữ liệu. Kiểm tra lại bước tải/upload. | system |
+| `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh — báo bên phát triển. | system |
+| `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi phía máy chủ, **không phải lỗi ảnh** — cho chạy lại, đừng loại ảnh. Qua HTTP là `503` kèm `Retry-After`. | system |
 | `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
+
+### Đầu vào PDF (N-08)
+
+| Mã | Sev | Điều kiện | Hướng xử lý | Ai |
+|---|---|---|---|---|
+| `PDF_DECODE_FAILED` | fail | pdfium không mở được file | PDF hỏng, hoặc **có mật khẩu**. Xin lại bản gốc / bản đã gỡ mật khẩu. | system |
+| `PDF_NO_PAGES` | fail | mở được nhưng 0 trang | PDF rỗng — báo bên gửi kiểm tra bước xuất file. | system |
+| `PDF_TOO_MANY_PAGES` | fail | số trang > `pdf_max_pages` (50) | Tách file, hoặc nâng `QC_SCANNER_PDF_MAX_PAGES`. **Không trang nào được xử lý** — cắt bớt trong im lặng sẽ khiến bên gọi tưởng đã soi hết. | operator |
+| `PDF_MULTIPAGE` | fail | PDF > 1 trang đưa vào `scan_qc()` | Lỗi tích hợp: dùng `scan_document()`. Qua HTTP thì phản hồi nhiều trang đã là mặc định. | system |
 
 ### Tách chủ thể
 
@@ -290,6 +301,7 @@ là mã vô dụng.
 | `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Không tách được tờ giấy khỏi nền. Đặt tài liệu lên **nền tối, tương phản** (bàn sẫm màu) rồi chụp lại. | capturer |
 | ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. Lùi ra để lộ viền nền quanh tài liệu. | capturer |
 | `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, nên soi mắt thường trước khi dùng. | operator |
+| `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận — kết quả kém chắc chắn, nên soi mắt thường. | operator |
 
 ### Hình học biên
 

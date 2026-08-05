@@ -39,6 +39,11 @@ from .qc import Metrics, ScanError
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
+#: Đuôi file `qc-scanner-batch` nhận. Tách khỏi `IMAGE_SUFFIXES` vì bộ eval
+#: (`iter_images`) vẫn chỉ chạy trên ảnh rời — nhãn vàng gắn theo tấm ảnh, không
+#: theo trang PDF.
+DOCUMENT_SUFFIXES = IMAGE_SUFFIXES | {".pdf"}
+
 #: IoU tối thiểu giữa tứ giác dự đoán và nhãn để tính là "nắn đúng".
 CROP_IOU_THRESHOLD = 0.90
 

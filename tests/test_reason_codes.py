@@ -256,3 +256,20 @@ def test_edge_fallback_is_never_silent():
 
     assert REASONS["RECOVERED_BY_EDGE_FALLBACK"].severity == "warn"
     assert REASONS["FALLBACK_ORIGINAL"].severity == "fail"
+
+
+def test_every_reason_code_appears_in_the_published_catalogue():
+    """`algorithm.md §7` tự nhận là **danh mục** mã lý do, nên nó phải đầy đủ.
+
+    Không có bài này thì nó trôi trong im lặng: `INFERENCE_FAILED`, `MISSING_FILE` và
+    `DETECTOR_DISAGREEMENT` đều từng chạy trong production mà không có dòng nào trong
+    danh mục. Khách đọc tài liệu, gặp một mã không có ở đó, và không biết phải làm gì.
+    """
+    import pathlib
+
+    from qc_scanner.qc import REASONS
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    catalogue = (root / "docs" / "algorithm.md").read_text(encoding="utf-8")
+    missing = sorted(code for code in REASONS if f"`{code}`" not in catalogue)
+    assert not missing, f"thiếu trong docs/algorithm.md §7: {missing}"

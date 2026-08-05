@@ -28,9 +28,12 @@ request đầu tiên không phải gánh thời gian nạp model.
 
 ---
 
-## 2. `POST /` — chấm QC một ảnh
+## 2. `POST /` — chấm QC một file
 
 **Request**: `multipart/form-data`, đúng một trường `file`.
+
+Nhận **ảnh** (JPG · PNG · WebP · BMP · TIFF) hoặc **PDF**. Định dạng nhận ra từ nội dung
+file, không từ tên file hay `Content-Type`.
 
 | Tham số query | Giá trị | Mặc định | Ý nghĩa |
 |---|---|---|---|
@@ -48,6 +51,10 @@ Giới hạn kích thước upload: **32 MB** (vượt → `413`).
 | `422` | `verdict` là `fail` — ảnh hợp lệ nhưng đầu ra **không đáng tin cho OCR** | Luôn là JSON |
 | `400` | Đầu vào không đánh giá được (thiếu `file`, ảnh hỏng, tham số sai) | JSON `{"error": {...}}` |
 | `413` | File vượt 32 MB | `{"error": "payload quá lớn"}` |
+| `503` | Lỗi tài nguyên máy chủ (`INFERENCE_FAILED`, hay gặp: hết bộ nhớ GPU) | JSON, kèm header `Retry-After` |
+
+`503` là mã duy nhất **nên retry**: ảnh không có vấn đề gì, máy chủ mới có. Trả `400` cho ca
+này thì phía gọi loại vĩnh viễn một tấm ảnh tốt.
 
 **`422` không phải lỗi hệ thống.** Nó nghĩa là "đã xử lý xong, và kết luận là ảnh này không
 dùng được". Đừng retry — chụp lại hoặc đưa người soi mới là hành động đúng.
@@ -98,6 +105,61 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
 - `corners` theo thứ tự **TL-TR-BR-BL** trong hệ toạ độ **ảnh gốc**; `null` khi không dựng
   được tứ giác.
 
+### Phản hồi cho PDF nhiều trang
+
+Ảnh rời và PDF **một trang** dùng đúng hợp đồng ở trên, không đổi một byte nào.
+
+PDF **nhiều trang** thì không có hình dạng "một file PNG" nào để trả về, nên nó **luôn** ra
+JSON — kể cả khi không có `?format=json`:
+
+```jsonc
+{
+  "source": "pdf",                    // "image" | "pdf"
+  "verdict": "fail",                  // TRANG TỆ NHẤT, không phải trang đầu
+  "page_count": 3,
+  "pages": [
+    {"page": 1, "verdict": "pass", "reasons": [], "metrics": {...}, "image": "iVBO..."},
+    {"page": 2, "verdict": "fail", "reasons": [...], "metrics": {...}, "image": "iVBO..."},
+    {"page": 3, "verdict": "warn", "reasons": [...], "metrics": {...}, "image": "iVBO..."}
+  ]
+}
+```
+
+Mỗi phần tử `pages[]` có đúng hình dạng của phản hồi `?format=json` một trang, cộng thêm khoá
+`page` (đánh số từ 1). HTTP status suy từ `verdict` gộp, theo đúng bảng trên.
+
+**`verdict` gộp là trang tệ nhất.** Một bộ hồ sơ có 1 trang mờ không đọc được thì chưa dùng
+được, dù 11 trang kia hoàn hảo. Cần xử lý từng trang riêng thì đọc `pages[].verdict`.
+
+Phân biệt hai dạng phản hồi bằng `page_count` (hoặc bằng `Content-Type`: `image/png` với một
+trang, `application/json` với nhiều trang).
+
+### PDF được đọc như thế nào
+
+Trang PDF **chính là** tờ giấy — máy scan cắt xong mới đóng thành PDF — nên mọi trang đều
+được chấm với `pre_cropped` bật sẵn ([QC-14](features_issues.md#qc-precropped)). Không có nó
+thì "tứ giác trùm gần kín khung và chạm cả 4 mép" đúng theo nghĩa đen với **mọi** trang scan,
+và mọi trang đều `fail` vì `NO_CROP_DETECTED`. Tắt bằng `QC_SCANNER_PDF_PRE_CROPPED=0`.
+
+Trang scan được lấy **thẳng bitmap nhúng** ra, không render, không resample lần nào. Lý do
+nằm ở số đo (`blur_score`, ngưỡng 25):
+
+| Đường đọc | `blur_score` |
+|---|---|
+| lấy thẳng bitmap nhúng | 44.4 |
+| render đúng DPI thật | 36.9 |
+| render gấp đôi DPI thật | **3.5** |
+
+Chọn sẵn một DPI để render thì gần như không bao giờ trùng DPI thật của ảnh bên trong, và
+lệch lên trên là **mọi trang đều `BLURRY`**. Trang không phải bản scan (PDF sinh từ máy tính)
+mới render, ở `QC_SCANNER_PDF_RENDER_DPI` (mặc định 200).
+
+`metrics.pdf_source` nói mỗi trang đã đi đường nào: `embedded` hay `render@<DPI>`.
+
+Trần **50 trang** một file (`QC_SCANNER_PDF_MAX_PAGES`). Vượt trần thì trả `400` +
+`PDF_TOO_MANY_PAGES` và **không xử lý trang nào** — trả về 50 trang đầu của một file 200
+trang mà không nói gì sẽ khiến phía gọi tưởng đã soi hết.
+
 ### Lỗi `400`
 
 ```jsonc
@@ -111,7 +173,8 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
 ```
 
 Mọi `400` dùng **cùng một hình dạng** — `error` luôn là object có `code`, không bao giờ là
-chuỗi trần. Ba mã hay gặp: `MISSING_FILE`, `FILE_EMPTY`, `DECODE_FAILED`.
+chuỗi trần. Hay gặp: `MISSING_FILE`, `FILE_EMPTY`, `DECODE_FAILED`, và với PDF thì
+`PDF_DECODE_FAILED` (file hỏng **hoặc có mật khẩu**), `PDF_NO_PAGES`, `PDF_TOO_MANY_PAGES`.
 
 ### CORS — gọi từ trình duyệt
 
@@ -218,14 +281,16 @@ phục. Có test chặn.
 
 ## 6. Danh mục mã lý do
 
-20 mã, kèm điều kiện phát hiện và hướng xử lý:
-[algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes).
+25 mã, kèm điều kiện phát hiện và hướng xử lý:
+[algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes). Danh mục đó được test giữ
+cho khớp với code — mã nào chạy được thì chắc chắn có dòng trong đó.
 
 Nhóm theo hành động của phía gọi:
 
 | Nhóm | Mã | Phía gọi nên làm gì |
 |---|---|---|
-| Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` | Sửa phía gọi, đừng retry |
+| Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
+| Sự cố máy chủ | `INFERENCE_FAILED` | **Retry** — ảnh không có vấn đề gì |
 | Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` | Chụp lại, hoặc đưa người soi |
 | Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 
@@ -243,6 +308,13 @@ curl -X POST -F file=@anh.jpg 'http://localhost:5000/?format=json' | jq .verdict
 # Luồng xử lý kho ảnh: ảnh đã cắt sẵn, hint viết cho người soi
 curl -X POST -F file=@anh.jpg \
   'http://localhost:5000/?format=json&pre_cropped=1&audience=operator'
+
+# PDF: cùng một endpoint, không cần tham số gì thêm
+curl -X POST -F file=@hoso.pdf http://localhost:5000/ | jq '.verdict, .page_count'
+
+# Chỉ lấy những trang không đạt
+curl -X POST -F file=@hoso.pdf http://localhost:5000/ \
+  | jq '.pages[] | select(.verdict != "pass") | {page, codes: [.reasons[].code]}'
 ```
 
 Phân biệt bằng exit status thay vì đọc thân phản hồi:

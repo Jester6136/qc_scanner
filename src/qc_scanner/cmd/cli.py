@@ -1,10 +1,11 @@
 import json
+import pathlib
 import sys
 
 import click
 
 from ..config import Config
-from ..doc import scan_qc
+from ..doc import scan_document
 from ..qc import ScanError
 
 #: Exit code theo verdict — script gọi qc-scanner phân biệt được bằng `$?`.
@@ -48,14 +49,22 @@ EXIT_INPUT_ERROR = 3
 @click.option(
     "--cross-check", is_flag=True, help="Chạy detector thứ hai và báo nếu hai bên lệch."
 )
+@click.option(
+    "--page",
+    type=int,
+    help="Chỉ xử lý một trang của PDF (đánh số từ 1). Mặc định: mọi trang.",
+)
 def main(
     input, output, report, quiet, debug_dir, detector, model, pre_cropped,
-    audience, cross_check,
+    audience, cross_check, page,
 ):
     """Nắn phẳng tài liệu và chấm điểm chất lượng.
 
-    Ảnh vẫn ra stdout như cũ; phán quyết đi theo exit code (0 pass · 1 warn ·
-    2 fail · 3 đầu vào hỏng) và báo cáo JSON ra stderr.
+    Nhận ảnh (JPG/PNG/…) hoặc PDF. Ảnh vẫn ra stdout như cũ; phán quyết đi theo exit
+    code (0 pass · 1 warn · 2 fail · 3 đầu vào hỏng) và báo cáo JSON ra stderr.
+
+    PDF nhiều trang: trang đầu ghi vào OUTPUT, các trang sau ghi cạnh nó thành
+    `OUTPUT.p2.png`, `OUTPUT.p3.png`… Exit code là **trang tệ nhất**.
     """
     overrides = {}
     if detector:
@@ -71,16 +80,59 @@ def main(
     config = Config.from_env(**overrides)
 
     try:
-        result = scan_qc(input.read(), config=config, debug=debug_dir)
+        document = scan_document(input.read(), config=config, debug=debug_dir)
     except ScanError as err:
         _emit(err.to_dict(), report, quiet)
         raise SystemExit(EXIT_INPUT_ERROR) from err
 
-    if result.image is not None:
-        output.write(result.image)
+    if page is not None:
+        if not 1 <= page <= document.page_count:
+            _emit(
+                {"code": "PAGE_OUT_OF_RANGE",
+                 "message": f"--page {page} nhưng file chỉ có {document.page_count} trang"},
+                report,
+                quiet,
+            )
+            raise SystemExit(EXIT_INPUT_ERROR)
+        document.pages = [document.pages[page - 1]]
 
-    _emit(result.to_dict(), report, quiet)
-    raise SystemExit(EXIT_CODES[result.verdict])
+    _write_pages(document, output)
+
+    # Một trang thì báo cáo giữ nguyên hình dạng cũ (`{verdict, reasons, metrics}`),
+    # không bọc thêm tầng `pages` — mọi script đang parse stderr vẫn chạy.
+    payload = (
+        document.pages[0].to_dict()
+        if document.page_count == 1
+        else document.to_dict()
+    )
+    _emit(payload, report, quiet)
+    raise SystemExit(EXIT_CODES[document.verdict])
+
+
+def _write_pages(document, output):
+    """Trang đầu vào OUTPUT; các trang sau ra file cạnh bên.
+
+    Ghi mọi trang chồng lên cùng một đích sẽ để lại đúng trang cuối và **không báo gì**
+    — người dùng nhận một file, tưởng đã xử lý xong cả hồ sơ.
+    """
+    name = getattr(output, "name", None)
+    # Kiểm TRƯỚC khi ghi byte nào: báo lỗi sau khi trang 1 đã ra stdout thì đầu ra
+    # vừa hỏng vừa lẫn với thông báo lỗi.
+    if document.page_count > 1 and (not name or name == "-"):
+        raise click.UsageError(
+            f"File có {document.page_count} trang nhưng đầu ra là stdout — "
+            "stdout chỉ chứa được một ảnh. Ghi ra file, hoặc chọn `--page N`."
+        )
+
+    for index, result in enumerate(document.pages, start=1):
+        if result.image is None:
+            continue
+        if index == 1:
+            output.write(result.image)
+        else:
+            path = pathlib.Path(name)
+            target = path.with_name(f"{path.stem}.p{index}{path.suffix}")
+            target.write_bytes(result.image)
 
 
 def _emit(payload, report, quiet):

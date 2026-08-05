@@ -87,6 +87,44 @@ REASONS: dict[str, ReasonSpec] = {
             "Ảnh này vẫn dùng được — cho chạy lại, đừng loại nó.",
             "system",
         ),
+        # --- Đầu vào PDF ---
+        _spec(
+            "PDF_DECODE_FAILED",
+            "fail",
+            "Không mở được file PDF.",
+            "File PDF hỏng, hoặc có mật khẩu mở file. Gửi lại bản không đặt mật khẩu.",
+            "PDF hỏng hoặc được đặt mật khẩu — không mở ra để soi được. "
+            "Xin lại bản gốc, hoặc bản đã gỡ mật khẩu.",
+            "system",
+        ),
+        _spec(
+            "PDF_NO_PAGES",
+            "fail",
+            "File PDF không có trang nào.",
+            "File PDF rỗng (0 trang). Kiểm tra lại bước xuất/tải file.",
+            "PDF rỗng, không có gì để soi. Báo bên gửi kiểm tra bước xuất file.",
+            "system",
+        ),
+        _spec(
+            "PDF_TOO_MANY_PAGES",
+            "fail",
+            "File PDF vượt trần số trang cho một lần xử lý.",
+            "File quá nhiều trang cho một lần gửi. Tách nhỏ rồi gửi lại.",
+            "Vượt trần `pdf_max_pages`. Không trang nào được xử lý — cắt bớt trong im "
+            "lặng sẽ khiến bên gọi tưởng đã soi hết. Tách file, hoặc nâng "
+            "`QC_SCANNER_PDF_MAX_PAGES` nếu máy chủ chịu được thời gian xử lý.",
+            "operator",
+        ),
+        _spec(
+            "PDF_MULTIPAGE",
+            "fail",
+            "PDF nhiều trang được đưa vào đường xử lý một-ảnh.",
+            "File PDF có nhiều trang. Gửi từng trang, hoặc dùng luồng xử lý nhiều trang.",
+            "Đây là lỗi tích hợp, không phải lỗi tài liệu: `scan_qc()` trả đúng một kết "
+            "quả nên không chứa nổi PDF nhiều trang. Dùng `scan_document()` — hoặc với "
+            "HTTP thì phản hồi nhiều trang đã là mặc định, không cần đổi gì.",
+            "system",
+        ),
         _spec(
             "LOW_RESOLUTION",
             "fail",
@@ -384,6 +422,21 @@ class Metrics:
     pre_cropped: bool = False
     """Phía gọi khai báo ảnh vào đã cắt sẵn → các kiểm tra về biên đã bị bỏ qua (QC-14)."""
 
+    page: Optional[int] = None
+    """Số trang trong file PDF nguồn, tính từ 1. `None` với đầu vào là ảnh rời.
+
+    Nằm ở đây cùng `pre_cropped` vì cùng loại: dữ kiện về **bối cảnh đầu vào**, không
+    đòi hành động gì, nhưng thiếu nó thì một dòng CSV của PDF 12 trang không tra
+    ngược được về trang nào.
+    """
+
+    pdf_source: Optional[str] = None
+    """Trang PDF đã được đọc bằng đường nào: `embedded` · `render@<DPI>`.
+
+    `embedded` = lấy thẳng bitmap nhúng, **không resample lần nào**. Đáng ghi lại vì
+    đường render làm `blur_score` tụt (13% khi đúng DPI, gấp 12 lần khi sai DPI), nên
+    khi soi một ca `BLURRY` bất thường thì đây là cột phải nhìn trước. Xem `pdf.py`."""
+
     fallback_used: str = "none"
     """`none` · `edge_detect` · `original` — minh bạch đường đi."""
 
@@ -458,6 +511,46 @@ class ScanResult:
                 base64.b64encode(self.image).decode("ascii") if self.image else None
             )
         return d
+
+
+#: Thứ tự "tệ dần" của phán quyết — dùng để gộp nhiều trang thành một kết luận.
+_VERDICT_RANK = {"pass": 0, "warn": 1, "fail": 2}
+
+
+@dataclass
+class DocumentResult:
+    """Kết quả của **một file**, có thể gồm nhiều trang (PDF) hoặc đúng một (ảnh rời).
+
+    Vì sao cần một lớp riêng thay vì trả `list[ScanResult]`: phía gọi hầu như luôn cần
+    một câu trả lời cho cả file — nhận hay không nhận — và nếu mỗi nơi tự gộp thì mỗi
+    nơi gộp một kiểu. `verdict` ở đây là **trang tệ nhất**, không phải trang đầu: một
+    bộ hồ sơ có 1 trang mờ không đọc được thì cả bộ chưa dùng được, dù 11 trang kia
+    hoàn hảo.
+    """
+
+    pages: list[ScanResult]
+    source: Literal["image", "pdf"] = "image"
+
+    @property
+    def verdict(self) -> Verdict:
+        if not self.pages:
+            return "fail"
+        return max((p.verdict for p in self.pages), key=lambda v: _VERDICT_RANK[v])
+
+    @property
+    def page_count(self) -> int:
+        return len(self.pages)
+
+    def to_dict(self, include_image: bool = False) -> dict:
+        return {
+            "source": self.source,
+            "verdict": self.verdict,
+            "page_count": self.page_count,
+            "pages": [
+                {"page": i, **p.to_dict(include_image=include_image)}
+                for i, p in enumerate(self.pages, start=1)
+            ],
+        }
 
 
 class ScanError(Exception):

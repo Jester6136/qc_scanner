@@ -41,7 +41,7 @@
 - **Nếu chưa rõ**: mọi con số trong `test_eval.md §5` không có đầu vào để chạy. **Đây là mục
   chặn nhiều việc nhất — ưu tiên hỏi trước tiên.**
 
-### EX-3 · ✅ Ảnh vào từ đâu, đi đi đâu
+### EX-3 · ✅ Ảnh vào từ đâu, đi đi đâu {#ex-3}
 
 > **✅ Chốt 2026-08-05**: **Cả hai luồng**: batch cho kho ảnh cũ (không chụp lại được) + realtime cho ảnh chụp mới (chụp lại được). Hệ quả: mỗi mã lý do cần **hai tầng hint** — một cho người chụp, một cho vận hành — chứ không phải một `audience` duy nhất như hiện nay.
 - **Hỏi**: Nguồn ảnh là gì — chụp điện thoại tại chỗ, máy scan, hay ảnh tồn kho đã chụp sẵn?
@@ -86,7 +86,7 @@
   loạt** ([N-01](features_issues.md#f-features--đề-xuất-backlog)), hay cần webhook/UI.
 - **Nếu chưa rõ**: làm ra QC không ai tiêu thụ được.
 
-### EX-7 · ✅ Cân bằng false pass vs false fail
+### EX-7 · ✅ Cân bằng false pass vs false fail {#ex-7}
 
 > **✅ Chốt 2026-08-05**: **Cân bằng, không bên nào trội.** Khác giả định đang dùng (false pass ≤1% / false fail ≤10%). Ngưỡng phải tối ưu **tổng số lỗi** thay vì siết một chiều — và chỉ chốt được khi có tập vàng (EX-2).
 - **Hỏi**: Khách sợ cái nào hơn — ảnh xấu lọt qua rồi sinh dữ liệu sai (*false pass*), hay ảnh
@@ -228,6 +228,34 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
   trước rồi mang **bảng đó** đi hỏi khách — hỏi bằng số dễ chốt hơn hỏi bằng chữ.
 - **Chặn**: [SPD-5](features_issues.md#spd-batching) (có làm dynamic batching không) và mọi
   quyết định về số container.
+
+---
+
+### EX-17 · ❓ PDF của khách là bản SCAN hay là ảnh chụp bọc lại? {#ex-pdfkind}
+
+*(Mở 2026-08-05, khi thêm đầu vào PDF — [N-08](features_issues.md#n-pdf).)*
+
+- **Hỏi**: PDF trong luồng của khách sinh ra từ đâu? Máy scan / app scan trên điện thoại (trang
+  PDF **chính là** tờ giấy), hay là ảnh chụp được bọc vào PDF (trang rộng hơn tờ giấy, còn thấy
+  mặt bàn quanh mép)? Có cả hai thì tỉ lệ thế nào, và phân biệt được từ đâu?
+- **Vì sao**: nó quyết định `pdf_pre_cropped`, và hai lựa chọn hỏng theo hai kiểu **không cùng
+  giá**:
+
+  | | `pdf_pre_cropped` bật *(mặc định)* | tắt |
+  |---|---|---|
+  | PDF là bản scan | đúng | **mọi trang `fail`** vì `NO_CROP_DETECTED` |
+  | PDF là ảnh chụp bọc lại | mất cảnh báo `CLIPPED_EDGE` | đúng |
+
+  Đo trên một trang scan đặt kín khổ: tắt cờ thì `quad_area_ratio` 0.994 và chạm đủ 4/4 mép —
+  tức dấu hiệu "không cắt được gì" đúng theo nghĩa đen với **mọi** trang PDF scan. Nên mặc định
+  là **bật**: bên tắt là false fail trên ca phổ biến (ảnh tốt bị loại hẳn), bên bật là thiếu
+  một cảnh báo trên ca hiếm. Đây là cùng một cân nhắc đã chốt ở
+  [EX-7](#ex-7) và [EX-14](#ex-precropped).
+- **Ảnh hưởng nếu là ảnh chụp bọc lại**: đặt `QC_SCANNER_PDF_PRE_CROPPED=0` cho luồng đó. Nếu
+  **lẫn cả hai trong cùng một luồng** thì cần một tham số request như `pre_cropped` hiện có,
+  chứ không đoán được từ pixel (đã đo ở [EX-14](#ex-precropped): hai nhóm trùng dải).
+- **Trong lúc chờ**: xin ~10 file PDF thật là nhìn ra ngay. Cột `pdf_source` trong CSV của
+  `qc-scanner-batch` cũng nói luôn mỗi trang được đọc bằng đường nào.
 
 ---
 
