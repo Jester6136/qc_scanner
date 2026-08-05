@@ -226,8 +226,16 @@ vẫn hỏng, nên đừng coi phần còn lại "xong" là cả gói đã xong.
 > **chuỗi** còn ca ảnh hỏng trả **object**, phía tích hợp phải đoán kiểu dữ liệu. Nay mọi lỗi
 > 400 đều là object có `code`; thêm mã `MISSING_FILE`.
 >
-> **Còn lại đúng phần cần Docker**: `docker build`, `docker run`, kiểm ngắt mạng, thêm build
-> image vào CI.
+> **Đã thêm 2026-08-05**: [`docker-compose.yml`](../docker-compose.yml) để khách chỉ cần
+> `docker compose up --build -d` là có API. Vẫn **chưa chạy thử** — viết theo đúng Dockerfile và
+> server hiện có, không có bằng chứng nào là nó dựng lên được.
+>
+> Kèm theo, bịt một lỗ rò thật: `.dockerignore` thiếu `tmp_2/`, mà `COPY . .` thì lấy tất —
+> **ảnh CCCD/sổ đỏ của khách sẽ bị nướng vĩnh viễn vào image đem đi phân phối**. Nay chặn cả
+> `tmp`, `tmp_2`, và bỏ luôn `docs`/`tests` cho nhẹ image.
+>
+> **Còn lại đúng phần cần Docker**: `docker build`, `docker compose up`, kiểm ngắt mạng, thêm
+> build image vào CI. Nghi ngờ đầu tiên nếu container chết ngay: `read_only: true` trong compose.
 
 **Hướng**: (1) `docker build` thật, sửa tới khi qua; (2) `docker run` rồi gọi thử `POST /`,
 `?format=json`, ca hỏng, `/healthz`; (3) kiểm model đã nướng sẵn bằng cách chạy image **ngắt

@@ -1,0 +1,64 @@
+# docker compose up --build -d   →   API sẵn sàng ở http://<IP-máy-này>:5000
+#
+# Hợp đồng API: docs/api.md
+#
+# ⚠️ CHƯA CHẠY THỬ LẦN NÀO (OPS-3). Máy phát triển hiện tại không build Docker được,
+# nên file này viết theo đúng Dockerfile và server hiện có nhưng KHÔNG có bằng chứng
+# nào là nó dựng lên chạy được. Lần đầu chạy trên máy server phải soi kỹ log.
+
+services:
+  qc-scanner:
+    build: .
+    image: qc-scanner:local
+    container_name: qc-scanner
+
+    ports:
+      # Mở ra LAN: service dựng ở máy A, ứng dụng gọi từ máy B → http://<IP-máy-A>:5000
+      #
+      # ⚠️ Server KHÔNG có xác thực. Cổng này mở trên MỌI giao diện mạng của máy A,
+      # nên bất cứ ai trong LAN cũng gọi được, và ảnh gửi lên là giấy tờ tuỳ thân.
+      # Đây là đánh đổi đã chốt ở EX-12 (mạng nội bộ, không lưu ảnh) — nó chỉ an toàn
+      # chừng nào máy A **không** có đường ra Internet và LAN là mạng tin được.
+      # Máy A có IP public hoặc bị NAT port-forward thì phải chặn ở firewall.
+      #
+      # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5000:5000".
+      - "5000:5000"
+
+    environment:
+      # Model đã nướng sẵn vào image lúc build → chạy được cả khi ngắt mạng.
+      U2NET_HOME: /opt/u2net
+      # Mọi ngưỡng QC đều override được theo dạng QC_SCANNER_<TÊN_TRƯỜNG>;
+      # danh sách đầy đủ nằm trong src/qc_scanner/config.py.
+      QC_SCANNER_WORK_HEIGHT: "500"
+      # Luồng xử lý kho ảnh thì đặt "operator" để hint không bảo người ta chụp lại
+      # (QC-13). Mặc định "capturer" hợp với luồng realtime.
+      QC_SCANNER_HINT_AUDIENCE: "capturer"
+
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    healthcheck:
+      # Dùng python thay vì curl: image python:3.12-slim không có curl, thêm curl
+      # chỉ để làm healthcheck là thêm bề mặt tấn công cho không.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz')"
+      # start_period rộng tay: tiến trình nạp model vào RAM trước khi mở cổng.
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    tmpfs:
+      - /tmp
+
+    # Ảnh chỉ đi qua RAM, không ghi xuống đĩa (EX-12), nên về nguyên tắc hệ thống tệp
+    # có thể để chỉ-đọc. ĐỂ TẮT vì chưa build thử được: nếu nó sai thì container chết
+    # ngay lúc khởi động, mà mục tiêu của file này là `up` một phát là chạy. Bật lên
+    # sau khi đã xác nhận image chạy bình thường.
+    # read_only: true
+
+    security_opt:
+      - no-new-privileges:true

@@ -11,15 +11,20 @@
 ## 1. Chạy
 
 ```bash
-docker run -p 5000:5000 qc-scanner            # cách bàn giao cho khách
-qc-scanner-server -a 0.0.0.0 -p 5000          # chạy trực tiếp
+docker compose up --build -d                  # cách bàn giao cho khách
+qc-scanner-server -a 0.0.0.0 -p 5000          # chạy trực tiếp, không qua Docker
 ```
+
+`docker-compose.yml` mở cổng `5000` trên mọi giao diện mạng (service ở máy A, ứng dụng gọi từ
+máy B qua LAN) và bật healthcheck vào `/healthz`.
 
 Mặc định bind `127.0.0.1`. Model rembg được nạp sẵn lúc khởi động (`--no-warmup` để tắt) nên
 request đầu tiên không phải gánh thời gian nạp model.
 
-> ⚠️ **Service KHÔNG có xác thực.** Theo [EX-12](need_exchange.md) nó chạy trong mạng nội bộ.
-> Đừng phơi ra Internet. Ảnh chỉ đi qua RAM, **không ghi xuống đĩa**.
+> ⚠️ **Service KHÔNG có xác thực.** Theo [EX-12](need_exchange.md) nó chạy trong mạng nội bộ,
+> nên **bất cứ máy nào trong LAN cũng gọi được** — chỉ an toàn chừng nào LAN là mạng tin được.
+> Đừng phơi ra Internet; máy chạy có IP public hoặc bị NAT port-forward thì chặn ở firewall.
+> Ảnh chỉ đi qua RAM, **không ghi xuống đĩa**.
 
 ---
 
@@ -129,7 +134,7 @@ phục. Có test chặn.
 
 ## 5. Danh mục mã lý do
 
-19 mã, kèm điều kiện phát hiện và hướng xử lý:
+20 mã, kèm điều kiện phát hiện và hướng xử lý:
 [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes).
 
 Nhóm theo hành động của phía gọi:
@@ -138,7 +143,7 @@ Nhóm theo hành động của phía gọi:
 |---|---|---|
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` | Sửa phía gọi, đừng retry |
 | Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` | Chụp lại, hoặc đưa người soi |
-| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `SUBJECT_FILLS_FRAME` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
+| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 
 ---
 

@@ -70,7 +70,8 @@ pip install .
 ```
 
 > ⚠️ **Lần chạy đầu tải model rembg** (~176MB, về `~/.u2net/`). Máy không có mạng sẽ fail ở
-> đây, không phải trong code. Dùng [Dockerfile](Dockerfile) để có sẵn model trong image.
+> đây, không phải trong code. Dùng [Dockerfile](Dockerfile) / [docker-compose.yml](docker-compose.yml)
+> để có sẵn model trong image.
 
 ### Usage as a CLI
 
@@ -100,6 +101,32 @@ qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
 
 CSV có một dòng mỗi ảnh: file, verdict, reasons, và toàn bộ metric — đủ để lọc ra đúng những
 ảnh cần soi lại.
+
+### Chạy bằng Docker (cách bàn giao chính)
+
+```bash
+# trên máy A (máy dựng service)
+docker compose up --build -d
+docker compose logs -f qc-scanner
+
+# từ máy B trong cùng LAN
+curl -F "file=@photo.jpg" "http://<IP-máy-A>:5000/?format=json"
+```
+
+Model rembg được **nướng sẵn vào image** lúc build, nên container chạy được cả khi máy đích
+không ra Internet. Hợp đồng API đầy đủ: **[docs/api.md](docs/api.md)**.
+
+`docker-compose.yml` mở cổng `5000` trên **mọi giao diện mạng** của máy A, đúng cho mô hình
+service ở máy A – ứng dụng ở máy B.
+
+> ⚠️ Kèm theo đó: **bất cứ ai trong LAN cũng gọi được**, và thứ gửi lên là ảnh giấy tờ tuỳ thân.
+> Server không có xác thực — đây là đánh đổi đã chốt ở [EX-12](docs/need_exchange.md), và nó chỉ
+> an toàn chừng nào LAN là mạng tin được. Máy A có IP public hoặc bị NAT port-forward thì phải
+> chặn cổng 5000 ở firewall. Chỉ dùng ngay trên máy A thì đổi lại thành `"127.0.0.1:5000:5000"`.
+
+> ⚠️ **Image này chưa từng được build thử** — máy phát triển hiện tại không chạy Docker được.
+> Xem [OPS-3](docs/features_issues.md#ops-docker-unverified). Lần đầu dựng trên máy server phải
+> soi log kỹ; nếu container chết ngay lúc khởi động, gỡ `read_only: true` ra trước tiên.
 
 ### Usage as an HTTP server
 
@@ -135,22 +162,34 @@ qc-scanner photo.jpg out.png --detector edge-hough --cross-check
 | ✅ Nói được vì sao | 20 mã lý do, mã nào cũng kèm `hint` + `audience` |
 | ✅ Không im lặng | Không tìm được biên → vẫn trả ảnh gốc, nhưng kèm `FALLBACK_ORIGINAL` (fail) |
 | ✅ Tự khắc phục | rembg thua → đường lui dò cạnh, kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| ✅ Có bộ đo | 239 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| ✅ Có bộ đo | 260 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| ✅ Hợp đồng API có tài liệu | [docs/api.md](docs/api.md) + 30 test hợp đồng giữ đúng những gì tài liệu hứa |
 | ⚠️ Ngưỡng chưa chốt | Hai ngưỡng đã chốt bằng số đo; phần còn lại là **ước đoán** cho tới khi có tập vàng của khách |
 | ⚠️ Chưa đo được độ chính xác | Crop rate / false pass / false fail cần ảnh **có nhãn** — công cụ đã sẵn, thiếu dữ liệu |
 
-Đã đo trên 8 ảnh mẫu + 9 ảnh thật: 11 pass · 5 warn · 1 fail, **~0.4s/ảnh** (trước khi tái
-dùng session rembg là ~3.0s).
+Đã đo trên **8 ảnh mẫu + 29 ảnh thật của khách** (CCCD, sổ đỏ, hoá đơn, giấy A4):
+13 pass · 17 warn · 15 fail, **~0.4s/ảnh** (trước khi tái dùng session rembg là ~3.0s).
 
-**Việc tiếp theo** (chi tiết: [overall_roadmap.md §6 Giai đoạn 6](docs/overall_roadmap.md)) —
-12/13 câu hỏi với khách đã chốt ngày 2026-08-05, sinh ra 5 việc **làm được ngay**: kiểm thật
-Docker image + tài liệu API (OPS-3), `NO_CROP_DETECTED` (QC-11), `CONTENT_CLIPPED` (QC-12),
-hint hai tầng cho người chụp / vận hành (QC-13), công cụ gán nhãn (N-11).
+**Đợt 2026-08-05 chốt yêu cầu khách + soi ảnh thật** đóng gần hết Giai đoạn 6:
+
+| | |
+|---|---|
+| QC-11 | `NO_CROP_DETECTED` — ảnh không cắt được gì phải là `fail`, không phải `warn` |
+| QC-12 | `CONTENT_CLIPPED` — mất viền trắng thì được, mất **chữ** thì không ([EX-1](docs/need_exchange.md)) |
+| QC-13 | Hint hai tầng: người chụp *(chụp lại được)* / người vận hành *(không)* |
+| QC-14 | Cờ `pre_cropped` cho ảnh đã cắt sẵn — **phải khai báo**, đo 37 ảnh thấy không tự đoán được |
+| QC-15 | Ngừng phát `SUBJECT_FILLS_FRAME` — chiếm hết khung, tự nó, không phải lỗi |
+| QC-16 | Đường lui thôi ghi đè tứ giác **đúng** bằng tứ giác **sai** (nó thắng 0/3 trên ảnh thật) |
+| QC-17 | Thôi cắt lẹm vào mép giấy **cong**: nới cạnh ra bao trọn contour |
+| S-5 | Đo độ cong trên 36 ảnh → **không làm dewarping**, tiết kiệm 1 tuần+ |
+
+Còn lại đúng **một** việc: build + kiểm Docker image trên máy server
+([OPS-3](docs/features_issues.md#ops-docker-unverified)).
 
 Phần chốt ngưỡng và nâng cấp detector vẫn chặn ở **tập ảnh có nhãn**
-([EX-2](docs/need_exchange.md)). Và một thay đổi phạm vi đáng kể: khách xác nhận **hoá đơn
-thường cong/nhăn** — nắn phối cảnh phẳng không sửa được biến dạng đó, nên dewarping (S-5) vào
-phạm vi, đo trước rồi mới quyết.
+([EX-2](docs/need_exchange.md)), và có một câu hỏi đang chờ khách:
+[EX-15](docs/need_exchange.md#ex-multipage) — giấy chứng nhận chụp từng mặt thành nhiều ảnh,
+ai chịu trách nhiệm ghép và kiểm đủ mặt.
 
 ## Documentation · Tài liệu
 
@@ -162,6 +201,7 @@ Tài liệu dự án viết bằng tiếng Việt, đặt trong [docs/](docs/):
 | [algorithm.md](docs/algorithm.md) | Thuật toán từng bước, hợp đồng đầu ra QC, danh mục mã lý do, **khảo sát công nghệ 2026** |
 | [features_issues.md](docs/features_issues.md) | Sổ tính năng + issue (BUG-\*/SEC-\*/QC-\*/QUAL-\*/S-\*/N-\*) kèm bằng chứng `path:line` |
 | [test_eval.md](docs/test_eval.md) | Smoke test, bộ regression, cách eval chất lượng & độ chính xác phán quyết |
+| [api.md](docs/api.md) | **Hợp đồng HTTP bàn giao cho khách**: endpoint, status theo verdict, schema JSON, bất biến |
 | [need_exchange.md](docs/need_exchange.md) | Câu hỏi cần làm rõ với khách hàng trước khi chốt thiết kế/nghiệm thu |
 
 ## Development
