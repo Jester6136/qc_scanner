@@ -1,7 +1,7 @@
 """Đo tốc độ trên máy đích — chạy thẳng trong container.
 
-    docker exec qc-scanner-gpu python3 -m qc_scanner.bench
-    docker exec qc-scanner-gpu python3 -m qc_scanner.bench --url http://127.0.0.1:5000
+    docker exec qc-scanner qc-scanner-bench
+    docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
 
 Mục đích: trả lời **hai** câu bằng số đo trên máy thật, không phải phỏng đoán.
 

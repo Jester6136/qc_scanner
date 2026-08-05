@@ -200,7 +200,7 @@ Nó in luôn bảng quy đổi ảnh/s → CCU. Về câu hỏi 700 CCU và dyna
 ### Chạy trên GPU NVIDIA
 
 ```bash
-docker compose --profile gpu up --build -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 curl -s http://localhost:5000/healthz          # providers phải có CUDAExecutionProvider
 ```
 

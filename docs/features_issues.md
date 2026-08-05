@@ -727,7 +727,30 @@ còn lại: mã hoá PNG 0.89s, resize PIL 0.48s, giải mã 0.44s. Nói cách k
 khác cộng lại cũng không bằng đổi chỗ chạy cho model**.
 
 **✅ Đã làm**: `QC_SCANNER_ONNX_PROVIDERS` + [requirements-gpu.txt](../requirements-gpu.txt) +
-[Dockerfile.gpu](../Dockerfile.gpu) + profile `gpu` trong compose.
+[Dockerfile.gpu](../Dockerfile.gpu) + [docker-compose.gpu.yml](../docker-compose.gpu.yml).
+
+**Ba lỗi đã sửa sau khi thử dựng trên máy server** — đều là loại chỉ lộ ra khi chạy thật:
+
+1. `pip3 install --break-system-packages`: pip của Ubuntu 22.04 là bản 22.x, **không có cờ đó**
+   (thêm từ 23.0.1). Build đứt ngay dòng đầu. → dùng venv `/opt/venv`, miễn nhiễm luôn với
+   PEP 668 nếu sau này nâng base image lên 24.04.
+2. `onnxruntime-gpu>=1.17`: wheel 1.17/1.18 trên PyPI dựng cho **CUDA 11.8**, không khớp base
+   image CUDA 12.4 + cuDNN 9. → `>=1.19`.
+3. **`profiles: ["gpu"]` không làm được việc người ta tưởng.** Compose quy định service **không
+   khai `profiles` thì LUÔN chạy**, nên `docker compose --profile gpu up` không *thay* bản CPU
+   mà *thêm* bản GPU vào — hai container cùng đòi cổng 5000:
+
+   ```
+   Bind for 0.0.0.0:5000 failed: port is already allocated
+   ```
+
+   Ghi chú "đừng chạy cả hai" trong file cũ là vô dụng: nó không cho người dùng cách nào để
+   tuân theo. → chuyển sang **file đè lên cùng một service**, khi đó chạy nhầm cả hai là điều
+   không thể diễn đạt được.
+
+Thêm chốt chặn lúc build cho lỗi đóng gói hay gặp nhất: cài nhầm `onnxruntime` (CPU) bên cạnh
+`onnxruntime-gpu`. Hai gói ghi đè lên nhau nên `import onnxruntime` lấy bản nào là ngẫu nhiên —
+và bản CPU chạy **đúng**, chỉ chậm gấp mấy chục lần. Thà đứt build còn hơn phát hiện sau.
 
 **⚠️ Chưa có bằng chứng thực nghiệm nào**: máy phát triển là macOS, không có CUDA. Toàn bộ
 đường GPU viết theo tài liệu onnxruntime.

@@ -1,0 +1,53 @@
+# Bản GPU NVIDIA (SPD-4) — file ĐÈ LÊN docker-compose.yml, không phải file rời.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+#
+# Gõ dài thì đặt một lần cho cả phiên shell:
+#
+#     export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+#     docker compose up --build -d          # từ đây trở đi là bản GPU
+#
+# ⚠️ Vì sao là file đè chứ không phải `profiles: ["gpu"]` như bản trước:
+# Compose quy định **service không khai `profiles` thì LUÔN chạy**. Nên
+# `docker compose --profile gpu up` không *thay* bản CPU mà *thêm* bản GPU vào —
+# hai container cùng đòi cổng 5000 và cái thứ hai chết với
+# `Bind for 0.0.0.0:5000 failed: port is already allocated`.
+# Đè lên **cùng một service** thì không thể chạy nhầm cả hai: chỉ có một `qc-scanner`.
+#
+# Yêu cầu phía host: driver NVIDIA + NVIDIA Container Toolkit. Kiểm TRƯỚC khi build
+# (5 giây, thay vì phát hiện sau 15 phút):
+#     docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+#
+# Sau khi `up`, BẮT BUỘC xác nhận GPU thật sự đang chạy:
+#     curl -s http://localhost:5000/healthz     # providers phải có CUDAExecutionProvider
+# Chỉ thấy CPUExecutionProvider = build sai, KHÔNG phải chạy chậm. onnxruntime tụt về
+# CPU trong im lặng: không lỗi, không cảnh báo, chỉ chậm gấp mấy chục lần.
+
+services:
+  qc-scanner:
+    build:
+      dockerfile: Dockerfile.gpu
+    image: qc-scanner:gpu
+
+    environment:
+      # Khai báo tường minh thay vì để onnxruntime tự dò: muốn biết chắc mình đang
+      # YÊU CẦU gì, rồi đối chiếu với cái `/healthz` báo là thật sự ĐANG CHẠY.
+      # Vẫn giữ CPU ở cuối làm đường lui — chạy chậm còn hơn không chạy.
+      QC_SCANNER_ONNX_PROVIDERS: "CUDAExecutionProvider,CPUExecutionProvider"
+      # Nới hơn bản CPU: khi suy luận chạy trên GPU thì nút cổ chai chuyển sang phần
+      # CPU (giải mã ảnh, mã hoá PNG), nên chồng nhiều request lên nhau mới có lợi.
+      # Con số 4 là ƯỚC ĐOÁN, chưa đo. Chỉnh lại sau khi chạy:
+      #     docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
+      QC_SCANNER_MAX_CONCURRENCY: "4"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    healthcheck:
+      # Rộng tay hơn bản CPU: lần khởi tạo CUDA context đầu tiên tốn thêm thời gian.
+      start_period: 120s

@@ -152,8 +152,16 @@ Lệnh thứ hai phải in ra bảng GPU. Nếu báo `could not select device dr
 **2. Dựng**:
 
 ```bash
-docker compose --profile gpu up --build -d
-docker compose logs -f qc-scanner-gpu
+docker compose down          # hạ bản CPU nếu đang chạy — cùng một service, cùng cổng
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+docker compose logs -f qc-scanner
+```
+
+Gõ dài thì đặt một lần cho cả phiên shell:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+docker compose up --build -d              # từ đây trở đi là bản GPU
 ```
 
 Dòng log đầu tiên nói ngay nó đang chạy trên cái gì:
@@ -175,12 +183,15 @@ về CPU trong im lặng.
 **4. Đo**:
 
 ```bash
-docker exec qc-scanner-gpu qc-scanner-bench --url http://127.0.0.1:5000
+docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
 ```
 
 Bản model chiếm **~80% thời gian mỗi ảnh**, nên đây là đòn bẩy tốc độ lớn nhất còn lại — lớn
-hơn mọi tối ưu CPU cộng lại. Bản CPU và bản GPU **dùng chung cổng 5000**, đừng chạy cả hai:
-`docker compose down` trước khi đổi.
+hơn mọi tối ưu CPU cộng lại.
+
+Bản CPU và bản GPU là **cùng một service** `qc-scanner` — file đè chỉ thay Dockerfile và biến
+môi trường. Nhờ vậy không thể chạy nhầm cả hai cùng lúc, và `docker exec qc-scanner …` dùng
+được cho cả hai.
 
 > ⚠️ **Đường GPU chưa từng chạy thử** ([SPD-4](docs/features_issues.md#spd-gpu)) — máy phát
 > triển là macOS, không có CUDA. Và phải kiểm bằng `/healthz`, vì onnxruntime **hỏng âm thầm**:
@@ -190,9 +201,9 @@ hơn mọi tối ưu CPU cộng lại. Bản CPU và bản GPU **dùng chung c�
 ### Đo tốc độ trên máy đích
 
 ```bash
-docker exec qc-scanner-gpu qc-scanner-bench                          # tự sinh ảnh, không cần data
-docker exec qc-scanner-gpu qc-scanner-bench --url http://127.0.0.1:5000   # đo cả đường HTTP
-docker exec qc-scanner-gpu qc-scanner-bench --images /data -n 32     # đo trên ảnh thật
+docker exec qc-scanner qc-scanner-bench                          # tự sinh ảnh, không cần data
+docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000   # đo cả đường HTTP
+docker exec qc-scanner qc-scanner-bench --images /data -n 32     # đo trên ảnh thật
 ```
 
 In ra bốn thứ: **CHẶNG** (thời gian đi đâu — GPU hay CPU), **SONG SONG** (trần thông lượng một
