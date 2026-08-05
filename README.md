@@ -152,6 +152,10 @@ curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"   # ScanResult đ
 
 HTTP status theo verdict: 200 pass/warn · **422** fail · 400 đầu vào hỏng.
 
+**CORS bật sẵn cho mọi origin** (thu hẹp bằng `QC_SCANNER_CORS_ORIGINS`), kèm
+`Access-Control-Expose-Headers` cho hai header phán quyết — thiếu nó thì `fetch()` vẫn `200`
+nhưng JS đọc `X-QC-Scanner-Verdict` ra `null`.
+
 Service viết bằng **FastAPI** chạy trên **uvicorn**, nên có sẵn Swagger UI ở **`/docs`** — gọi
 thử `POST /` ngay trên trình duyệt, không cần `curl`. Riêng `GET /` luôn trả **405** *có chủ ý*:
 API không có trang web, và nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF ([SEC-1](docs/features_issues.md#sec-ssrf)).

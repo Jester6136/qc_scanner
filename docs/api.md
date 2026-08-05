@@ -113,6 +113,30 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
 Mọi `400` dùng **cùng một hình dạng** — `error` luôn là object có `code`, không bao giờ là
 chuỗi trần. Ba mã hay gặp: `MISSING_FILE`, `FILE_EMPTY`, `DECODE_FAILED`.
 
+### CORS — gọi từ trình duyệt
+
+Bật sẵn, mặc định cho **mọi origin** (`*`), vì ca dùng chính là app chạy ở máy B gọi service ở
+máy A. Thu hẹp bằng biến môi trường:
+
+```bash
+QC_SCANNER_CORS_ORIGINS=http://app.noi-bo,http://192.168.1.50:3000
+```
+
+Hai header phán quyết được khai báo trong `Access-Control-Expose-Headers`. **Đây là chỗ dễ sót
+nhất**: thiếu nó thì `fetch()` vẫn trả `200` và vẫn có ảnh, nhưng
+`res.headers.get('X-QC-Scanner-Verdict')` ra `null` — hỏng **âm thầm**, không thông báo lỗi nào.
+
+```js
+const res = await fetch(`http://<IP-máy-A>:5000/?format=json`, { method: 'POST', body: form });
+const { verdict, reasons } = await res.json();     // hoặc đọc header nếu không dùng format=json
+```
+
+> `allow_credentials` **tắt**: service không có phiên đăng nhập nào để gửi kèm, và bật lên thì
+> trình duyệt từ chối `allow_origins=["*"]`.
+>
+> CORS **không phải** lớp bảo vệ service — nó chỉ chi phối trình duyệt. Thứ đang bảo vệ API này
+> là việc nó nằm trong mạng nội bộ ([EX-12](need_exchange.md)), không phải danh sách origin.
+
 ---
 
 ## 3. `GET /docs` — thử API bằng trình duyệt

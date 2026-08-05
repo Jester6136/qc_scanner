@@ -167,3 +167,32 @@ def _tiny_unusable_png():
     import numpy as np
 
     return cv2.imencode(".png", np.zeros((40, 40, 3), np.uint8))[1].tobytes()
+
+
+# --- CORS: app chạy trên trình duyệt ở máy khác gọi vào được ------------------ #
+
+
+def test_preflight_is_allowed(client):
+    """Không có bước này thì `fetch()` từ trình duyệt chết ngay ở OPTIONS."""
+    resp = client.options(
+        "/",
+        headers={
+            "Origin": "http://may-b.noi-bo",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] in {"*", "http://may-b.noi-bo"}
+
+
+def test_verdict_headers_are_readable_from_the_browser(client):
+    """`expose_headers` thiếu thì JS đọc header tuỳ biến ra `null` — hỏng ÂM THẦM.
+
+    Request vẫn 200, ảnh vẫn về, chỉ có phán quyết là biến mất. Không có bài này
+    thì không gì phát hiện được.
+    """
+    resp = client.post("/", files=_files(), headers={"Origin": "http://may-b.noi-bo"})
+    assert resp.status_code == 200
+    exposed = resp.headers.get("access-control-expose-headers", "")
+    assert "X-QC-Scanner-Verdict" in exposed
+    assert "X-QC-Scanner-Reasons" in exposed

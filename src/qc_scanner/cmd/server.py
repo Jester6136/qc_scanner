@@ -12,9 +12,11 @@ biệt được nên retry hay sửa code. Nên tham số khai báo lỏng rồi
 """
 
 import argparse
+import os
 from typing import Optional
 
 from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from .. import __version__
@@ -35,6 +37,28 @@ app = FastAPI(
         "và hướng xử lý, không chỉ trả ảnh.\n\n"
         "⚠️ Service **không có xác thực** — chỉ chạy trong mạng nội bộ."
     ),
+)
+
+
+#: Origin được phép gọi từ trình duyệt. `*` = mọi origin.
+#: Đặt `QC_SCANNER_CORS_ORIGINS=https://app.noi-bo,https://khac` để thu hẹp.
+CORS_ORIGINS = [
+    o.strip() for o in os.environ.get("QC_SCANNER_CORS_ORIGINS", "*").split(",") if o.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
+    # ⚠️ BẮT BUỘC. Trình duyệt **không cho JS đọc** header tuỳ biến nếu không được
+    # liệt kê ở đây — `fetch()` sẽ chạy thành công mà `X-QC-Scanner-Verdict` là
+    # `null`, và phía gọi tưởng ảnh nào cũng không có phán quyết. Đây là kiểu hỏng
+    # âm thầm, không có thông báo lỗi nào cả.
+    expose_headers=["X-QC-Scanner-Verdict", "X-QC-Scanner-Reasons"],
+    # Không bật `allow_credentials`: service không có phiên đăng nhập nào để gửi
+    # kèm, và bật lên thì `allow_origins=["*"]` bị trình duyệt từ chối.
+    allow_credentials=False,
 )
 
 

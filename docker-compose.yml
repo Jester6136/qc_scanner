@@ -40,6 +40,9 @@ services:
       # Luồng xử lý kho ảnh thì đặt "operator" để hint không bảo người ta chụp lại
       # (QC-13). Mặc định "capturer" hợp với luồng realtime.
       QC_SCANNER_HINT_AUDIENCE: "capturer"
+      # Origin được phép gọi từ trình duyệt; "*" là mọi origin. Thu hẹp khi biết
+      # rõ app gọi vào chạy ở đâu, ví dụ "http://192.168.1.50:3000".
+      QC_SCANNER_CORS_ORIGINS: "*"
 
     restart: unless-stopped
     stop_grace_period: 20s
