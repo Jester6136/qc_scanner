@@ -859,6 +859,66 @@ mang theo mục BATCH, đúng mục cần nhất.
 
 ---
 
+### ⚡ SPD-7 · P2 · 🟡 CÓ CỜ, MẶC ĐỊNH TẮT · "Chặng suy luận" hoá ra 96% là resize {#spd-resample}
+
+Số quyết định, lấy từ cùng một lần chạy `bench` trên H100:
+
+```
+BATCH  batch=1  →   6.5 ms/ảnh     ← ort.run THẬT SỰ trên GPU
+CHẶNG  suy luận → 187.4 ms/ảnh
+```
+
+**180ms trong "chặng suy luận" không hề chạy trên GPU.** Đó là hai phép LANCZOS của PIL bên
+trong `predict()` của rembg: hạ ảnh gốc xuống 320×320, rồi **phóng mask 320×320 ngược lên đúng
+kích thước ảnh gốc**. Phép phóng thứ hai là công toi hoàn toàn — lõi QC nhận xong hạ ngay về
+`work_height=500`. Đo riêng trên ảnh 3024×4032: hạ 43ms, phóng 26ms.
+
+**Cách bỏ mà không đụng chất lượng suy luận**: tự resize xuống đúng 320×320 (cùng LANCZOS,
+cùng tham số) trước khi gọi `predict()`. Khi đó cả hai phép resize bên trong thành **no-op** —
+PIL trả `copy()` khi kích thước đã khớp. Tensor vào model **không đổi một bit**, mask 320×320
+ra y hệt. Lấy kích thước từ chữ ký ONNX chứ không hardcode 320 (isnet dùng 1024).
+
+Đo ghép cặp xen kẽ trên ảnh 3024×4032: **413ms → 370ms, tiết kiệm 43ms/ảnh** trên CPU máy phát
+triển. Trên máy có GPU tỉ lệ còn cao hơn nhiều.
+
+**Nhưng không miễn phí, nên mặc định TẮT.** Chặng resample cuối đổi (320→work thay vì
+320→gốc→work) làm metric trôi: `quad_area_ratio` lệch trung vị **0.14%**, tối đa 0.40%. Đủ nhỏ
+với 36/37 ảnh. Ảnh thứ 37 là `04.56.41`, có `quad_area_ratio` **0.9002** trong khi
+`no_crop_area_ratio` là **0.90** — biên **0.02%**. Trôi xuống 0.8980 là nó ăn `CONTENT_CLIPPED`
+→ `fail`, dù đã soi mắt thường và crop ra nguyên tờ (xem QC-16). Tức **một false fail**.
+
+43ms không đáng đổi lấy một ảnh tốt bị loại. Bật bằng `QC_SCANNER_SEGMENT_AT_MODEL_SIZE=1` sau
+khi đã chạy `qc-scanner-batch` trên ảnh thật của mình và đối chiếu verdict trước/sau.
+
+**Đã thử và bỏ**: knob `segment_height` (hạ ảnh xuống 1200–2000 trước khi tách nền). Quét trên
+37 ảnh cho thấy ≥1200 không đổi phán quyết, nhưng số đo tốc độ **tăng đều theo thứ tự chạy** —
+tức là throttle nhiệt của máy đo, không phải hiệu ứng thật. Ảnh trong tập thử đa số dưới 1400px
+nên phép hạ mẫu gần như không làm gì. Bỏ đi thay vì giữ một knob không chứng minh được lợi ích.
+
+**Bug bắt được nhân tiện**: mask và `work` từng được resize bằng hai đường độc lập, chỉ khớp
+nhau nhờ cùng xuất phát từ một kích thước. Thêm bất kỳ bước hạ mẫu nào ở giữa là làm tròn lệch
+1px và `cv2.bitwise_and` vỡ. Nay ép mask về **đúng** `work.shape` — khớp theo cấu trúc, không
+theo may mắn.
+
+---
+
+### 🎯 QUAL-4 · P2 · ⚪ · Ca `04.56.41` nằm cách ngưỡng 0.02% {#qual-knife-edge}
+
+`quad_area_ratio = 0.9002` với `no_crop_area_ratio = 0.90`. Ảnh này đã **lật verdict hai lần**
+trong cùng một đợt làm việc, mỗi lần vì một thay đổi hoàn toàn khác nhau và không lần nào liên
+quan tới chất lượng ảnh — chỉ vì số thứ tư sau dấu phẩy.
+
+Nó đang là **một ảnh chặn một tối ưu 43ms/ảnh** ([SPD-7](#spd-resample)), và nó sẽ còn chặn
+những thay đổi khác nữa.
+
+Vấn đề không phải ngưỡng 0.90 sai, mà là nhánh miễn trừ trong `_content_reasons` dùng **một
+ngưỡng cứng** cho một đại lượng liên tục. Hướng: vùng đệm (0.88–0.92 thì không phát
+`CONTENT_CLIPPED` nhưng hạ xuống `warn`), hoặc gộp thêm `detector_confidence` như `NO_CROP_DETECTED`
+đã làm. **Chưa sửa** vì sửa ngưỡng phải kèm số đo trên tập vàng của khách ([EX-2](need_exchange.md)),
+mà một ảnh thì chưa đủ để chốt hình dạng vùng đệm.
+
+---
+
 ### ⚡ SPD-5 · P1 · 🟡 ĐÃ ĐO SƠ BỘ, CHỜ SỐ TRÊN MÁY H100 · Dynamic batching cho 700 CCU {#spd-batching}
 
 **Câu hỏi**: API có thể phải chịu ~700 CCU; gom nhiều ảnh thành một batch rồi đẩy lên GPU một

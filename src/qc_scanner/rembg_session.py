@@ -119,20 +119,64 @@ def active_providers(model_name: str = "u2net", providers=None) -> list[str]:
     return list(get_session(model_name, providers).inner_session.get_providers())
 
 
-def segment_mask(image_bgr: np.ndarray, model_name: str = "u2net", providers=None):
+def segment_mask(
+    image_bgr: np.ndarray,
+    model_name: str = "u2net",
+    providers=None,
+    at_model_size: bool = False,
+):
     """Ảnh BGR → mask xám **cùng kích thước** (0–255).
 
     Trả mask chứ không trả ảnh đã ghép alpha: lõi QC chỉ dùng mask, và tránh
     ghép/mã hoá/giải mã lại chính là chỗ tiết kiệm (xem docstring module).
     """
-    pil = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
     session = get_session(model_name, providers)
+    pil = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
+
+    # SPD-7: hạ ảnh về đúng kích thước model **trước khi** đưa vào `predict()`.
+    #
+    # `predict()` làm hai việc đắt mà không ai xin: LANCZOS hạ ảnh gốc xuống
+    # 320×320, rồi LANCZOS **phóng mask 320×320 ngược lên đúng kích thước ảnh gốc**.
+    # Phép phóng thứ hai là công toi hoàn toàn — lõi QC nhận xong hạ ngay về
+    # `work_height`. Với ảnh điện thoại 3024×4032 nó tốn ~26ms/ảnh, và tỉ lệ với số
+    # pixel nên ảnh càng nét càng đắt.
+    #
+    # Mẹo ở đây: nếu ta tự resize xuống đúng 320×320 (cùng LANCZOS, cùng tham số),
+    # thì bên trong `predict()` cả hai phép resize đều thành **no-op** — PIL trả
+    # `copy()` khi kích thước đã khớp. Tensor đưa vào model **không đổi một bit**,
+    # nên mask 320×320 ra cũng y hệt. Chỉ khác chặng resample cuối: 320→work thay vì
+    # 320→gốc→work. Đo trên 37 ảnh thật để chắc chuyện đó không đổi phán quyết.
+    #
+    # Kích thước lấy từ chữ ký ONNX chứ không hardcode 320: model khác thì khác
+    # (isnet dùng 1024). Không đọc được thì bỏ qua tối ưu, chạy đường cũ.
+    #
+    # Mặc định TẮT: chặng resample đổi làm metric trôi ~0.14%, và có đúng một ảnh
+    # thật nằm cách ngưỡng 0.02% nên lật thành false fail. Xem `Config
+    # .segment_at_model_size` để biết số đo đầy đủ trước khi bật.
+    target = _model_input_size(session) if at_model_size else None
+    if target is not None:
+        pil = pil.resize(target, Image.Resampling.LANCZOS)
+
     # Chỉ chặn khi thật sự chạy trên GPU. Trên CPU thì `MAX_CONCURRENCY` đã chặn rồi,
     # thêm một van nữa chỉ làm chậm mà không giữ được gì.
     gate = _gpu_slots if _is_accelerated(session) else contextlib.nullcontext()
     with gate:
         mask = session.predict(pil)[0]
     return np.asarray(mask)
+
+
+def _model_input_size(session):
+    """(rộng, cao) mà model mong đợi, hoặc None nếu trục không cố định."""
+    try:
+        shape = session.inner_session.get_inputs()[0].shape
+    except Exception:
+        return None
+    if len(shape) != 4:
+        return None
+    height, width = shape[2], shape[3]
+    if not isinstance(height, int) or not isinstance(width, int):
+        return None
+    return (width, height)
 
 
 def _is_accelerated(session) -> bool:

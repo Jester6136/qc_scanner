@@ -49,7 +49,11 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
 
     work = _to_work_size(orig, cfg)
     ratio = orig.shape[0] / work.shape[0]
-    mask = _alpha_mask(_to_work_size(alpha, cfg), cfg)
+    # Ép mask về ĐÚNG kích thước `work`, không tính lại độc lập. Hai đường resize
+    # riêng thì phép làm tròn lệch nhau 1px và `cv2.bitwise_and` vỡ — đã dính đúng
+    # thế khi thêm `segment_height`. Trước đó nó chạy được chỉ vì hai đường tình cờ
+    # cùng xuất phát từ một kích thước; đó là may, không phải bất biến.
+    mask = _alpha_mask(_resize_to(alpha, work.shape), cfg)
 
     # Nền bị bôi đen, đúng như ảnh cutout rembg trả về trước đây: đường lui
     # edge-hough chạy Canny trên `work` nên nó phải thấy cùng một thứ.
@@ -201,9 +205,21 @@ def _segment(image, cfg):
     được" vốn đã không còn là cách giải thích hợp lý cho bất cứ lỗi nào.
     """
     try:
-        return segment_mask(image, cfg.rembg_model, cfg.onnx_providers)
+        return segment_mask(
+            image,
+            cfg.rembg_model,
+            cfg.onnx_providers,
+            at_model_size=cfg.segment_at_model_size,
+        )
     except Exception as exc:
         raise ScanError("INFERENCE_FAILED", str(exc)) from exc
+
+
+def _resize_to(img, shape):
+    """Đưa `img` về đúng (cao, rộng) của `shape`. Không làm gì nếu đã đúng."""
+    if img.shape[:2] == tuple(shape[:2]):
+        return img
+    return cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
 
 
 def _to_work_size(img, cfg: Config):

@@ -280,7 +280,9 @@ byte 37/37:
 | [SPD-2](docs/features_issues.md#spd-event-loop) | `scan_qc()` từng chặn vòng lặp sự kiện → `/healthz` trễ **617ms → 2ms** dưới tải |
 | [SPD-3](docs/features_issues.md#spd-spool) | Upload > 1MB từng bị ghi ra **file tạm trên đĩa** — trái [EX-12](docs/need_exchange.md); nay ở trong RAM. `--jobs` cho chạy lô |
 | [SPD-4](docs/features_issues.md#spd-gpu) | Tuỳ chọn GPU NVIDIA — **đã viết, chưa chạy thử** |
-| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching cho 700 CCU: file ONNX u2net **đóng cứng batch=1**; và batching không chạm được ~220ms CPU mỗi ảnh. `qc-scanner-bench` đo để chốt |
+| [SPD-5](docs/features_issues.md#spd-batching) | Dynamic batching cho 700 CCU: **đã đo trên H100 → không đáng làm**, cải thiện tối đa **0.8%** |
+| [SPD-6](docs/features_issues.md#spd-oom) | GPU hết bộ nhớ từng bị báo là "ảnh hỏng" (`400`) — ảnh tốt bị loại vĩnh viễn. Nay `INFERENCE_FAILED` + `503` |
+| [SPD-7](docs/features_issues.md#spd-resample) | "Chặng suy luận" hoá ra **96% là resize của PIL**, không phải GPU. Có cờ tắt bớt, mặc định tắt |
 
 Sau SPD-1, bản thân model chiếm **81%** thời gian còn lại, nên GPU là đòn bẩy lớn nhất còn lại;
 mọi tối ưu CPU khác cộng lại không bằng.

@@ -19,6 +19,35 @@ class Config:
     work_height: int = 500
     """Chiều cao ảnh dùng để dò biên. KHÔNG bao giờ phóng to ảnh nhỏ hơn mức này."""
 
+    segment_at_model_size: bool = False
+    """Hạ ảnh về đúng kích thước model **trước khi** tách nền. Nhanh hơn, nhưng không
+    miễn phí — đọc hết đoạn này rồi hãy bật.
+
+    **Được gì**: `predict()` của rembg phóng mask 320×320 ngược lên đúng kích thước
+    ảnh gốc bằng LANCZOS, rồi lõi QC hạ ngay về `work_height` — phép phóng đó là công
+    toi và tỉ lệ với số pixel ảnh gốc. Bật cờ này thì cả hai phép resize trong
+    `predict()` thành no-op. Đo ghép cặp trên ảnh 3024×4032: **413ms → 370ms
+    (tiết kiệm 43ms/ảnh)** trên CPU máy phát triển; trên máy có GPU phần trăm còn cao
+    hơn nhiều vì chặng suy luận đo được 187ms mà `ort.run` thật chỉ 6.5ms.
+
+    **Đầu vào model KHÔNG đổi một bit** — ta tự làm đúng phép resize mà `normalize()`
+    sẽ làm, nên tensor và mask 320×320 y hệt. Thứ đổi là chặng resample cuối:
+    320→work thay vì 320→gốc→work.
+
+    **Mất gì**: chặng resample khác nhau làm metric trôi nhẹ — đo trên 37 ảnh thật,
+    `quad_area_ratio` lệch trung vị **0.14%** (tối đa 0.40%). Đủ nhỏ với mọi ảnh trừ
+    một: `04.56.41` có `quad_area_ratio` **0.9002** trong khi `no_crop_area_ratio` là
+    **0.90** — biên 0.02%. Trôi xuống 0.8980 là nó rơi khỏi nhánh miễn trừ và ăn
+    `CONTENT_CLIPPED` → `fail`, dù ảnh đó đã soi mắt thường và crop ra nguyên tờ
+    (xem QC-16). Tức **một false fail**.
+
+    Nên mặc định **tắt**: 43ms không đáng đổi lấy một ảnh tốt bị loại. Bật khi đã chạy
+    `qc-scanner-batch` trên ảnh thật của mình và đối chiếu verdict trước/sau.
+
+    Ghi chú riêng: ca `04.56.41` mong manh vì **ngưỡng**, không phải vì cờ này — nó đã
+    lật hai lần trong cùng một đợt làm việc. Xem QUAL-4.
+    """
+
     blur_ksize_ratio: float = 0.03
     """Kernel medianBlur = tỉ lệ này × chiều cao làm việc (làm tròn về số lẻ)."""
 

@@ -158,3 +158,41 @@ def test_output_is_cropped(pair, scan_cache):
     got = decode(scan_cache[pair.name])
     src = cv2.imread(str(pair.input_path))
     assert got.shape[:2] != src.shape[:2], f"{pair.name}: không nắn, trả ảnh gốc"
+
+
+def test_segment_at_model_size_feeds_the_model_the_same_tensor():
+    """SPD-7: bật cờ tốc độ **không được** đổi thứ model nhìn thấy.
+
+    Cả tối ưu nằm ở chỗ ta tự làm đúng phép resize mà `normalize()` sẽ làm, để hai
+    phép resize bên trong `predict()` thành no-op. Nếu PIL bỏ đường tắt "kích thước
+    đã khớp thì copy" thì giả định đó sập, và mask sẽ khác đi **âm thầm**.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from qc_scanner.rembg_session import _model_input_size, get_session
+
+    session = get_session("u2net")
+    size = _model_input_size(session)
+    assert size == (320, 320), "u2net khai batch cố định 320×320 trong chữ ký ONNX"
+
+    rng = np.random.default_rng(0)
+    big = Image.fromarray(rng.integers(0, 255, (900, 700, 3), dtype=np.uint8))
+    small = big.resize(size, Image.Resampling.LANCZOS)
+
+    # Đường tắt của PIL: resize về đúng kích thước hiện tại phải cho ảnh y hệt.
+    again = small.resize(size, Image.Resampling.LANCZOS)
+    assert np.array_equal(np.asarray(small), np.asarray(again))
+
+    # Và mask model trả về cũng phải y hệt.
+    assert np.array_equal(
+        np.asarray(session.predict(small)[0]),
+        np.asarray(session.predict(again)[0]),
+    )
+
+
+def test_speed_flag_is_off_by_default():
+    """Cờ này đánh đổi 43ms lấy một false fail đã đo được — không bật lén."""
+    from qc_scanner.config import Config
+
+    assert Config().segment_at_model_size is False
