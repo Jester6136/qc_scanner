@@ -126,6 +126,16 @@ REASONS: dict[str, ReasonSpec] = {
             "system",
         ),
         _spec(
+            "SERVER_BUSY",
+            "fail",
+            "Máy chủ đang kín tải, không nhận thêm request lúc này.",
+            "Hệ thống đang bận. Thử lại sau vài giây — ảnh của bạn không có vấn đề gì.",
+            "Quá tải tạm thời, **không phải lỗi ảnh**. Ảnh này chưa được xử lý lần nào; "
+            "cho chạy lại, đừng loại. Gặp thường xuyên thì giảm số request gửi song "
+            "song, hoặc thêm container.",
+            "system",
+        ),
+        _spec(
             "LOW_RESOLUTION",
             "fail",
             "Độ phân giải ước lượng thấp hơn ngưỡng OCR đọc được.",

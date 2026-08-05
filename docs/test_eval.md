@@ -4,7 +4,7 @@
 > chạy được mọi nơi; qc_scanner may mắn là **PURE toàn bộ** — không DB, không hàng đợi, không
 > service ngoài. Rào cản duy nhất là cài được dependency và tải được model rembg lần đầu.
 >
-> ✅ Cập nhật 2026-08-05: bộ test **đã dựng xong** — 340 bài trong `tests/`, chạy bằng `pytest`,
+> ✅ Cập nhật 2026-08-05: bộ test **đã dựng xong** — 351 bài trong `tests/`, chạy bằng `pytest`,
 > kèm CI. §2–§3 mô tả bộ test đang chạy. §5 (eval trên tập vàng) vẫn **chưa chạy được** vì
 > chưa có ảnh có nhãn của khách — công cụ đã sẵn (`python -m qc_scanner.eval`), chỉ thiếu dữ liệu.
 
@@ -21,7 +21,7 @@ pip install -e .                 # để có lệnh `qc-scanner` / `qc-scanner-b
 Chạy toàn bộ bộ test (~25s sau khi model đã cache):
 
 ```bash
-pytest          # 340 bài
+pytest          # 351 bài
 ruff check src tests
 ```
 
@@ -125,6 +125,7 @@ tests/
   test_reason_codes.py   # §3b/§3c — mỗi mã có ca kích hoạt; KHÔNG false pass
   test_detectors.py      # S-2 — lõi QC không phụ thuộc detector nào
   test_pdf.py            # N-08 — PDF vào/ra: đọc không resample, ghép không mất dữ liệu
+  test_concurrency.py    # OPS-4 — hai van: MAX_CONCURRENCY (CPU) và MAX_IN_FLIGHT (RAM)
   test_api_contract.py   # docs/api.md hứa gì thì giữ đúng thế
   test_packaging.py      # requirements CPU/GPU khớp nhau, guard đặt đúng chỗ
 ```
@@ -311,7 +312,7 @@ người dùng làm theo hint sai sẽ chụp lại vẫn sai. Đây là phần 
 
 ## 6. Checklist trước khi release / nghiệm thu
 
-- [x] `pytest` xanh (340 bài) — CI chạy trên môi trường sạch, có cache model.
+- [x] `pytest` xanh (351 bài) — CI chạy trên môi trường sạch, có cache model.
 - [x] Bốn mặt tiền (lib / CLI file / CLI pipe / server) cho **cùng kết quả** — §1.
 - [x] Ca hỏng (file rỗng, rác, ảnh không có tài liệu) trả **mã lý do + hint** — §1.
 - [x] Regression `examples/` không trôi — §2.

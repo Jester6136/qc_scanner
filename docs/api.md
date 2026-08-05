@@ -51,7 +51,7 @@ Giới hạn kích thước upload: **32 MB** (vượt → `413`).
 | `422` | `verdict` là `fail` — ảnh hợp lệ nhưng đầu ra **không đáng tin cho OCR** | Luôn là JSON |
 | `400` | Đầu vào không đánh giá được (thiếu `file`, ảnh hỏng, tham số sai) | JSON `{"error": {...}}` |
 | `413` | File vượt 32 MB | `{"error": "payload quá lớn"}` |
-| `503` | Lỗi tài nguyên máy chủ (`INFERENCE_FAILED`, hay gặp: hết bộ nhớ GPU) | JSON, kèm header `Retry-After` |
+| `503` | Máy chủ kín tải (`SERVER_BUSY`) hoặc lỗi tài nguyên (`INFERENCE_FAILED`, hay gặp: hết bộ nhớ GPU) | JSON, kèm header `Retry-After` |
 
 `503` là mã duy nhất **nên retry**: ảnh không có vấn đề gì, máy chủ mới có. Trả `400` cho ca
 này thì phía gọi loại vĩnh viễn một tấm ảnh tốt.
@@ -251,7 +251,9 @@ FastAPI dựng sẵn Swagger UI ở `/docs` (và OpenAPI JSON ở `/openapi.json
   "version": "0.2.0",
   "model": "u2net",
   "providers": ["CPUExecutionProvider"],
-  "max_concurrency": 2
+  "max_concurrency": 2,
+  "max_in_flight": 8,
+  "in_flight": 0
 }
 ```
 
@@ -316,7 +318,7 @@ Nhóm theo hành động của phía gọi:
 | Nhóm | Mã | Phía gọi nên làm gì |
 |---|---|---|
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
-| Sự cố máy chủ | `INFERENCE_FAILED` | **Retry** — ảnh không có vấn đề gì |
+| Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` | **Retry** — ảnh không có vấn đề gì |
 | Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` | Chụp lại, hoặc đưa người soi |
 | Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 
@@ -377,24 +379,26 @@ Con số chính xác cho một máy cụ thể thì đo bằng `qc-scanner-bench
 
 ### Vượt quá thì sao
 
-**Xếp hàng, không lỗi.** Request thứ N+1 chờ đến lượt và vẫn trả `200`/`422` bình thường; không
-có mã lỗi "quá tải" nào. Cái đổi là **độ trễ**: quá `max_concurrency` thì thông lượng đứng yên
-còn thời gian chờ dâng gần như tuyến tính theo số request đang xếp hàng.
+Hai nấc, theo thứ tự:
 
-Nghĩa là gửi 200 request cùng lúc không nhanh hơn gửi 8, chỉ khiến cả 200 cùng phải chờ. Phía
-gọi nên tự giới hạn số request đang bay thay vì dựa vào máy chủ đẩy lùi — **máy chủ hiện không
-đẩy lùi**.
+1. **Xếp hàng** — quá `max_concurrency`, request chờ đến lượt và vẫn trả `200`/`422` bình
+   thường. Thông lượng đứng yên, độ trễ dâng gần như tuyến tính theo số request đang chờ.
+2. **Bị đẩy lùi** — quá `max_in_flight`, request nhận `503` + `SERVER_BUSY` + `Retry-After`.
+
+`SERVER_BUSY` nghĩa là **ảnh chưa được xử lý lần nào** — không phải phán quyết về ảnh. Gửi lại
+là việc đúng; đối xử với nó như `fail` là loại nhầm một ảnh tốt.
+
+Vì sao có nấc thứ hai: thân request nằm trong RAM ngay khi tới, **trước khi** xin được suất xử
+lý. `max_concurrency` chặn *số ảnh đang xử lý*, không chặn *số ảnh đang chiếm bộ nhớ*. Trần
+thật là `max_in_flight × 32 MB`. Xem [OPS-4](features_issues.md#ops-inflight).
 
 ### Giới hạn phải tôn trọng
 
-⚠️ **Thân request nằm trong RAM ngay khi tới, trước khi xin suất xử lý.** `max_concurrency`
-chặn *số ảnh đang xử lý*, **không** chặn *số ảnh đang nằm trong bộ nhớ*. Đo được: 24 client gọi
-cùng lúc với `max_concurrency=2` → đúng 2 request đang xử lý, nhưng **24 thân request trong
-RAM**.
+Máy chủ tự bảo vệ bộ nhớ của mình, nên phía gọi **không** cần tính toán gì để tránh làm sập nó.
+Nhưng gửi vượt trần vẫn lãng phí: request bị từ chối là một vòng mạng không mang lại gì.
 
-Trần thật là threadpool của Starlette, mặc định 40 luồng → **≈ 40 × 32 MB = 1.28 GB** ở đỉnh.
-Giữ số request đang bay ở mức `max_concurrency` (× vài lần là cùng) thì không bao giờ chạm tới
-đó. Xem [OPS-4](features_issues.md#ops-inflight).
+Cách gọi đúng: giữ số request đang bay quanh `max_concurrency`, và khi gặp `503` thì **lùi rồi
+thử lại** (`Retry-After` nói chờ bao lâu) thay vì gửi dồn tiếp.
 
 ### Những thứ an toàn khi gọi song song
 
@@ -413,8 +417,9 @@ service không chia sẻ gì nên nhân bản là chuyện thuần hạ tầng.
 ## 8. Chưa có, và biết là chưa có
 
 - **Không có xác thực** — dựa hoàn toàn vào việc chỉ chạy trong mạng nội bộ (EX-12).
-- **Không có giới hạn tần suất** và **không đẩy lùi khi quá tải** — request thừa xếp hàng chứ
-  không bị từ chối. Phía gọi tự giới hạn số request đang bay, xem [§7b](#song-song).
+- **Không có giới hạn tần suất theo client** (không hạn mức, không API key). Có đẩy lùi khi
+  kín tải — `503` + `SERVER_BUSY`, xem [§7b](#song-song) — nhưng đó là trần chung cho cả
+  service, không phân biệt ai gửi.
 - **Một tiến trình, không `workers`** — mỗi worker nạp một bản model vào RAM, và onnxruntime
   vốn đã dùng nhiều luồng. Trong tiến trình đó, `MAX_CONCURRENCY` ảnh chạy song song trên
   threadpool. Cần thông lượng cao hơn thì đổi sang GPU trước (đó là 80% thời gian), rồi mới

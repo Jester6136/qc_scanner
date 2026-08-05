@@ -282,6 +282,7 @@ là mã vô dụng.
 | `DECODE_FAILED` | fail | `imdecode` trả None | File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG. | system |
 | `FILE_EMPTY` | fail | `len(data) == 0` | Không nhận được dữ liệu. Kiểm tra lại bước tải/upload. | system |
 | `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh — báo bên phát triển. | system |
+| `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Qua HTTP là `503` kèm `Retry-After`. | system |
 | `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi phía máy chủ, **không phải lỗi ảnh** — cho chạy lại, đừng loại ảnh. Qua HTTP là `503` kèm `Retry-After`. | system |
 | `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
 

@@ -67,7 +67,7 @@ result.image            # PNG bytes
 | `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
 Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
-`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **25 mã**, danh mục đầy
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **26 mã**, danh mục đầy
 đủ trong [docs/api.md](docs/api.md).
 
 ## Cài đặt
@@ -139,7 +139,7 @@ curl -F "file=@hoso.pdf"  "http://127.0.0.1:5000/?format=pdf" -o daxuly.pdf
 | `422` | verdict `fail` — ảnh hợp lệ, đầu ra không đáng tin |
 | `400` | đầu vào không đánh giá được (thiếu file, ảnh hỏng, tham số sai) |
 | `413` | file vượt 32MB |
-| `503` | lỗi tài nguyên máy chủ (hết bộ nhớ GPU) — kèm `Retry-After` |
+| `503` | kín tải (`SERVER_BUSY`) hoặc lỗi tài nguyên (hết bộ nhớ GPU) — kèm `Retry-After` |
 
 FastAPI + uvicorn, có sẵn Swagger UI ở `/docs`. `GET /` trả `405`: API không có trang web, và
 nhánh `GET /?url=` cũ đã bỏ hẳn vì là lỗ SSRF ([SEC-1](docs/features_issues.md#sec-ssrf)).
@@ -210,7 +210,8 @@ docker exec qc-scanner qc-scanner-bench --images /data -n 32           # đo tr�
 
 Bốn mục: **CHẶNG** (thời gian đi đâu, GPU hay CPU) · **SONG SONG** (trần thông lượng một tiến
 trình) · **BATCH** (dynamic batching đáng bao nhiêu) · **QUY RA CCU** (ảnh/s quy ra số người
-dùng đồng thời).
+dùng đồng thời). Thêm `--url` thì có mục **HTTP**, in p50/p95 độ trễ và **điểm gãy** — mức song
+song cuối cùng còn làm tăng thông lượng, tức con số nên đưa cho bên gọi API.
 
 Mặc định tự sinh ảnh 3024×4032 nên chạy được trong container trắng. Cỡ ảnh giữ như ảnh điện
 thoại thật vì chi phí CPU tỉ lệ với số pixel.
@@ -287,7 +288,8 @@ Các biến hay dùng nhất:
 |---|---|---|
 | `QC_SCANNER_HINT_AUDIENCE` | `capturer` | `hint` viết cho người chụp hay người vận hành |
 | `QC_SCANNER_PRE_CROPPED` | `false` | Ảnh đã cắt sát từ trước → bỏ qua các mã về biên |
-| `QC_SCANNER_MAX_CONCURRENCY` | `cpu/8`, trong [2, 16] | Số ảnh xử lý cùng lúc trên đường HTTP |
+| `QC_SCANNER_MAX_CONCURRENCY` | `cpu/8`, trong [2, 16] | Số ảnh **xử lý** cùng lúc — van CPU |
+| `QC_SCANNER_MAX_IN_FLIGHT` | `max_concurrency × 4` | Số request **đang bay** — van RAM; vượt → `503` |
 | `QC_SCANNER_GPU_CONCURRENCY` | `2` | Số lần suy luận lên GPU cùng lúc |
 | `QC_SCANNER_GPU_MEM_LIMIT_MB` | `0` (không giới hạn) | Trần bộ nhớ GPU của onnxruntime |
 | `QC_SCANNER_ONNX_PROVIDERS` | tự dò | Ví dụ `CUDAExecutionProvider,CPUExecutionProvider` |
@@ -300,9 +302,13 @@ Các biến hay dùng nhất:
 | `QC_SCANNER_PDF_OUT_DPI` | `300` | Khổ trang của PDF ra — không đổi số điểm ảnh |
 | `QC_SCANNER_PDF_OUT_JPEG_QUALITY` | `0` (lossless) | Nén JPEG khi ghép PDF, nếu cần file nhỏ |
 
-`MAX_CONCURRENCY` và `GPU_CONCURRENCY` là hai van cho hai tài nguyên khác nhau: phần CPU chiếm
-62% thời gian mỗi ảnh nên cần song song theo số nhân, còn VRAM thường dùng chung với service
-khác nên phải giữ thấp.
+Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ van kia:
+
+| Van | Chặn cái gì | Vì sao riêng |
+|---|---|---|
+| `MAX_IN_FLIGHT` | request đang nằm trong RAM | Thân request vào bộ nhớ **trước khi** xin suất xử lý |
+| `MAX_CONCURRENCY` | ảnh đang xử lý | Phần CPU chiếm 62% thời gian mỗi ảnh → cần song song theo số nhân |
+| `GPU_CONCURRENCY` | lần suy luận trên GPU | VRAM thường dùng chung với service khác → phải giữ thấp |
 
 ---
 
@@ -310,9 +316,9 @@ khác nên phải giữ thấp.
 
 | | |
 |---|---|
-| Mã lý do | 25 mã, mỗi mã kèm `hint` + `audience` |
+| Mã lý do | 26 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 340 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 351 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |

@@ -28,7 +28,6 @@ yêu cầu ⚫. Chỉ còn **OPS-3**, để cuối vì máy phát triển không
 
 | Mã | Vì sao chưa làm |
 |---|---|
-| OPS-4 in-flight | Cách sửa (`503` khi quá tải) **đổi hợp đồng API** — hiện request thừa xếp hàng và luôn được phục vụ. Chốt với khách trước. |
 | QUAL-3 quét ngưỡng | Cần tập vàng có nhãn của khách (EX-2). Bộ eval đã chạy được, chỉ thiếu dữ liệu. |
 | S-1 đổi model nền | **Đã đo** (xem mục S-1). isnet chậm gấp 3 và đổi 2 verdict; không có nhãn thì không biết đổi là tốt hay tệ. |
 | S-3 DocAligner | Chỗ cắm đã sẵn (S-2). Nguyên tắc "đo trước, đổi sau" cấm đổi đường chính khi chưa có tập vàng. |
@@ -1191,7 +1190,7 @@ ruff + pytest trên 3.9/3.12 + build wheel, có cache model rembg).
 
 ---
 
-### ⚠️ OPS-4 · P2 · 🔴 · `MAX_CONCURRENCY` không chặn bộ nhớ, chỉ chặn xử lý {#ops-inflight}
+### ⚠️ OPS-4 · P2 · 🟢 XONG · `MAX_CONCURRENCY` không chặn bộ nhớ, chỉ chặn xử lý {#ops-inflight}
 
 Lộ ra khi soạn hướng dẫn gọi song song cho bên tích hợp.
 
@@ -1215,13 +1214,28 @@ Chưa gây sự cố nào vì chưa ai bắn đủ nhiều request song song, v�
 server. Nó thành vấn đề thật ở đúng kịch bản khách đang hỏi ([EX-16](need_exchange.md#ex-throughput)):
 tải cao + nhiều container trên cùng một máy.
 
-**Hướng**: middleware đếm số request đang bay và trả `503` + `Retry-After` khi vượt trần —
-middleware chạy **trước** khi thân request được phân tích, nên đó là chỗ duy nhất chặn được.
-Đổi lại là bên gọi bắt đầu thấy `503` do quá tải, tức **đổi hợp đồng API**: hiện tại request
-thừa xếp hàng và luôn được phục vụ. Cần chốt trước khi làm.
+**✅ Đã sửa**: `MAX_IN_FLIGHT` (mặc định `MAX_CONCURRENCY × 4`) + middleware `limit_in_flight`
+trả `503` + `SERVER_BUSY` + `Retry-After` khi vượt trần. Middleware chạy **trước** khi FastAPI
+phân tích multipart, nên từ chối ở đó nghĩa là 32MB kia không bao giờ vào RAM — mọi van đặt bên
+trong hàm xử lý đều đã muộn.
 
-Trong lúc chờ: [api.md §7b](api.md#song-song) nói rõ bên gọi phải tự giới hạn số request đang
-bay, vì máy chủ không đẩy lùi.
+Đo lại, 24 client cùng lúc với `MAX_IN_FLIGHT=6`:
+
+| | trước | sau |
+|---|---|---|
+| thân request trong RAM (đỉnh) | 24 | **6** |
+| trần RAM suy ra | 1.28 GB (threadpool 40) | `MAX_IN_FLIGHT × 32MB` |
+
+**Đây là đổi hợp đồng API** — trước đây request thừa luôn được phục vụ (chỉ chờ lâu), nay có
+thể bị từ chối. Chấp nhận đổi vì phương án còn lại là dặn bên gọi tự giới hạn, mà **bên gọi
+không nhìn thấy tải của những bên gọi khác**: một client cư xử đúng mực vẫn có thể là giọt nước
+cuối cùng khi có năm client khác đang gửi. Bảo vệ bộ nhớ là việc của phía sở hữu bộ nhớ.
+
+`SERVER_BUSY` nói rõ **ảnh chưa được xử lý lần nào**, cùng bài học của
+[SPD-6](#spd-oom): mã lỗi không nói rõ "đây không phải lỗi ảnh" thì hệ gọi sẽ loại ảnh tốt.
+
+Còn lại: `MAX_IN_FLIGHT × 4` là con số **đặt theo suy luận, chưa đo trên máy server**. Cần chạy
+`qc-scanner-bench --url` trên H100 rồi chỉnh — xem [api.md §7b](api.md#song-song).
 
 ---
 

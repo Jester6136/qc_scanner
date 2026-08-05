@@ -78,6 +78,27 @@ MAX_CONCURRENCY = max(
 
 _scan_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
+#: Trần **request đang bay** — đã nhận nhưng chưa trả lời xong. Đây là van chặn *bộ
+#: nhớ*, tách hẳn khỏi `MAX_CONCURRENCY` vốn chỉ chặn *xử lý* (OPS-4).
+#:
+#: Vì sao cần hai van: thân request nằm trong RAM **trước khi** ai xin được suất xử lý —
+#: FastAPI phân tích multipart trước khi hàm xử lý chạy. Đo được với
+#: `MAX_CONCURRENCY=2` và 24 client gọi cùng lúc: đúng 2 request đang xử lý, nhưng
+#: **24 thân request trong RAM**. Van cũ chưa bao giờ chặn con số đó.
+#:
+#: Mặc định `MAX_CONCURRENCY × 4`: đủ sâu để một đợt dồn ngắn vẫn được phục vụ (chờ
+#: khoảng 4 × thời gian xử lý một ảnh) mà vẫn chặn được trần RAM ở
+#: `MAX_IN_FLIGHT × 32MB`. Không có nó thì trần là threadpool của Starlette — 40 luồng,
+#: tức 1.28 GB, một con số không ai cố ý chọn.
+MAX_IN_FLIGHT = max(
+    1,
+    int(os.environ.get("QC_SCANNER_MAX_IN_FLIGHT") or MAX_CONCURRENCY * 4),
+)
+
+#: Không cần khoá: middleware là `async def` nên chạy trên **một** vòng lặp sự kiện,
+#: và giữa chỗ đọc và chỗ tăng không có `await` nào để nhường lượt.
+_in_flight = 0
+
 app = FastAPI(
     title="qc-scanner",
     version=__version__,
@@ -114,6 +135,39 @@ app.add_middleware(
     # kèm, và bật lên thì `allow_origins=["*"]` bị trình duyệt từ chối.
     allow_credentials=False,
 )
+
+
+@app.middleware("http")
+async def limit_in_flight(request: Request, call_next):
+    """Đẩy lùi khi kín tải — **trước khi** thân request được đọc vào RAM.
+
+    Đây là chỗ duy nhất chặn được: middleware chạy trước khi FastAPI phân tích
+    multipart, nên từ chối ở đây nghĩa là 32MB kia không bao giờ vào bộ nhớ. Mọi van
+    đặt bên trong hàm xử lý đều đã muộn.
+
+    Vì sao máy chủ phải tự đẩy lùi thay vì dặn bên gọi tự giới hạn: bên gọi không nhìn
+    thấy tải của những bên gọi khác. Một client cư xử đúng mực vẫn có thể là giọt nước
+    cuối cùng khi có năm client khác đang gửi. Bảo vệ bộ nhớ là việc của phía sở hữu
+    bộ nhớ.
+
+    `503` chứ không phải `429`: đây là "hết chỗ ngay lúc này", không phải "bạn đã dùng
+    quá hạn mức của mình" — không có hạn mức nào theo client cả, và request bị từ chối
+    **chưa hề được xử lý**, nên gửi lại là việc đúng.
+    """
+    global _in_flight
+    if request.method != "POST":
+        return await call_next(request)
+    if _in_flight >= MAX_IN_FLIGHT:
+        return JSONResponse(
+            {"error": ScanError("SERVER_BUSY").to_dict()},
+            status_code=503,
+            headers={"Retry-After": "2"},
+        )
+    _in_flight += 1
+    try:
+        return await call_next(request)
+    finally:
+        _in_flight -= 1
 
 
 @app.middleware("http")
@@ -259,6 +313,11 @@ async def healthz():
         "model": cfg.rembg_model,
         "providers": active_providers(cfg.rembg_model, cfg.onnx_providers),
         "max_concurrency": MAX_CONCURRENCY,
+        # Bên gọi đọc hai số này để tự chỉnh mức song song mà không phải ghi cứng con
+        # số nào: `max_concurrency` là mức gửi tối ưu, `in_flight`/`max_in_flight` cho
+        # biết còn chỗ hay sắp bị đẩy lùi.
+        "max_in_flight": MAX_IN_FLIGHT,
+        "in_flight": _in_flight,
     }
 
 

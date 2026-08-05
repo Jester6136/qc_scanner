@@ -84,7 +84,7 @@ Chi tiết luồng: [algorithm.md](algorithm.md).
 
 - Luồng lõi chạy được; **Giai đoạn 0, 1, 2, 4 đã xong**, Giai đoạn 3 làm được phần không cần
   nhãn (QUAL-1/2, S-2, S-6, bộ eval).
-- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 25 mã
+- **QC đã có thật**: `scan_qc()` trả `ScanResult{image, verdict, reasons[], metrics}`; 26 mã
   lý do, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons==[]` được ép ở mức code.
 - **239 test** + CI (lint, test trên 3.9/3.12, build wheel). Bài quan trọng nhất là
   "không false pass trên 9 ảnh hỏng dựng bằng OpenCV".
