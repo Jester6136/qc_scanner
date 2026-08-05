@@ -248,6 +248,16 @@ REASONS: dict[str, ReasonSpec] = {
             "capturer",
         ),
         _spec(
+            "TEXT_NOT_LEVEL",
+            "fail",
+            "Dòng chữ vẫn nghiêng mạnh SAU khi nắn — phép nắn đã hỏng.",
+            "Ảnh nắn ra bị xiên, chữ chạy chéo. Thường do tờ giấy bị gấp/quặp góc "
+            "làm máy nhận nhầm mép. Vuốt phẳng cả 4 góc rồi chụp lại.",
+            "Ảnh nắn ra bị xiên, chữ chạy chéo — đừng đưa xuống OCR. Kiểm xem tờ "
+            "giấy có bị gấp góc không; có thì cắt tay theo mép thật của tờ giấy.",
+            "capturer",
+        ),
+        _spec(
             "MULTIPLE_DOCUMENTS",
             "warn",
             "Phát hiện nhiều hơn một tài liệu lớn trong ảnh.",
@@ -428,6 +438,25 @@ class Metrics:
 
     glare_ratio: Optional[float] = None
     median_brightness: Optional[float] = None
+
+    text_skew_deg: Optional[float] = None
+    """Góc nghiêng dòng chữ trên ảnh **đã nắn**; `None` = không đủ mực để đo (QC-18).
+
+    `None` khác 0.0 và khác biệt đó quan trọng: 0.0 nghĩa là "đã đo, chữ thẳng",
+    `None` nghĩa là **chưa ai kiểm** — trang gần như trắng thì phép đo vô nghĩa nên
+    nó im lặng thay vì bịa ra một con số.
+
+    Đây là góc **đo được trước khi sửa**, không phải góc còn lại sau khi sửa — xem
+    `deskew_applied_deg`.
+    """
+
+    deskew_applied_deg: Optional[float] = None
+    """Góc đã thật sự xoay để nắn thẳng; `None` = không xoay (QC-19).
+
+    Tách khỏi `text_skew_deg` để báo cáo QC vẫn nói được ảnh vào lệch bao nhiêu sau
+    khi ảnh ra đã được sửa. Gộp làm một thì mọi ảnh đều báo 0° và chỉ số mất hết
+    giá trị chẩn đoán.
+    """
 
     pre_cropped: bool = False
     """Phía gọi khai báo ảnh vào đã cắt sẵn → các kiểm tra về biên đã bị bỏ qua (QC-14)."""

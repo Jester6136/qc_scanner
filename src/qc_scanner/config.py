@@ -115,6 +115,36 @@ class Config:
     trên 45 ảnh, mức nới thật cần rất nhỏ — diện tích chỉ tăng trung vị 4.6%.
     """
 
+    edge_grow_percentile: float = 95.0
+    """Nới cạnh tới phân vị này của độ lệch contour, thay vì tới điểm xa nhất (QC-17).
+
+    100.0 là hành vi cũ: mỗi cạnh bị đẩy ra cho tới khi phủ **điểm contour xa nhất**,
+    nên một cái gai đơn lẻ trên mask kéo cả cạnh ra theo và mang nền vào ảnh.
+
+    Đo trên 38 ảnh thật — viền nền trung bình / số ảnh bị cắt lẹm vào giấy quá 1%:
+
+    | phân vị | viền TB | lẹm > 1% |
+    |---|---|---|
+    | 100 (cũ) | 4.58% | 4 |
+    | 99 | 4.21% | 4 |
+    | 98 | 3.95% | 5 |
+    | **95** | **3.38%** | **6** |
+    | 92 | 3.02% | 12 |
+    | 90 | 2.83% | 17 |
+
+    Điểm gãy ở **95**: xuống 92 thì số ảnh bị cắt **gấp đôi** (6 → 12) mà viền chỉ
+    bớt thêm 0.36 điểm. Chọn 95 là quyết định có ý thức đánh đổi — viền giảm 26%
+    tương đối, giá là 2 ảnh nữa cắt quá 1%.
+
+    Đây cũng là đòn bẩy **rẻ hơn** `max_edge_grow_ratio` nhiều: siết trần xuống 0.02
+    cho viền 3.66% nhưng 9 ảnh bị cắt, tệ hơn phân vị 95 ở cả hai cột.
+
+    ⚠️ Phần lớn viền còn lại **không** do nới ra, nên siết tiếp cũng không hết: với
+    tài liệu **bo góc** (CCCD), phủ hết tờ giấy bằng một tứ giác thì bắt buộc kéo
+    theo nền ở bốn góc lượn. Riêng ảnh `04.55.30`, tứ giác chưa nới đã cắt vào thẻ
+    ~15px mỗi cạnh — nới là để không cắt vào thẻ, không phải để cho đẹp.
+    """
+
     no_crop_min_confidence: float = 0.9
     """Detector tự tin từ mức này trở lên thì "giấy đầy khung" KHÔNG bị coi là lỗi.
 
@@ -130,6 +160,21 @@ class Config:
     Đo trên 45 ảnh, nhóm `area > 0.90 & tb >= 3`: `conf 0.6` gồm đúng những ca hỏng thật
     (bắt mặt bàn, ảnh chưa cắt, góc lệch ra ngoài 18–59px); `conf 0.9` gồm những ca đã
     soi mắt thường và **crop ra nguyên tờ, không mất gì** (04.56.41 · 04.57.20 · 04.58.02).
+    """
+
+    no_crop_corner_outside_px: int = 8
+    """Góc lọt ra ngoài khung ảnh quá bấy nhiêu pixel **và** detector thua → coi như
+    không tìm thấy tờ giấy (QC-20).
+
+    Đường vào thứ hai của `NO_CROP_DETECTED`, độc lập với điều kiện diện tích. Sinh
+    ra vì điều kiện diện tích để lọt ca tệ nhất gặp được: `2aOboQpF50…` có `conf 0.6`
+    và góc lọt **32.6px**, tứ giác bao cả cái loa lẫn chiếc ghế, ảnh ra gần y ảnh
+    vào — nhưng chỉ phủ 0.793 khung nên thoát ngưỡng 0.90 và chỉ ra `warn`.
+
+    Đo trên 38 ảnh thật, `corners_outside_px` khi detector thua: **18.0 · 32.6 · 36.6
+    · 59.0** (và một ảnh 0.0, ảnh này đã bị bắt bằng đường diện tích). Nhóm detector
+    **không** thua: **0.0 ở tất cả**. Ngưỡng 8px trên ảnh làm việc cao 500px là 1.6%,
+    nằm giữa hai nhóm với khoảng cách rất rộng về cả hai phía.
     """
 
     no_crop_touched_edges: int = 3
@@ -166,6 +211,50 @@ class Config:
     min_median_brightness: float = 60.0
     """Độ sáng trung vị tối thiểu của tài liệu đã nắn."""
 
+    max_text_skew_deg: float = 8.0
+    """Góc nghiêng tối đa của dòng chữ **sau khi nắn** (QC-18).
+
+    Đây là chỉ số duy nhất soi *đầu ra* thay vì đầu vào, và nó ra đời từ một ảnh
+    thật lọt lưới sạch: trang A4 gấp quặp một góc, `verdict pass`, **0 lý do** — mà
+    ảnh ra thì chữ chạy chéo 24° và mấy dòng cuối bị nếp gấp che mất.
+
+    Ngành đo đúng chỉ số này. [Dynamsoft] xếp skew dòng chữ là 1 trong 5 chỉ số
+    chất lượng ảnh quét, [FADGI] mức 4 sao đặt dung sai ±1° và cấm de-skew bằng
+    phần mềm. **Nhưng 1° không bê sang đây được**: cả hai đo máy quét phẳng, ảnh
+    vốn đã thẳng, còn ta nhận ảnh chụp điện thoại rồi nắn phối cảnh.
+
+    Đo trên 30 ảnh thật (bước 1°):
+
+    | nhóm | \\|góc\\| tối đa |
+    |---|---|
+    | 22 ảnh đang `pass`/`warn` | **1.0°** |
+    | 7 ảnh đang `fail` vì lý do khác | 10.0° |
+    | ảnh gấp mép | **24.0°** |
+
+    Ảnh ra của ta hoá ra thẳng đúng bằng chuẩn máy quét phẳng — nhóm sạch đạt trần
+    ở 1.0°, trùng khít con số của cả hai nguồn trên. Vẫn không đặt ngưỡng ở đó, vì
+    **sai số của chính thước là 1.0°** (`geo.text_skew_deg`, đã kiểm bằng phép quay
+    góc biết trước): đặt ngưỡng bằng nhiễu đo thì mọi ảnh sạch đều thành ca 50-50.
+
+    8.0 = 8× trần nhóm sạch và 8× sai số thước, còn cách ca hỏng thật 3 lần. Khoảng
+    trống giữa 1.0° và 24.0° rộng tới mức chỗ đặt chính xác không quan trọng bằng
+    việc **đặt ngoài tầm nhiễu**.
+
+    ⚠️ Nó bắt "phép nắn đã hỏng", KHÔNG bắt "trang bị gấp". Nếp gấp không làm lệch
+    tứ giác thì vẫn lọt — xem QC-18 trong docs/features_issues.md.
+
+    [Dynamsoft]: https://www.dynamsoft.com/codepool/quality-evaluation-of-scanned-document-images.html
+    [FADGI]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
+    """
+
+    text_skew_step_deg: float = 1.0
+    """Bước quay khi dò góc chữ. Nhỏ hơn thì mịn hơn nhưng đắt tuyến tính.
+
+    1.0° tốn 26.3ms/ảnh (1.6% của `scan_qc`). Bước 3° tốn 12.7ms và vẫn đọc đúng 24°
+    trên ca hỏng, nhưng khi đó sai số thước thành 3° nên ngưỡng phải nới theo —
+    không đáng đổi 22ms lấy một ngưỡng mù mờ hơn.
+    """
+
     # --- Đường lui / tự sửa ---
     enable_edge_fallback: bool = True
     """Bật đường lui dò cạnh Canny+Hough khi rembg thua."""
@@ -175,6 +264,31 @@ class Config:
 
     auto_rotate_portrait: bool = False
     """Tự xoay ảnh đã nắn về chiều đứng."""
+
+    deskew: bool = True
+    """Xoay ảnh đã nắn về thẳng, theo đúng `text_skew_deg` vừa đo (QC-19).
+
+    Trước đây **không có bước nắn thẳng nào**: phép nắn 4 điểm còn dư bao nhiêu độ
+    thì để nguyên bấy nhiêu. Đo trên 38 ảnh thật: **18 ảnh lệch > 0.5°**, trung bình
+    1.57°. Trên thẻ CCCD có dòng chữ chạy dài, 1° là nhìn thấy rõ.
+
+    Bật lên:
+
+    | | trước | sau |
+    |---|---|---|
+    | góc chữ trung vị | 0.50° | **0.00°** |
+    | số ảnh lệch > 0.5° | 18/38 | **2/38** |
+
+    Hai ảnh còn lại là hai ảnh `TEXT_NOT_LEVEL` — **cố ý không xoay**, xem
+    `max_text_skew_deg`. Chi phí 1.0ms; ảnh phình thêm 1.7% vì bốn góc nêm.
+
+    Tắt đi nếu đầu ra dùng cho lưu trữ chuẩn: [FADGI] mức 4 sao **cấm** de-skew bằng
+    phần mềm, vì xoay một góc khác bội số 90° buộc phải nội suy lại **mọi** điểm ảnh
+    và làm giảm độ phân giải thực. Với OCR thì đánh đổi đó có lợi; với bản gốc lưu
+    trữ thì không.
+
+    [FADGI]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
+    """
 
     # --- Bối cảnh đầu vào (QC-14) ---
     pre_cropped: bool = False

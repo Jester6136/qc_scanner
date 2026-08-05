@@ -270,6 +270,12 @@ def test_every_reason_code_appears_in_the_published_catalogue():
     from qc_scanner.qc import REASONS
 
     root = pathlib.Path(__file__).resolve().parent.parent
-    catalogue = (root / "docs" / "algorithm.md").read_text(encoding="utf-8")
-    missing = sorted(code for code in REASONS if f"`{code}`" not in catalogue)
-    assert not missing, f"thiếu trong docs/algorithm.md §7: {missing}"
+
+    # `api.md` đứng cùng danh sách vì README chỉ khách sang **đó** đọc danh mục đầy
+    # đủ, không phải sang algorithm.md. `TEXT_NOT_LEVEL` từng chạy trong production
+    # với đủ dòng trong algorithm.md mà api.md thì không có — bài này khi ấy vẫn
+    # xanh, tức nó canh sai file so với file khách thật sự đọc.
+    for name in ("algorithm.md", "api.md"):
+        catalogue = (root / "docs" / name).read_text(encoding="utf-8")
+        missing = sorted(code for code in REASONS if f"`{code}`" not in catalogue)
+        assert not missing, f"thiếu trong docs/{name}: {missing}"

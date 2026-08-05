@@ -372,13 +372,23 @@ def test_pdf_output_keeps_every_pixel(one_page):
     assert np.array_equal(rendered[0].image, original)
 
 
-def test_pdf_output_is_not_bigger_than_the_png_it_replaces(one_page):
-    """Số đo chốt lựa chọn lossless: đo trên một trang 1053×1852, PNG 1276 KB →
-    PDF 988 KB. Không có đánh đổi dung lượng nào để cân ở đây."""
+def test_pdf_output_stays_in_the_same_size_class_as_the_png(one_page):
+    """Lossless không phải đánh đổi dung lượng — nhưng cũng không phải luôn nhỏ hơn.
+
+    Bài này từng khẳng định `PDF < PNG`, dựa trên đúng **một** số đo: trang 1053×1852,
+    PNG 1276 KB → PDF 988 KB. Bật deskew (QC-19) là lời khẳng định đó đổ: cùng ảnh
+    ấy thành PNG 1345 KB → PDF 1443 KB, tỉ lệ 0.990 → **1.073**. Phép nội suy khi
+    xoay làm mất cấu trúc phẳng mà Flate vốn khai thác được, còn PNG thì vẫn còn bộ
+    dự đoán theo hàng để bù lại.
+
+    Nên bài này chốt thứ thật sự cần đúng — PDF không phình sang một hạng khác — chứ
+    không chốt một bất đẳng thức tình cờ đúng ở một mẫu. Tính lossless đã có
+    `test_pdf_output_keeps_every_pixel` giữ.
+    """
     from qc_scanner.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
-    assert len(build_pdf([png], Config())) < len(png)
+    assert len(build_pdf([png], Config())) < len(png) * 1.25
 
 
 def test_jpeg_knob_shrinks_the_file_when_asked(one_page):

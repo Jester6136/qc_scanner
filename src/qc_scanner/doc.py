@@ -205,7 +205,11 @@ def scan_image(
     corners = quad.corners
     if cfg.contain_paper_contour and quad.contour is not None:
         corners = geo.containing_quad(
-            corners, quad.contour, work.shape, cfg.max_edge_grow_ratio
+            corners,
+            quad.contour,
+            work.shape,
+            cfg.max_edge_grow_ratio,
+            cfg.edge_grow_percentile,
         )
     corners = geo.expand(corners, cfg.edge_expand_px, work.shape)
 
@@ -218,6 +222,15 @@ def scan_image(
 
     reasons += _quality_reasons(warped, cfg, metrics)
     reasons = _apply_pre_cropped(reasons, cfg, metrics)
+
+    # QC-19: nắn thẳng phần dư, SAU khi đã chấm điểm. Thứ tự này là bắt buộc —
+    # `metrics.text_skew_deg` phải là góc **đo được**, không phải góc còn lại sau khi
+    # đã sửa, nếu không thì báo cáo QC nói ảnh nào cũng thẳng.
+    #
+    # Và không bao giờ xoay khi góc vượt ngưỡng: lệch 24° không phải "hơi nghiêng" mà
+    # là phép nắn đã hỏng (TEXT_NOT_LEVEL). Xoay nó về 0 chỉ **giấu** cái hỏng đi —
+    # ảnh vẫn mất nội dung, nhưng nay trông hợp lệ.
+    warped = _deskew(warped, cfg, metrics)
 
     return ScanResult.of(
         _encode_png(warped),
@@ -350,11 +363,21 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
         metrics.detector_confidence is not None
         and metrics.detector_confidence < cfg.no_crop_min_confidence
     ) or metrics.corners_outside_px > cfg.border_margin_px
-    if (
-        metrics.quad_area_ratio > cfg.no_crop_area_ratio
-        and metrics.touches_border >= cfg.no_crop_touched_edges
-        and struggled
-    ):
+    # QC-20: điều kiện diện tích một mình để lọt ca tệ nhất gặp được. Ảnh
+    # `2aOboQpF50…` cho `conf 0.6` (detector không dựng nổi 4 đỉnh, phải ép
+    # `minAreaRect`) và góc lọt **32.6px ra ngoài khung ảnh** — tứ giác đó bao cả cái
+    # loa, cây bút và chiếc ghế, ảnh ra gần y ảnh vào. Nhưng hình chữ nhật xoay ấy chỉ
+    # phủ 0.793 khung nên không vượt 0.90, và cả chuỗi kết thúc bằng `warn`.
+    #
+    # "Không cắt được gì" KHÔNG đồng nghĩa "tứ giác to gần bằng khung": một tứ giác
+    # sai bét vẫn có thể nhỏ hơn khung. Nên tách thành hai đường vào độc lập, và
+    # đường thứ hai hỏi thẳng thứ đáng hỏi — *detector có thua không, và nó có trả về
+    # một tứ giác không nằm trong ảnh không*.
+    #
+    # Đo trên 38 ảnh thật: `conf < 0.9` xuất hiện đúng 5 lần, **cả 5 đều hỏng thật**;
+    # và không ảnh nào có `conf >= 0.9` mà lại có góc lọt ra ngoài. Đường mới này thêm
+    # đúng 1 ảnh — chính ảnh trên — và 0 báo động giả.
+    if _no_crop_detected(metrics, cfg, struggled):
         reasons.append(
             Reason.of(
                 "NO_CROP_DETECTED",
@@ -416,6 +439,7 @@ def _quality_reasons(warped, cfg: Config, metrics: Metrics):
     metrics.blur_score = geo.blur_score(warped)
     metrics.glare_ratio = geo.glare_ratio(warped)
     metrics.median_brightness = geo.median_brightness(warped)
+    metrics.text_skew_deg = geo.text_skew_deg(warped, step=cfg.text_skew_step_deg)
 
     reasons = []
     long_side = max(warped.shape[:2])
@@ -429,7 +453,49 @@ def _quality_reasons(warped, cfg: Config, metrics: Metrics):
         reasons.append(
             Reason.of("TOO_DARK", f"median_brightness={metrics.median_brightness:.0f}")
         )
+    # `is not None` chứ không phải kiểm giá trị thật: trang gần trắng trả None và
+    # None **không** được coi là 0.0. Bỏ qua chỗ này thì `None < ngưỡng` ném
+    # TypeError, còn coi None là thẳng thì ta khẳng định một điều chưa hề đo.
+    if (
+        metrics.text_skew_deg is not None
+        and abs(metrics.text_skew_deg) > cfg.max_text_skew_deg
+    ):
+        reasons.append(
+            Reason.of("TEXT_NOT_LEVEL", f"text_skew_deg={metrics.text_skew_deg:.1f}")
+        )
     return reasons
+
+
+def _no_crop_detected(metrics: Metrics, cfg: Config, struggled: bool) -> bool:
+    """Hai đường vào độc lập cho `NO_CROP_DETECTED` (QC-11 + QC-20).
+
+    Tách thành hàm thuần để test được bằng metrics dựng sẵn, không phải gọi rembg —
+    và để test **không phải chép lại** điều kiện, thứ chỉ kiểm được một bản sao.
+    """
+    lost_the_paper = (
+        metrics.detector_confidence is not None
+        and metrics.detector_confidence < cfg.no_crop_min_confidence
+        and (metrics.corners_outside_px or 0) > cfg.no_crop_corner_outside_px
+    )
+    frame_sized = (
+        (metrics.quad_area_ratio or 0) > cfg.no_crop_area_ratio
+        and (metrics.touches_border or 0) >= cfg.no_crop_touched_edges
+        and struggled
+    )
+    return lost_the_paper or frame_sized
+
+
+def _deskew(warped, cfg: Config, metrics: Metrics):
+    """Xoay về thẳng nếu góc đã đo nằm trong khoảng đáng sửa (QC-19)."""
+    angle = metrics.text_skew_deg
+    if not cfg.deskew or angle is None:
+        return warped
+    # Trên là ngưỡng QC (vượt = phép nắn hỏng, đừng che); dưới là nhiễu của chính
+    # thước — bước quét mặc định 1.0° nên mọi góc thật đều ≥ 1.0.
+    if not (cfg.text_skew_step_deg / 2 <= abs(angle) <= cfg.max_text_skew_deg):
+        return warped
+    metrics.deskew_applied_deg = angle
+    return geo.deskew(warped, angle)
 
 
 #: Các mã chỉ có nghĩa khi ảnh vào là ảnh CHỤP. Với ảnh đã cắt sẵn thì "giấy chạm

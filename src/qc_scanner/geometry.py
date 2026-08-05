@@ -9,6 +9,11 @@ import numpy as np
 
 A4_HEIGHT_INCHES = 11.69
 
+#: Chiều cao đem đo góc chữ. Đo ở 800px tốn 26.3ms trên 1669ms của cả `scan_qc`
+#: (1.6%); giữ nguyên cỡ ảnh thì tốn gấp nhiều lần mà góc đọc ra không đổi — dòng
+#: chữ là cấu trúc thô, không cần tới điểm ảnh gốc.
+_SKEW_WORK_HEIGHT = 800
+
 
 def order_corners(pts):
     """Sắp 4 điểm theo thứ tự TL-TR-BR-BL."""
@@ -112,7 +117,87 @@ def median_brightness(image):
     return float(np.median(_gray(image)))
 
 
-def containing_quad(corners, contour, shape, max_grow_ratio=0.05):
+def text_skew_deg(image, step=1.0, limit=45.0, min_ink_ratio=0.002):
+    """Góc nghiêng của **dòng chữ**, đo trên ảnh ĐÃ NẮN. `None` = không đủ mực để đo.
+
+    Đây là phép kiểm *đầu ra*, không phải phỏng đoán *đầu vào*: mọi thứ khác trong
+    module này soi tứ giác trước khi nắn và hỏi "biên có hợp lý không". Hàm này soi
+    kết quả sau khi nắn và hỏi thẳng **"chữ có nằm ngang không"** — thứ duy nhất
+    phía OCR thật sự cần. Nhờ vậy nó bắt được cả những kiểu hỏng chưa ai kể tên,
+    miễn là chúng làm lệch chữ.
+
+    Cách đo: nhị phân hoá thích nghi → quay thử từng góc → chọn góc làm **profile
+    chiếu theo hàng** gắt nhất (`var(diff(row_sums))`). Chữ nằm ngang thì các hàng
+    luân phiên đậm–nhạt rất mạnh; lệch đi thì các dòng nhoè vào nhau và profile bẹt.
+
+    Vì sao là projection profile chứ không phải gộp ký tự thành dòng rồi đo
+    `minAreaRect`: bản gộp-dòng cần một nhân hình thái **nằm ngang**, tức là nó giả
+    định sẵn thứ đang cần kiểm. Đo bản đó trên chính ảnh gấp mép ra `0.0°` trong
+    khi chữ lệch 24° — chữ chéo không gộp nổi thành dòng nên rơi khỏi phép đo.
+    Projection profile thử mọi góc như nhau nên không có điểm mù đó.
+
+    Cổng `min_ink_ratio` là **bắt buộc**, không phải đề phòng: trang trắng cho mọi
+    góc cùng 0 điểm nên `argmax` trả về ứng viên đầu tiên, tức `-limit`. Không có
+    cổng thì trang trắng bị kết luận nghiêng 45°. Ngưỡng 0.002 nằm giữa trang trắng
+    (0.0000) và ca thưa chữ nhất đo được (một dòng chữ đơn: 0.0048; ảnh thật thưa
+    nhất trong kho: 0.0120).
+
+    Sai số của chính thước: **≤ 1.0°** — kiểm bằng cách quay một ảnh đã nắn đi những
+    góc biết trước (0·3·5·10·15·20·24·30·−12·−25) rồi bắt nó đọc lại.
+    """
+    gray = _gray(image)
+    height = gray.shape[0]
+    if height > _SKEW_WORK_HEIGHT:
+        scale = _SKEW_WORK_HEIGHT / height
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+    ink = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 15
+    )
+    if np.count_nonzero(ink) / ink.size < min_ink_ratio:
+        return None
+
+    ink = (ink > 0).astype(np.float32)
+    h, w = ink.shape
+    center = (w / 2, h / 2)
+    best_angle, best_score = 0.0, -1.0
+    for angle in np.arange(-limit, limit + 1e-9, step):
+        matrix = cv2.getRotationMatrix2D(center, float(angle), 1.0)
+        rotated = cv2.warpAffine(
+            ink, matrix, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
+        )
+        score = float(np.var(np.diff(rotated.sum(axis=1))))
+        if score > best_score:
+            best_angle, best_score = float(angle), score
+    return best_angle
+
+
+def deskew(image, angle):
+    """Xoay ảnh đi `angle` độ, nới khung để không cắt mất góc nào (QC-19).
+
+    `BORDER_REPLICATE` cho bốn nêm góc mới: nền quanh tài liệu có thể là mặt bàn tối,
+    tô trắng vào đó là **bịa ra giấy** ở chỗ vốn không có giấy — và `median_brightness`
+    lẫn `border_ink_ratio` đều đọc vùng mép.
+
+    `INTER_CUBIC` chứ không phải `INTER_LINEAR`: ảnh này đi tiếp vào OCR, và nét chữ
+    nhỏ là thứ mất trước tiên khi nội suy.
+    """
+    h, w = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    cos, sin = abs(matrix[0, 0]), abs(matrix[0, 1])
+    new_w, new_h = int(h * sin + w * cos), int(h * cos + w * sin)
+    matrix[0, 2] += new_w / 2 - w / 2
+    matrix[1, 2] += new_h / 2 - h / 2
+    return cv2.warpAffine(
+        image,
+        matrix,
+        (new_w, new_h),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+
+
+def containing_quad(corners, contour, shape, max_grow_ratio=0.05, percentile=99.0):
     """Đẩy 4 cạnh ra ngoài cho tới khi tứ giác **bao trọn** contour (QC-17).
 
     `approxPolyDP` cho tứ giác **nội tiếp**: nó nối 4 góc bằng đường thẳng. Mép tờ
@@ -145,7 +230,16 @@ def containing_quad(corners, contour, shape, max_grow_ratio=0.05):
         normal /= length
         if normal @ (a - center) < 0:  # ép pháp tuyến hướng RA NGOÀI
             normal = -normal
-        grow = float(np.clip(np.max((pts - a) @ normal), 0.0, limit))
+        # Phân vị chứ không phải cực đại: một gai đơn lẻ trên mask kéo cả cạnh ra
+        # theo, và cạnh đó mang theo nền vào ảnh. Đo trên 38 ảnh thật, đổi 100 → 99
+        # hạ viền nền trung bình 4.58% → 4.21% mà **không** ảnh nào bị cắt thêm
+        # (lẹm > 1% giữ nguyên 4 ảnh, lẹm tối đa giữ nguyên 0.0795).
+        distances = (pts - a) @ normal
+        if percentile >= 100:
+            reach = np.max(distances)
+        else:
+            reach = np.percentile(distances, percentile)
+        grow = float(np.clip(reach, 0.0, limit))
         lines.append((normal, normal @ a + grow))
 
     grown = []

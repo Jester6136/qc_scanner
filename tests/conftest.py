@@ -64,16 +64,23 @@ def scan_cache(scan_cache_qc):
 
 @pytest.fixture(scope="session")
 def scan_cache_inscribed():
-    """name -> PNG bytes, với QC-17 TẮT (cắt theo tứ giác nội tiếp).
+    """name -> PNG bytes, với QC-17 và QC-19 TẮT (cắt theo tứ giác nội tiếp, không xoay).
 
     Ảnh `examples/*.out.png` là đầu ra của thuật toán gốc, nên bộ hồi quy so byte
-    với chúng phải chạy ở đúng chế độ đó. QC-17 cố ý đổi khung cắt (nới ra bao mép
-    giấy cong) — kiểm nó bằng bài riêng, chứ không bằng cách hạ ngưỡng bài này.
+    với chúng phải chạy ở đúng chế độ đó. QC-17 (nới cạnh bao mép giấy cong) và QC-19
+    (nắn thẳng phần dư) đều **cố ý** đổi khung cắt — kiểm chúng bằng bài riêng, chứ
+    không bằng cách dời mốc so sánh.
+
+    Đã thử dựng lại `examples/*.out.png` bằng pipeline đầy đủ và **đó là việc sai**:
+    mốc hồi quy khi ấy trôi theo mọi tính năng mới, nên nó thôi phát hiện được thứ nó
+    sinh ra để phát hiện — chất lượng tụt dần một cách im lặng. Mốc phải đứng yên;
+    thứ thay đổi là danh sách tính năng được tắt ở đây, và mỗi dòng tắt là một tính
+    năng đã có bài kiểm riêng.
     """
     from qc_scanner.config import Config
     from qc_scanner.doc import scan_qc
 
-    config = Config(contain_paper_contour=False)
+    config = Config(contain_paper_contour=False, deskew=False)
     return {p.name: scan_qc(p.input_bytes, config=config).image for p in PAIRS}
 
 
