@@ -109,7 +109,6 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
 
     metrics.detector = quad.detector
     metrics.detector_confidence = quad.confidence
-    reasons += _geometry_reasons(quad.corners, work, cfg, metrics)
 
     if cfg.cross_check_detectors:
         reasons += _cross_check(quad, work, mask, cfg, metrics)
@@ -119,7 +118,21 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
             Reason.of("MULTIPLE_DOCUMENTS", f"contour_candidates={len(candidates)}")
         )
 
-    corners = geo.expand(quad.corners, cfg.edge_expand_px, work.shape)
+    # Phán quyết hình học nói về **biên tờ giấy detector tìm được**, không nói về lề
+    # cắt. Đã thử đo trên tứ giác đã nới và **đo thấy hỏng**: nới làm góc chạm mép ảnh
+    # nên 5 ảnh vốn `pass` bị đẩy sang `warn` (CLIPPED_EDGE), và ca hỏng thật
+    # `abc1b13…` thoát `NO_CROP_DETECTED` vì góc lệch ra ngoài bị kẹp lại thành 0.
+    reasons += _geometry_reasons(quad.corners, work, cfg, metrics)
+
+    # QC-17: chỉ tới đây mới nới, và chỉ để CẮT — mép giấy cong thì dây cung nối hai
+    # góc nằm trong tờ giấy và cắt lẹm vào nội dung.
+    corners = quad.corners
+    if cfg.contain_paper_contour and quad.contour is not None:
+        corners = geo.containing_quad(
+            corners, quad.contour, work.shape, cfg.max_edge_grow_ratio
+        )
+    corners = geo.expand(corners, cfg.edge_expand_px, work.shape)
+
     reasons = _content_reasons(orig, corners * ratio, cfg, metrics, reasons)
 
     warped = perspective.four_point_transform(orig, corners * ratio)

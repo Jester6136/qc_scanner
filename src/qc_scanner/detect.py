@@ -26,6 +26,13 @@ class QuadCandidate:
     confidence: float
     detector: str
 
+    contour: Optional[np.ndarray] = None
+    """Contour gốc sinh ra tứ giác này, nếu detector có.
+
+    Lõi QC dùng nó để nới cạnh ra bao trọn mép giấy cong (QC-17). Detector nào
+    không làm việc trên contour (edge-hough) thì để `None` và bước đó tự bỏ qua.
+    """
+
     def __post_init__(self):
         self.corners = geo.order_corners(self.corners)
 
@@ -74,7 +81,9 @@ class RembgContourDetector(Detector):
                 confidence = 0.6  # phải ép về hình chữ nhật xoay → kém chắc chắn
             else:
                 confidence = 0.9
-            out.append(QuadCandidate(polygon.reshape(4, 2), confidence, self.name))
+            out.append(
+                QuadCandidate(polygon.reshape(4, 2), confidence, self.name, contour=c)
+            )
         return out
 
     def find_quad(self, work_img, mask, config: Config):

@@ -62,6 +62,21 @@ def scan_cache(scan_cache_qc):
     return {name: r.image for name, r in scan_cache_qc.items()}
 
 
+@pytest.fixture(scope="session")
+def scan_cache_inscribed():
+    """name -> PNG bytes, với QC-17 TẮT (cắt theo tứ giác nội tiếp).
+
+    Ảnh `examples/*.out.png` là đầu ra của thuật toán gốc, nên bộ hồi quy so byte
+    với chúng phải chạy ở đúng chế độ đó. QC-17 cố ý đổi khung cắt (nới ra bao mép
+    giấy cong) — kiểm nó bằng bài riêng, chứ không bằng cách hạ ngưỡng bài này.
+    """
+    from qc_scanner.config import Config
+    from qc_scanner.doc import scan_qc
+
+    config = Config(contain_paper_contour=False)
+    return {p.name: scan_qc(p.input_bytes, config=config).image for p in PAIRS}
+
+
 def decode(png_bytes, flags=cv2.IMREAD_COLOR):
     return cv2.imdecode(np.frombuffer(png_bytes, np.uint8), flags)
 

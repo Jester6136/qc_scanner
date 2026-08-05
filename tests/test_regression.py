@@ -59,8 +59,8 @@ def content_similarity(got, ref):
     return float((af * bf).sum() / denom) if denom else 0.0
 
 
-def test_aspect_ratio_holds(pair, scan_cache):
-    got = decode(scan_cache[pair.name])
+def test_aspect_ratio_holds(pair, scan_cache_inscribed):
+    got = decode(scan_cache_inscribed[pair.name])
     ref = cv2.imread(str(pair.expected_path))
     got_aspect = got.shape[0] / got.shape[1]
     ref_aspect = ref.shape[0] / ref.shape[1]
@@ -69,11 +69,72 @@ def test_aspect_ratio_holds(pair, scan_cache):
     )
 
 
-def test_content_matches_reference(pair, scan_cache):
-    got = decode(scan_cache[pair.name])
+def test_content_matches_reference(pair, scan_cache_inscribed):
+    got = decode(scan_cache_inscribed[pair.name])
     ref = cv2.imread(str(pair.expected_path))
     score = content_similarity(got, ref)
     assert score > NCC_THRESHOLD, f"{pair.name}: NCC {score:.4f} < {NCC_THRESHOLD}"
+
+
+# --- QC-17: nới cạnh chỉ được THÊM lề, không được bớt nội dung --------------- #
+
+
+def test_containing_quad_only_adds_margin(pair, scan_cache, scan_cache_inscribed):
+    """Khung cắt mặc định phải **bao** khung cắt nội tiếp, không bao giờ nhỏ hơn.
+
+    Đây là bài thay cho việc so byte với ảnh mẫu ở chế độ mặc định: QC-17 cố ý đổi
+    khung cắt, nên câu hỏi đúng không còn là "có giống ảnh cũ không" mà là "có mất
+    gì so với ảnh cũ không".
+    """
+    grown = decode(scan_cache[pair.name])
+    inscribed = decode(scan_cache_inscribed[pair.name])
+    assert grown.shape[0] >= inscribed.shape[0]
+    assert grown.shape[1] >= inscribed.shape[1]
+
+
+def test_containing_quad_keeps_the_same_document(pair, scan_cache, scan_cache_inscribed):
+    """Nới lề không được biến nó thành tài liệu khác.
+
+    **Dò mẫu chứ không so pixel tại chỗ**: khung cắt mới rộng hơn nên nội dung cũ
+    nằm lệch đi vài phần trăm, và NCC so tại chỗ tụt xuống ~0.69 dù ảnh vẫn đúng.
+    Câu hỏi đúng là "ruột ảnh cũ có nằm ở đâu đó trong ảnh mới không", và
+    `matchTemplate` trả lời được điều đó bất kể lệch bao nhiêu.
+
+    Không có bài này thì `containing_quad` có thể nhảy sang một tứ giác hoàn toàn
+    khác mà bài "chỉ thêm lề" ở trên vẫn xanh.
+    """
+    score = _contains_content(
+        decode(scan_cache[pair.name]), decode(scan_cache_inscribed[pair.name])
+    )
+    assert score > NCC_THRESHOLD, f"{pair.name}: khớp mẫu {score:.4f}"
+
+
+def test_match_template_rejects_a_different_document(scan_cache, scan_cache_inscribed):
+    """Chốt chặn cho chính phép đo ở trên — nó phải TRƯỢT khi đưa nhầm tài liệu."""
+    names = sorted(scan_cache)
+    score = _contains_content(
+        decode(scan_cache[names[0]]), decode(scan_cache_inscribed[names[4]])
+    )
+    assert score < NCC_THRESHOLD, f"khớp nhầm hai tài liệu khác nhau: {score:.4f}"
+
+
+def _contains_content(outer, inner, width=400, keep=0.6):
+    """Điểm khớp cao nhất khi tìm ruột `inner` bên trong `outer`, cùng tỉ lệ."""
+    scale = width / outer.shape[1]
+    big = cv2.resize(gray(outer), (width, max(1, round(outer.shape[0] * scale))))
+    small = cv2.resize(
+        gray(inner),
+        (
+            max(1, round(inner.shape[1] * scale)),
+            max(1, round(inner.shape[0] * scale)),
+        ),
+    )
+    h, w = small.shape
+    dy, dx = int(h * (1 - keep) / 2), int(w * (1 - keep) / 2)
+    template = small[dy : h - dy, dx : w - dx]
+    if template.shape[0] > big.shape[0] or template.shape[1] > big.shape[1]:
+        return 0.0
+    return float(cv2.matchTemplate(big, template, cv2.TM_CCOEFF_NORMED).max())
 
 
 def test_metric_rejects_wrong_document(scan_cache):

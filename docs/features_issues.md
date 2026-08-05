@@ -311,6 +311,41 @@ số đo trên tập vàng. `CLIPPED_EDGE` giữ nguyên mức `warn` cho ca ch�
 
 ---
 
+### 🧱 QC-17 · P0 · 🟢 · Mép giấy CONG bị cắt lẹm vào nội dung {#qc-containing-quad}
+
+> **✅ Đã làm 2026-08-05.** Từ ảnh `04.58.45` khách chỉ ra: "crop được rồi nhưng do nó cong cong
+> nên bị lẹm".
+
+`approxPolyDP` trả tứ giác **nội tiếp** — nó nối 4 góc bằng đường thẳng. Tờ giấy cong thì mép
+vồng ra *ngoài* dây cung, và `four_point_transform` cắt đúng theo dây cung → **lẹm vào nội dung
+ở giữa cạnh**. Ảnh `04.59.48` mất nguyên dòng cuối *"Thông tin chi tiết được thể hiện tại mã QR"*.
+
+Đây chính là phần "giấy cong" mà [S-5](#s-dewarp) đo và kết luận là hiếm — và kết luận đó vẫn
+đúng: **cong ít cũng đủ gây lẹm**, dù không đủ để cần dewarping lưới.
+
+**Đã làm**: `geo.containing_quad()` — đẩy từng cạnh ra ngoài cho tới khi bao trọn contour, giữ
+nguyên **hướng** 4 cạnh. Đầu ra vẫn là phép nắn phối cảnh 4 điểm nên rẻ, không thêm phụ thuộc,
+không đụng phần còn lại của luồng. Nó **không duỗi thẳng** giấy cong — chỉ thôi cắt lẹm.
+
+Đổi lại là thêm chút nền quanh mép; theo [EX-1](need_exchange.md) mất viền còn hơn mất chữ.
+Đo trên 45 ảnh: diện tích tăng **trung vị 4.6%**, nhiều nhất 17% — không ca nào phình bất
+thường. `max_edge_grow_ratio` chặn ca mask lỗi có gai nhọn.
+
+**Một cái bẫy đã sập rồi mới thấy**: lần đầu tôi đo hình học trên tứ giác **đã nới**, và nó hỏng
+— nới làm góc chạm mép ảnh nên **5 ảnh vốn `pass` bị đẩy sang `warn`** (`CLIPPED_EDGE`), còn ca
+hỏng thật `abc1b13…` **thoát** `NO_CROP_DETECTED` vì góc lệch ra ngoài bị kẹp lại thành 0. Sửa:
+phán quyết hình học nói về **biên tờ giấy detector tìm được**; nới chỉ là lề khi cắt. Sau đó
+phân bố verdict không đổi (17 warn · 15 fail · 13 pass), chỉ 4 ảnh đổi mã.
+
+**Ảnh hưởng tới bộ hồi quy**: `examples/*.out.png` là đầu ra thuật toán gốc, nên NCC tụt còn
+0.56 — test bắt đúng thứ nó sinh ra để bắt, chỉ là lần này thay đổi có chủ ý. Tách làm hai:
+bài cũ chạy với `contain_paper_contour=False` (giữ nguyên chức năng canh thuật toán gốc không
+trôi), và hai bài mới cho QC-17 — "chỉ được thêm lề, không được bớt" và "ruột ảnh cũ phải nằm
+trong ảnh mới" (dò mẫu, vì so pixel tại chỗ tụt xuống 0.69 do lệch, dù ảnh vẫn đúng), kèm một
+bài chốt chặn bắt chính phép dò mẫu phải trượt khi đưa nhầm tài liệu khác.
+
+---
+
 ### 🧱 QC-15 · P1 · 🟢 · `SUBJECT_FILLS_FRAME` — chiếm hết khung, tự nó, không phải lỗi {#qc-fills-frame}
 
 > **✅ Đã làm 2026-08-05**, theo yêu cầu "cởi mở hơn: không chém vào chữ thì vẫn dùng được".

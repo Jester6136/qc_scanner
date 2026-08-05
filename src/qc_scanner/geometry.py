@@ -112,6 +112,57 @@ def median_brightness(image):
     return float(np.median(_gray(image)))
 
 
+def containing_quad(corners, contour, shape, max_grow_ratio=0.05):
+    """Đẩy 4 cạnh ra ngoài cho tới khi tứ giác **bao trọn** contour (QC-17).
+
+    `approxPolyDP` cho tứ giác **nội tiếp**: nó nối 4 góc bằng đường thẳng. Mép tờ
+    giấy cong thì phần vồng ra nằm *ngoài* dây cung, và `four_point_transform` cắt
+    lẹm đúng chỗ đó — ảnh thật `04.59.02` mất nguyên dòng cuối vì vậy.
+
+    Giữ nguyên **hướng** 4 cạnh nên đầu ra vẫn là phép nắn phối cảnh 4 điểm, không
+    phải dewarp lưới: rẻ, không thêm phụ thuộc, và không đụng vào phần còn lại của
+    luồng. Nó KHÔNG duỗi thẳng được giấy cong — chỉ thôi cắt lẹm vào chỗ cong.
+
+    Đổi lại là thêm chút nền quanh mép, và theo [EX-1] thì mất viền còn hơn mất chữ.
+    Đo trên 45 ảnh: diện tích tăng trung vị 4.6%, nhiều nhất 17%.
+
+    `max_grow_ratio` chặn ca bệnh lý: mask lỗi có một gai nhọn thì cạnh không bị đẩy
+    ra vô hạn. Tính theo cạnh ngắn của ảnh làm việc.
+    """
+    pts = np.asarray(contour, dtype=np.float64).reshape(-1, 2)
+    quad = order_corners(corners).astype(np.float64)
+    center = quad.mean(axis=0)
+    limit = max_grow_ratio * min(shape[:2])
+
+    lines = []
+    for i in range(4):
+        a, b = quad[i], quad[(i + 1) % 4]
+        edge = b - a
+        normal = np.array([-edge[1], edge[0]], dtype=np.float64)
+        length = np.linalg.norm(normal)
+        if length < 1e-9:
+            return order_corners(corners)
+        normal /= length
+        if normal @ (a - center) < 0:  # ép pháp tuyến hướng RA NGOÀI
+            normal = -normal
+        grow = float(np.clip(np.max((pts - a) @ normal), 0.0, limit))
+        lines.append((normal, normal @ a + grow))
+
+    grown = []
+    for i in range(4):
+        (n1, c1), (n2, c2) = lines[i - 1], lines[i]
+        matrix = np.array([n1, n2])
+        if abs(np.linalg.det(matrix)) < 1e-9:  # hai cạnh gần song song
+            return order_corners(corners)
+        grown.append(np.linalg.solve(matrix, np.array([c1, c2])))
+
+    h, w = shape[:2]
+    grown = np.asarray(grown, dtype=np.float32)
+    grown[:, 0] = np.clip(grown[:, 0], 0, w - 1)
+    grown[:, 1] = np.clip(grown[:, 1], 0, h - 1)
+    return order_corners(grown)
+
+
 def corners_outside(corners, shape):
     """Góc nào lọt ra ngoài khung ảnh, và lọt bao xa (pixel). 0 nếu nằm gọn bên trong."""
     height, width = shape[:2]

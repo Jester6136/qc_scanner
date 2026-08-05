@@ -72,6 +72,20 @@ class Config:
     "tài liệu chiếm hết khung" với "detector trả lại chính khung hình".
     """
 
+    contain_paper_contour: bool = True
+    """Nới 4 cạnh tứ giác ra cho tới khi bao trọn mép giấy, trước khi nắn (QC-17).
+
+    Tắt đi thì quay lại hành vi cũ: cắt theo tứ giác nội tiếp, và **cắt lẹm vào chỗ
+    mép giấy cong**.
+    """
+
+    max_edge_grow_ratio: float = 0.05
+    """Mỗi cạnh được đẩy ra tối đa bấy nhiêu lần cạnh ngắn của ảnh làm việc (QC-17).
+
+    Chặn ca bệnh lý: mask lỗi có một gai nhọn thì cạnh không bị đẩy ra vô hạn. Đo
+    trên 45 ảnh, mức nới thật cần rất nhỏ — diện tích chỉ tăng trung vị 4.6%.
+    """
+
     no_crop_min_confidence: float = 0.9
     """Detector tự tin từ mức này trở lên thì "giấy đầy khung" KHÔNG bị coi là lỗi.
 

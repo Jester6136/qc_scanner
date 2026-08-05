@@ -114,7 +114,8 @@ scan_qc(data, config) -> ScanResult
     có cắt thật, mà chỗ cắt CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
     ≥2 ứng viên → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
- 9. warp trên ảnh GỐC, PNG
+ 9. QC-17: nới 4 cạnh ra bao trọn contour (mép giấy cong vồng ra ngoài dây cung)
+    warp trên ảnh GỐC, PNG
 10. metric chất lượng → LOW_RESOLUTION · BLURRY · GLARE · TOO_DARK
 11. verdict suy từ reasons; pass ⟺ reasons rỗng
 ```
