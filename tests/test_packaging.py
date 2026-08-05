@@ -145,7 +145,7 @@ def test_the_ignore_rule_covers_scratch_dirs_that_do_not_exist_yet():
 
     assert not leaking, (
         f"tên thư mục nháp KHÔNG bị chặn: {leaking} — "
-        "dùng glob (vd `tmp[-_]*`) thay vì liệt kê từng thư mục"
+        "dùng glob (vd `tmp_*` và `tmp-*`) thay vì liệt kê từng thư mục"
     )
 
 
@@ -154,7 +154,7 @@ def test_no_directory_on_disk_holding_real_images_escapes_the_fence():
 
     Bổ sung cho test trên chứ không thay thế: test kia kiểm quy tắc và chạy ở mọi
     nơi; test này kiểm hiện trạng và **chỉ có tác dụng trên máy có ảnh khách**. Nếu
-    ai đó để ảnh vào `anh_khach/` thì glob `tmp[-_]*` không cứu được, chỉ có phép
+    ai đó để ảnh vào `anh_khach/` thì glob `tmp_*` không cứu được, chỉ có phép
     quét này thấy.
     """
     image_dirs = []
@@ -176,4 +176,68 @@ def test_no_directory_on_disk_holding_real_images_escapes_the_fence():
     assert not leaking, (
         f"thư mục có ảnh nhưng KHÔNG bị chặn: {leaking} — "
         "ảnh khách sẽ vào git hoặc vào image đem giao"
+    )
+
+
+def _go_match_error(pattern):
+    """Mẫu này có làm `filepath.Match` của Go trả `ErrBadPattern` không?
+
+    Chép lại đúng luật lớp ký tự của Go: sau `[` (và `^` nếu có) thì ký tự đầu
+    KHÔNG được là `-` hay `]`, hai đầu của một khoảng `lo-hi` cũng vậy, và `[`
+    phải được đóng.
+    """
+    i, n = 0, len(pattern)
+    while i < n:
+        if pattern[i] != "[":
+            i += 1 + (pattern[i] == "\\" and i + 1 < n)
+            continue
+        i += 1
+        if i < n and pattern[i] == "^":
+            i += 1
+        first = True
+        while True:
+            if i >= n:
+                return "lớp ký tự `[` không được đóng"
+            if pattern[i] == "]" and not first:
+                i += 1
+                break
+            if pattern[i] in "-]":
+                return f"`{pattern[i]}` đứng sai chỗ trong lớp ký tự"
+            i += 1
+            first = False
+            if i < n and pattern[i] == "-":
+                i += 1
+                if i >= n or pattern[i] in "-]":
+                    return "đầu cuối của khoảng `lo-hi` sai"
+                i += 1
+    return None
+
+
+def test_dockerignore_patterns_are_ones_docker_itself_can_parse():
+    """Hàng rào phải hợp lệ với **bộ khớp mẫu của Docker**, không phải của Python.
+
+    `.dockerignore` từng viết `tmp[-_]*`. `fnmatch` nhận, nên hai test trên đều xanh
+    và tôi tưởng đã xong. Docker thì dùng `filepath.Match` của Go, hàm này coi `-`
+    ngay sau `[` là lỗi cú pháp — `docker compose build` chết ngay ở bước đọc file,
+    "syntax error in pattern", chưa kịp build dòng nào.
+
+    Đây là lỗi tệ hơn bỏ sót một thư mục: hàng rào viết ra để bảo vệ image lại làm
+    chính image không dựng được. Và nó lọt vì test kiểm bằng một bộ khớp mẫu **khác**
+    với bộ sẽ thực sự chạy — hai test kia vẫn cần thiết, nhưng chúng chỉ trả lời
+    "mẫu có chặn đúng thứ cần chặn không", không trả lời "Docker có đọc nổi mẫu này
+    không". `.gitignore` không nằm trong diện kiểm: git dùng `fnmatch`, `*.py[cod]`
+    ở đó là hợp lệ.
+    """
+    broken = {}
+    for name in _ignore_files():
+        if name == ".gitignore":
+            continue
+        for pattern in _dockerignore_patterns(name):
+            error = _go_match_error(pattern)
+            if error:
+                broken[f"{name}: {pattern}"] = error
+
+    assert not broken, (
+        f"Docker sẽ không parse nổi mẫu này: {broken} — "
+        "build hỏng hoàn toàn, tách thành nhiều dòng glob đơn giản"
     )

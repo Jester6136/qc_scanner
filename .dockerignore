@@ -7,8 +7,15 @@
 # lỗi mà dòng chú thích ngay trên đang cảnh báo. Danh sách liệt kê tay đòi hỏi ai đó
 # nhớ ra; glob thì mặc định đã chặn, và mặc định phải nghiêng về phía an toàn.
 # `tests/test_packaging.py` khoá quy tắc này lại.
+#
+# Hai dòng glob rời, KHÔNG viết gộp `tmp[-_]*`: bộ khớp mẫu của Docker là
+# `filepath.Match` của Go, mà hàm này coi `-` ngay sau `[` là lỗi cú pháp (nó chỉ
+# chờ `lo-hi`). Kết quả là `docker compose build` chết ngay ở bước đọc file này với
+# "syntax error in pattern" — không phải bỏ sót ảnh, mà là không build được gì cả.
+# `fnmatch` của Python thì nhận `[-_]` bình thường, nên test không thấy.
 tmp
-tmp[-_]*
+tmp_*
+tmp-*
 *.jpg.bak
 
 .git

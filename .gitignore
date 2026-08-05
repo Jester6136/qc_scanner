@@ -17,5 +17,10 @@ __pycache__/
 # và nằm ngoài hàng rào — `git add -A` là ảnh CCCD/sổ đỏ vào lịch sử git vĩnh viễn,
 # nơi xoá đi cũng không thật sự mất. Hàng rào tương ứng ở `.dockerignore` (và
 # `Dockerfile.test.dockerignore`) đã dính đúng lỗi này cùng lúc.
+#
+# Hai dòng rời thay cho `tmp[-_]*` để giống hệt `.dockerignore` — bên đó bắt buộc
+# phải tách vì Docker báo lỗi cú pháp với `[-_]`. Hai hàng rào viết cùng một kiểu
+# thì sửa một chỗ là nhớ sửa chỗ kia.
 tmp
-tmp[-_]*
+tmp_*
+tmp-*
