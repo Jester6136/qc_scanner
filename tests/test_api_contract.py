@@ -4,12 +4,15 @@ Khác `test_surfaces.py`: file kia hỏi "bốn mặt tiền có cho cùng kết
 file này hỏi "hình dạng phản hồi có đúng như [docs/api.md](../docs/api.md) không".
 Sửa API mà quên sửa tài liệu → test đỏ.
 
-Không dùng `requests`/cổng thật: `app.test_client()` đi qua đúng lớp Flask, không
-cần dựng process, chạy được trong CI không mạng.
+Không dựng cổng thật: `TestClient` của FastAPI đi qua đúng lớp ASGI của ứng dụng,
+không cần process riêng, chạy được trong CI không mạng.
+
+Bộ test này **không đổi khi đổi framework**. Nó viết theo `docs/api.md` chứ không
+theo Flask hay FastAPI — và chính vì thế nó là thứ chứng minh việc chuyển sang
+FastAPI không làm gãy tích hợp của khách.
 """
 
 import base64
-import io
 
 import pytest
 
@@ -24,42 +27,45 @@ REQUIRED_REASON_FIELDS = {"code", "severity", "message", "hint", "audience", "hi
 
 @pytest.fixture(scope="module")
 def client():
+    from fastapi.testclient import TestClient
+
     from qc_scanner.cmd.server import app
 
-    return app.test_client()
+    return TestClient(app)
 
 
-def _post(client, pair=SAMPLE, query="", data=None):
-    payload = data if data is not None else {
-        "file": (pair.input_path.open("rb"), pair.input_path.name)
-    }
-    return client.post(f"/{query}", data=payload)
+def _files(pair=SAMPLE):
+    return {"file": (pair.input_path.name, pair.input_path.read_bytes())}
+
+
+def _post(client, pair=SAMPLE, query="", files=None):
+    return client.post(f"/{query}", files=files if files is not None else _files(pair))
 
 
 # --- Hình dạng phản hồi thành công ------------------------------------------ #
 
 
 def test_json_response_has_the_documented_top_level_keys(client):
-    payload = _post(client, query="?format=json").get_json()
+    payload = _post(client, query="?format=json").json()
     assert set(payload) >= {"verdict", "reasons", "metrics", "image"}
     assert payload["verdict"] in {"pass", "warn", "fail"}
 
 
 def test_image_field_is_base64_png(client):
-    payload = _post(client, query="?format=json").get_json()
+    payload = _post(client, query="?format=json").json()
     assert base64.b64decode(payload["image"]).startswith(b"\x89PNG")
 
 
 def test_default_response_is_a_png_with_verdict_headers(client):
     resp = _post(client)
     assert resp.status_code == 200
-    assert resp.data.startswith(b"\x89PNG")
+    assert resp.content.startswith(b"\x89PNG")
     assert resp.headers["X-QC-Scanner-Verdict"] in {"pass", "warn"}
     assert "X-QC-Scanner-Reasons" in resp.headers
 
 
 def test_every_reason_carries_every_documented_field(client):
-    payload = _post(client, CLIPPED, "?format=json").get_json()
+    payload = _post(client, CLIPPED, "?format=json").json()
     assert payload["reasons"], "cần ảnh CÓ lý do thì bài này mới kiểm được gì"
     for reason in payload["reasons"]:
         assert REQUIRED_REASON_FIELDS <= set(reason)
@@ -68,7 +74,7 @@ def test_every_reason_carries_every_documented_field(client):
 
 
 def test_corners_are_four_points_in_original_coordinates(client):
-    payload = _post(client, query="?format=json").get_json()
+    payload = _post(client, query="?format=json").json()
     corners = payload["corners"]
     assert len(corners) == 4 and all(len(p) == 2 for p in corners)
 
@@ -79,25 +85,23 @@ def test_corners_are_four_points_in_original_coordinates(client):
 @pytest.mark.parametrize("pair", PAIRS, ids=lambda p: p.name)
 def test_pass_iff_no_reasons_over_http(client, pair):
     """Bất biến lõi phải sống sót qua tầng JSON, không chỉ đúng trong Python."""
-    payload = _post(client, pair, "?format=json").get_json()
+    payload = _post(client, pair, "?format=json").json()
     assert (payload["verdict"] == "pass") == (payload["reasons"] == [])
 
 
 @pytest.mark.parametrize("pair", PAIRS, ids=lambda p: p.name)
 def test_status_code_follows_verdict(client, pair):
     resp = _post(client, pair, "?format=json")
-    expected = 422 if resp.get_json()["verdict"] == "fail" else 200
+    expected = 422 if resp.json()["verdict"] == "fail" else 200
     assert resp.status_code == expected
 
 
 def test_fail_verdict_returns_json_even_without_format_json(client):
     """Ảnh fail thì không trả PNG trần — trả PNG là mời phía gọi dùng nhầm nó."""
-    resp = client.post(
-        "/", data={"file": (io.BytesIO(_tiny_unusable_png()), "x.png")}
-    )
+    resp = client.post("/", files={"file": ("x.png", _tiny_unusable_png())})
     assert resp.status_code == 422, "ảnh 40x40 toàn đen phải fail — nếu không, ca này vô nghĩa"
-    assert resp.is_json
-    assert not resp.data.startswith(b"\x89PNG")
+    assert resp.headers["content-type"].startswith("application/json")
+    assert not resp.content.startswith(b"\x89PNG")
 
 
 # --- Lỗi đầu vào: MỘT hình dạng duy nhất ------------------------------------ #
@@ -109,10 +113,8 @@ def test_missing_file_returns_the_same_error_shape_as_a_bad_image(client):
     Trước đây ca thiếu `file` trả `{"error": "<chuỗi>"}` còn ca ảnh hỏng trả
     `{"error": {...}}` — phía tích hợp phải đoán xem lần này nhận được cái gì.
     """
-    missing = client.post("/", data={}).get_json()
-    broken = client.post(
-        "/", data={"file": (io.BytesIO(b"not an image"), "x.jpg")}
-    ).get_json()
+    missing = client.post("/").json()
+    broken = client.post("/", files={"file": ("x.jpg", b"not an image")}).json()
 
     for payload in (missing, broken):
         assert isinstance(payload["error"], dict)
@@ -121,17 +123,17 @@ def test_missing_file_returns_the_same_error_shape_as_a_bad_image(client):
 
 
 @pytest.mark.parametrize(
-    "data,code",
+    "files,code",
     [
-        ({}, "MISSING_FILE"),
-        ({"file": (io.BytesIO(b""), "empty.jpg")}, "FILE_EMPTY"),
-        ({"file": (io.BytesIO(b"not an image"), "x.jpg")}, "DECODE_FAILED"),
+        (None, "MISSING_FILE"),
+        ({"file": ("empty.jpg", b"")}, "FILE_EMPTY"),
+        ({"file": ("x.jpg", b"not an image")}, "DECODE_FAILED"),
     ],
 )
-def test_input_errors_are_400_with_their_documented_code(client, data, code):
-    resp = client.post("/", data=data)
+def test_input_errors_are_400_with_their_documented_code(client, files, code):
+    resp = client.post("/", files=files) if files else client.post("/")
     assert resp.status_code == 400
-    assert resp.get_json()["error"]["code"] == code
+    assert resp.json()["error"]["code"] == code
 
 
 def test_unknown_audience_is_rejected_not_ignored(client):
@@ -144,7 +146,7 @@ def test_unknown_audience_is_rejected_not_ignored(client):
 
 def test_healthz(client):
     resp = client.get("/healthz")
-    assert resp.status_code == 200 and resp.get_json()["status"] == "ok"
+    assert resp.status_code == 200 and resp.json()["status"] == "ok"
 
 
 def test_get_root_is_gone_for_good(client):
@@ -155,8 +157,8 @@ def test_get_root_is_gone_for_good(client):
 def test_upload_limit_is_enforced(client):
     from qc_scanner.cmd.server import MAX_UPLOAD_BYTES
 
-    oversized = io.BytesIO(b"\x00" * (MAX_UPLOAD_BYTES + 1024))
-    resp = client.post("/", data={"file": (oversized, "big.jpg")})
+    oversized = b"\x00" * (MAX_UPLOAD_BYTES + 1024)
+    resp = client.post("/", files={"file": ("big.jpg", oversized)})
     assert resp.status_code == 413
 
 

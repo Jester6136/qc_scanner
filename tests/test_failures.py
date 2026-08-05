@@ -47,36 +47,32 @@ def test_cli_exits_nonzero_with_json_reason(tmp_path):
 
 @pytest.fixture
 def client():
+    from fastapi.testclient import TestClient
+
     from qc_scanner.cmd.server import app
 
-    return app.test_client()
+    return TestClient(app)
 
 
 def test_server_junk_returns_400_not_200(client):
     """Trước đây trả 200 + PNG rỗng 0 byte — hỏng âm thầm, tệ nhất."""
-    resp = client.post("/", data={"file": (_bytes_io(b"junk" * 40), "junk.png")})
+    resp = client.post("/", files={"file": ("junk.png", b"junk" * 40)})
     assert resp.status_code == 400
-    assert resp.get_json()["error"]["code"] == "DECODE_FAILED"
+    assert resp.json()["error"]["code"] == "DECODE_FAILED"
 
 
 def test_server_empty_file_returns_400(client):
     """BUG-3: `b"" == ""` luôn False nên chốt chặn cũ không bao giờ kích hoạt."""
-    resp = client.post("/", data={"file": (_bytes_io(b""), "empty.png")})
+    resp = client.post("/", files={"file": ("empty.png", b"")})
     assert resp.status_code == 400
-    assert resp.get_json()["error"]["code"] == "FILE_EMPTY"
+    assert resp.json()["error"]["code"] == "FILE_EMPTY"
 
 
 def test_server_missing_file_param_returns_400(client):
-    assert client.post("/", data={}).status_code == 400
+    assert client.post("/").status_code == 400
 
 
 def test_server_url_fetch_endpoint_is_gone(client):
     """SEC-1: `GET /?url=` đọc được file nội bộ — nhánh này phải biến mất hẳn."""
     resp = client.get("/?url=file:///etc/passwd")
     assert resp.status_code == 405
-
-
-def _bytes_io(data):
-    from io import BytesIO
-
-    return BytesIO(data)

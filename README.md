@@ -132,8 +132,8 @@ service ở máy A – ứng dụng ở máy B.
 > nhận `403 Forbidden`. Nhận ra bằng `curl -sI http://localhost:5000/healthz | grep Server` —
 > thấy `AirTunes` là dính. Chữa bằng `QC_SCANNER_PORT=8000`.
 >
-> Và lưu ý: **mở `/` bằng trình duyệt luôn ra 405**, kể cả khi mọi thứ đúng. API không có trang
-> web; chỉ có `POST /` và `GET /healthz`. Nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF.
+> Và lưu ý: **mở `/` bằng trình duyệt luôn ra 405**, kể cả khi mọi thứ đúng. Muốn thử bằng
+> trình duyệt thì vào **`/docs`** (Swagger UI). Nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF.
 
 > ⚠️ **Image này chưa từng được build thử** — máy phát triển hiện tại không chạy Docker được.
 > Xem [OPS-3](docs/features_issues.md#ops-docker-unverified). Lần đầu dựng trên máy server phải
@@ -151,6 +151,10 @@ curl -F "file=@photo.jpg" "http://127.0.0.1:5000/?format=json"   # ScanResult đ
 ```
 
 HTTP status theo verdict: 200 pass/warn · **422** fail · 400 đầu vào hỏng.
+
+Service viết bằng **FastAPI** chạy trên **uvicorn**, nên có sẵn Swagger UI ở **`/docs`** — gọi
+thử `POST /` ngay trên trình duyệt, không cần `curl`. Riêng `GET /` luôn trả **405** *có chủ ý*:
+API không có trang web, và nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF ([SEC-1](docs/features_issues.md#sec-ssrf)).
 
 > ⚠️ Server **không có xác thực**. Mặc định bind `127.0.0.1`; đặt sau reverse proxy có xác
 > thực nếu cần truy cập từ máy khác.

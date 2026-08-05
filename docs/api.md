@@ -47,7 +47,7 @@ Giới hạn kích thước upload: **32 MB** (vượt → `413`).
 | `200` | `verdict` là `pass` hoặc `warn` | PNG đã nắn, hoặc JSON nếu `?format=json` |
 | `422` | `verdict` là `fail` — ảnh hợp lệ nhưng đầu ra **không đáng tin cho OCR** | Luôn là JSON |
 | `400` | Đầu vào không đánh giá được (thiếu `file`, ảnh hỏng, tham số sai) | JSON `{"error": {...}}` |
-| `413` | File vượt 32 MB | Flask trả mặc định |
+| `413` | File vượt 32 MB | `{"error": "payload quá lớn"}` |
 
 **`422` không phải lỗi hệ thống.** Nó nghĩa là "đã xử lý xong, và kết luận là ảnh này không
 dùng được". Đừng retry — chụp lại hoặc đưa người soi mới là hành động đúng.
@@ -115,7 +115,22 @@ chuỗi trần. Ba mã hay gặp: `MISSING_FILE`, `FILE_EMPTY`, `DECODE_FAILED`.
 
 ---
 
-## 3. `GET /healthz`
+## 3. `GET /docs` — thử API bằng trình duyệt
+
+FastAPI dựng sẵn Swagger UI ở `/docs` (và OpenAPI JSON ở `/openapi.json`). Mở
+`http://<IP-máy-chạy>:5000/docs` là gọi thử được `POST /` ngay trên trình duyệt, không cần
+`curl`.
+
+> Trang này **mô tả** hợp đồng chứ không **định nghĩa** nó. Nguồn sự thật vẫn là tài liệu bạn
+> đang đọc, vì nhiều điều quan trọng nhất — `422` nghĩa là gì, bất biến `pass ⟺ reasons rỗng`,
+> mã nào ổn định vĩnh viễn — là quy ước, không suy ra được từ chữ ký hàm.
+>
+> Nó cũng công khai toàn bộ bề mặt API cho bất cứ ai gọi được vào cổng. Trong mạng nội bộ
+> (EX-12) thì chấp nhận được; đặt ở chỗ khác thì tắt bằng `FastAPI(docs_url=None)`.
+
+---
+
+## 4. `GET /healthz`
 
 Trả `200` và `{"status": "ok"}`. Dùng cho liveness probe.
 
@@ -124,7 +139,7 @@ Trả `200` và `{"status": "ok"}`. Dùng cho liveness probe.
 
 ---
 
-## 4. `GET /` → `405`
+## 5. `GET /` → `405`
 
 Nhánh `GET /?url=` cũ **đã bị bỏ hẳn** ([SEC-1](features_issues.md#sec-ssrf)): nó tải URL tuỳ ý
 do người dùng cung cấp, kể cả `file:///etc/passwd` và metadata nội bộ của cloud. Đừng khôi
@@ -132,7 +147,7 @@ phục. Có test chặn.
 
 ---
 
-## 5. Danh mục mã lý do
+## 6. Danh mục mã lý do
 
 20 mã, kèm điều kiện phát hiện và hướng xử lý:
 [algorithm.md §7](algorithm.md#7--danh-mục-mã-lý-do-reason-codes).
@@ -147,7 +162,7 @@ Nhóm theo hành động của phía gọi:
 
 ---
 
-## 6. Ví dụ
+## 7. Ví dụ
 
 ```bash
 # Chỉ lấy ảnh
@@ -174,10 +189,13 @@ esac
 
 ---
 
-## 7. Chưa có, và biết là chưa có
+## 8. Chưa có, và biết là chưa có
 
 - **Không có xác thực** — dựa hoàn toàn vào việc chỉ chạy trong mạng nội bộ (EX-12).
 - **Không có giới hạn tần suất**; một request nặng ~0.4s CPU.
+- **Một tiến trình, không `workers`** — mỗi worker nạp một bản model vào RAM, và onnxruntime
+  vốn đã dùng nhiều luồng. Cần thông lượng cao hơn thì chạy nhiều container sau một bộ cân
+  bằng tải, **đo trước rồi hãy làm**.
 - **Mỗi request một ảnh.** Không có khái niệm "hồ sơ nhiều trang" — một giấy chứng nhận chụp
   hai mặt là **hai** request độc lập. Việc ghép và kiểm đủ mặt thuộc hệ gọi, xem
   [EX-15](need_exchange.md#ex-multipage).

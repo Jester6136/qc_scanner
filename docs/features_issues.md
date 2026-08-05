@@ -204,6 +204,35 @@ Vòng lặp [doc.py:48-56](../src/qc_scanner/doc.py#L48-L56) `break` ngay ở t�
 
 ---
 
+### 🧱 N-12 · P1 · 🟢 · Chuyển HTTP service từ Flask sang FastAPI {#n-fastapi}
+
+> **✅ Đã làm 2026-08-05** theo yêu cầu khách.
+
+Flask + waitress → **FastAPI + uvicorn**. Hợp đồng trong [api.md](api.md) **không đổi một chữ**,
+và đó là điều đáng nói nhất: 30 test hợp đồng viết theo tài liệu chứ không theo framework, nên
+chúng là thứ chứng minh việc đổi nền không làm gãy tích hợp của khách. Chỉ phần *dựng client*
+trong test phải sửa (`app.test_client()` → `TestClient`), phần **khẳng định** thì y nguyên.
+
+**Một cái bẫy phải xử lý riêng**: FastAPI trả `422` cho lỗi validate tham số, mà `422` trong hợp
+đồng này đã mang nghĩa khác hẳn — *"ảnh hợp lệ nhưng đầu ra không đáng tin cho OCR"*. Để mặc
+định thì hai chuyện rất khác nhau (phía gọi truyền sai tham số / ảnh chụp hỏng) đội chung một
+mã, và phía tích hợp không phân biệt được nên retry hay sửa code. Nên tham số khai báo lỏng
+(`Optional[UploadFile]`, đọc query thủ công) rồi tự kiểm, để mọi lỗi đầu vào rơi về `400`.
+
+Giới hạn 32 MB cũng phải làm tay: Flask có `MAX_CONTENT_LENGTH`, Starlette thì không. Middleware
+chặn theo `Content-Length` **trước khi đọc thân request** — đọc rồi mới đo thì ảnh 2GB đã nằm
+trong RAM mất rồi, đúng thứ giới hạn này sinh ra để tránh.
+
+**Được thêm**: `/docs` (Swagger UI) — trả lời luôn câu "mở bằng trình duyệt không thấy gì".
+Nó **mô tả** hợp đồng chứ không định nghĩa; những thứ quan trọng nhất (nghĩa của `422`, bất biến
+`pass ⟺ reasons rỗng`, mã nào ổn định vĩnh viễn) là quy ước, không suy ra được từ chữ ký hàm.
+
+**Đã kiểm bằng service thật**, không chỉ `TestClient`: `/healthz` → 200 · `GET /` → 405 ·
+`/docs` → 200 · `POST /` → PNG 1088×1905 kèm `x-qc-scanner-verdict: warn` · thiếu `file` → 400 ·
+file rỗng → 400 `FILE_EMPTY` đúng hình dạng `{"error": {...}}`.
+
+---
+
 ### 🔴 OPS-3 · P0 · 🔴 · Dockerfile CHƯA BUILD THỬ LẦN NÀO {#ops-docker-unverified}
 
 [Dockerfile](../Dockerfile) được viết ở Giai đoạn 4 nhưng **chưa chạy `docker build` lần nào**

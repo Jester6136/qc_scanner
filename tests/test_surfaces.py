@@ -38,6 +38,16 @@ def _cli(args, stdin=None):
 OK_EXITS = {0, 1}
 
 
+def _client(app):
+    from fastapi.testclient import TestClient
+
+    return TestClient(app)
+
+
+def _file(pair):
+    return {"file": (pair.input_path.name, pair.input_path.read_bytes())}
+
+
 def test_cli_file_matches_library(lib_output, tmp_path):
     out = tmp_path / "out.png"
     proc = _cli([str(SAMPLE.input_path), str(out), "--quiet"])
@@ -54,12 +64,10 @@ def test_cli_pipe_matches_library(lib_output):
 def test_server_matches_library(lib_output):
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
-    resp = client.post(
-        "/", data={"file": (SAMPLE.input_path.open("rb"), SAMPLE.input_path.name)}
-    )
+    client = _client(app)
+    resp = client.post("/", files=_file(SAMPLE))
     assert resp.status_code == 200
-    assert resp.data == lib_output
+    assert resp.content == lib_output
 
 
 def test_rembg_runs_once_per_scan(monkeypatch):
@@ -108,10 +116,8 @@ def test_cli_report_to_file(tmp_path):
 def test_server_exposes_verdict_headers():
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
-    resp = client.post(
-        "/", data={"file": (SAMPLE.input_path.open("rb"), SAMPLE.input_path.name)}
-    )
+    client = _client(app)
+    resp = client.post("/", files=_file(SAMPLE))
     assert resp.status_code == 200
     assert resp.headers["X-QC-Scanner-Verdict"] in {"pass", "warn"}
     assert "X-QC-Scanner-Reasons" in resp.headers
@@ -122,12 +128,9 @@ def test_server_json_format_returns_full_result():
 
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
-    resp = client.post(
-        "/?format=json",
-        data={"file": (SAMPLE.input_path.open("rb"), SAMPLE.input_path.name)},
-    )
-    payload = resp.get_json()
+    client = _client(app)
+    resp = client.post("/?format=json", files=_file(SAMPLE))
+    payload = resp.json()
     assert payload["verdict"] in {"pass", "warn", "fail"}
     assert payload["metrics"]["alpha_coverage"] > 0
     assert base64.b64decode(payload["image"]).startswith(b"\x89PNG")
@@ -137,14 +140,11 @@ def test_server_selects_hint_tier_per_request():
     """QC-13: hệ gọi vào khai báo vai người đọc, cùng một ảnh ra hai lời khuyên."""
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
+    client = _client(app)
     hints = {}
     for who in ("capturer", "operator"):
-        resp = client.post(
-            f"/?format=json&audience={who}",
-            data={"file": (CLIPPED.input_path.open("rb"), CLIPPED.input_path.name)},
-        )
-        reasons = resp.get_json()["reasons"]
+        resp = client.post(f"/?format=json&audience={who}", files=_file(CLIPPED))
+        reasons = resp.json()["reasons"]
         assert reasons, "cần một ảnh CÓ lý do thì bài này mới kiểm được gì"
         assert all(r["audience"] == who for r in reasons)
         hints[who] = [r["hint"] for r in reasons]
@@ -154,11 +154,8 @@ def test_server_selects_hint_tier_per_request():
 def test_server_rejects_unknown_audience():
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
-    resp = client.post(
-        "/?audience=nobody",
-        data={"file": (SAMPLE.input_path.open("rb"), SAMPLE.input_path.name)},
-    )
+    client = _client(app)
+    resp = client.post("/?audience=nobody", files=_file(SAMPLE))
     assert resp.status_code == 400
 
 
@@ -166,14 +163,11 @@ def test_server_accepts_pre_cropped_flag():
     """QC-14: phía gọi khai báo ảnh đã cắt sẵn thì mã về biên phải biến mất."""
     from qc_scanner.cmd.server import app
 
-    client = app.test_client()
+    client = _client(app)
     codes = {}
     for query in ("", "&pre_cropped=1"):
-        resp = client.post(
-            f"/?format=json{query}",
-            data={"file": (CLIPPED.input_path.open("rb"), CLIPPED.input_path.name)},
-        )
-        codes[query] = {r["code"] for r in resp.get_json()["reasons"]}
+        resp = client.post(f"/?format=json{query}", files=_file(CLIPPED))
+        codes[query] = {r["code"] for r in resp.json()["reasons"]}
     assert "CLIPPED_EDGE" in codes[""]
     assert "CLIPPED_EDGE" not in codes["&pre_cropped=1"]
 
