@@ -64,15 +64,33 @@ MAX_CONCURRENCY = max(
     1, int(os.environ.get("QC_SCANNER_MAX_CONCURRENCY") or default_concurrency())
 )
 
-#: Trần **request đang bay** — đã nhận nhưng chưa trả lời xong. Van chặn *bộ nhớ*.
+#: Trần **request đang bay** — đã nhận nhưng chưa trả lời xong.
 #:
-#: Đo được trước khi có nó: `MAX_CONCURRENCY=2`, 24 client gọi cùng lúc → đúng 2
-#: request đang xử lý, nhưng **24 thân request trong RAM**.
+#: Sinh ra để chặn *bộ nhớ* (OPS-4): đo trước khi có nó, `MAX_CONCURRENCY=2` với 24
+#: client gọi cùng lúc cho đúng 2 request đang xử lý nhưng **24 thân request trong
+#: RAM**. Van hoạt động đúng — bắn 200 request vào máy server, nhận đúng 64 `200` và
+#: 136 `503`, không rò một suất nào.
 #:
-#: Mặc định `MAX_CONCURRENCY × 4`: đủ sâu để một đợt dồn ngắn vẫn được phục vụ (chờ
-#: khoảng 4 × thời gian xử lý một ảnh) mà vẫn chặn trần RAM ở `MAX_IN_FLIGHT × 32MB` —
-#: trên máy 64 nhân là 64 × 32MB = 2 GB, trong tổng 231 GB. Không có nó thì trần là
-#: threadpool của Starlette: 40 × 32MB = 1.28 GB, một con số không ai cố ý chọn.
+#: **Nhưng bộ nhớ hoá ra không phải thứ quyết định con số này.** Máy server có 231 GB;
+#: kể cả `MAX_IN_FLIGHT=64` thì trần RAM chỉ 2 GB. Thứ quyết định là **thời gian chờ**:
+#: request cuối hàng đợi chờ `MAX_IN_FLIGHT / thông lượng` giây trước khi được đụng tới.
+#:
+#: Đo trên máy 64 nhân (đỉnh 8.43 req/s, đạt được từ mức **32** request song song):
+#:
+#:     MAX_IN_FLIGHT   chờ tệ nhất   thêm thông lượng?
+#:                16         1.9s    có
+#:                32         3.8s    có
+#:                64         7.6s    KHÔNG — đỉnh đã đạt ở 32
+#:               128        15.2s    KHÔNG
+#:
+#: Nhận quá mức đạt đỉnh là **thêm thời gian chờ mà không thêm một req/s nào**. Nên
+#: `× 2` chứ không `× 4`: vẫn còn hàng đợi thật để nuốt một đợt dồn ngắn, nhưng chờ
+#: tệ nhất ~3.8s thay vì 7.6s. Với luồng realtime (người vừa chụp đang đứng chờ) thì
+#: nhận `503` ngay rồi thử lại còn hơn chờ 7.6s rồi mới biết, và [EX-3] chốt là có cả
+#: luồng realtime.
+#:
+#: Không có van này thì trần là threadpool của Starlette: 40 × 32MB = 1.28 GB, một con
+#: số không ai cố ý chọn.
 MAX_IN_FLIGHT = max(
-    1, int(os.environ.get("QC_SCANNER_MAX_IN_FLIGHT") or MAX_CONCURRENCY * 4)
+    1, int(os.environ.get("QC_SCANNER_MAX_IN_FLIGHT") or MAX_CONCURRENCY * 2)
 )

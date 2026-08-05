@@ -252,7 +252,7 @@ FastAPI dựng sẵn Swagger UI ở `/docs` (và OpenAPI JSON ở `/openapi.json
   "model": "u2net",
   "providers": ["CPUExecutionProvider"],
   "max_concurrency": 2,
-  "max_in_flight": 8,
+  "max_in_flight": 32,
   "in_flight": 0
 }
 ```
@@ -397,8 +397,14 @@ Hai nấc, theo thứ tự:
 là việc đúng; đối xử với nó như `fail` là loại nhầm một ảnh tốt.
 
 Vì sao có nấc thứ hai: thân request nằm trong RAM ngay khi tới, **trước khi** xin được suất xử
-lý. `max_concurrency` chặn *số ảnh đang xử lý*, không chặn *số ảnh đang chiếm bộ nhớ*. Trần
-thật là `max_in_flight × 32 MB`. Xem [OPS-4](features_issues.md#ops-inflight).
+lý. `max_concurrency` chặn *số ảnh đang xử lý*, không chặn *số ảnh đang chiếm bộ nhớ*. Xem
+[OPS-4](features_issues.md#ops-inflight).
+
+`max_in_flight` mặc định là `2 × max_concurrency`, và con số 2 đến từ số đo chứ không từ RAM:
+thông lượng đạt đỉnh 8.43 req/s ở mức 32 request song song, nên nhận nhiều hơn thế chỉ thêm
+thời gian chờ. Với `max_in_flight` = 32 thì request cuối hàng đợi chờ tối đa ~3.8s; để 64 thì
+7.6s mà **không thêm một req/s nào**. Bắn 200 request vào máy server cho đúng
+`max_in_flight` mã `200` và phần còn lại `503` — van không rò suất nào.
 
 ### Giới hạn phải tôn trọng
 

@@ -284,3 +284,22 @@ def test_queue_depth_is_reported_as_waiting_time_not_as_megabytes():
 
     assert "7.6s" in out, out  # 64 / 8.43
     assert "⚠️" in out, "chờ 7.6s mà không cảnh báo gì"
+
+
+def test_queue_depth_stops_where_throughput_stops_growing():
+    """`MAX_IN_FLIGHT` = 2 × `MAX_CONCURRENCY`, và con số 2 đến từ số đo.
+
+    Trên máy 64 nhân, thông lượng HTTP đạt đỉnh 8.43 req/s ở mức **32** request song
+    song (`MAX_CONCURRENCY` = 16, tức 2×). Nhận nhiều hơn thế là thêm thời gian chờ
+    mà **không thêm một req/s nào**:
+
+        MAX_IN_FLIGHT=32  → chờ tệ nhất 3.8s   (còn tăng thông lượng)
+        MAX_IN_FLIGHT=64  → chờ tệ nhất 7.6s   (KHÔNG tăng nữa)
+
+    Mặc định đầu tiên là ×4, đặt khi chưa có số đo nào và với lý do sai — tôi chọn nó
+    để chặn RAM, nhưng máy server có 231 GB nên 64 × 32MB = 2 GB chẳng bao giờ là ràng
+    buộc. Ràng buộc thật là thời gian chờ.
+    """
+    from qc_scanner import limits
+
+    assert limits.MAX_IN_FLIGHT == limits.MAX_CONCURRENCY * 2
