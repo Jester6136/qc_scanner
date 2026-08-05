@@ -318,7 +318,7 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 |---|---|
 | Mã lý do | 26 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 355 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 357 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
@@ -339,6 +339,18 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 
 GPU cho thông lượng thấp hơn vì VRAM còn trống chỉ đủ 2 luồng suy luận, trong khi bản CPU dùng
 được 16 luồng. Nhả thêm VRAM (`gpu_memory_utilization` của vLLM) sẽ đảo lại tương quan này.
+
+**Thông lượng bão hoà ở 16 luồng.** Quét đủ dải trên bản CPU: 1→1.69 · 2→2.75 · 4→4.51 ·
+8→6.02 · **16→7.81** · 24→8.06 · 32→7.30 · 48→8.26 · 64→7.96 ảnh/s. Từ 16 trở đi là dao động
+quanh ~8, nên `MAX_CONCURRENCY` mặc định (`cpu/4` → 16 trên máy này) nằm đúng chỗ.
+
+**Đường HTTP đạt đúng trần đó**: 8.43 req/s ở 32 request song song, so với 8.26 ảnh/s của lõi.
+Nhưng **mức nên khuyên bên gọi là 16** — 7.69 req/s (91% của đỉnh) với p50 1.75s, so với 2.55s
+ở mức 32. Đổi 46% độ trễ lấy 9.6% thông lượng là món lỗ cho người đang chờ.
+
+Trước khi sửa, đường HTTP khoá ở **2.86 req/s** vì `docker-compose.yml` ghi cứng
+`QC_SCANNER_MAX_CONCURRENCY: "2"` — số đo trên máy dev 10 nhân lọt vào file bàn giao. Mất ~64%
+năng lực máy, và mất trong im lặng: service chạy đúng, healthcheck xanh.
 
 **Dynamic batching**: đo trực tiếp trên H100 — batch 1 tốn 6.5 ms/ảnh, batch 32 tốn 2.73 ms/ảnh.
 Tiết kiệm 3.8 ms trên tổng 477 ms, tức **0.8%**, trong khi phần CPU 297 ms/ảnh không batch được.

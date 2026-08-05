@@ -374,8 +374,16 @@ bỏ phí phần lớn năng lực máy chủ.
 Nó suy theo số nhân CPU của máy chạy, nên khác nhau giữa các lần triển khai — **đừng ghi cứng
 trong code phía gọi**.
 
-Con số chính xác cho một máy cụ thể thì đo bằng `qc-scanner-bench --url …`, mục HTTP in sẵn
-"điểm gãy" — mức song song cuối cùng còn làm tăng thông lượng.
+Đo trên máy server 64 nhân (`max_concurrency` = 16) xác nhận con số đó là đúng chỗ:
+
+| Song song | req/s | p50 |
+|---|---|---|
+| 8 | 5.14 | 1.16s |
+| **16** | **7.69** | **1.75s** |
+| 32 | 8.43 | 2.55s |
+
+Gửi 32 thay vì 16 mua thêm 9.6% thông lượng và trả bằng **46% độ trễ** — món lỗ cho mọi người
+đang chờ. `qc-scanner-bench --url …` in thẳng mức nên khuyên cho từng máy.
 
 ### Vượt quá thì sao
 

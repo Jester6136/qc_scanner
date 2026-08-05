@@ -238,3 +238,49 @@ def test_limits_are_integers_everywhere():
     assert isinstance(limits.MAX_CONCURRENCY, int)
     assert isinstance(limits.MAX_IN_FLIGHT, int)
     assert isinstance(limits.default_concurrency(), int)
+
+
+def test_recommendation_prefers_latency_over_the_last_9_percent(capsys):
+    """Quy tắc khuyên mức song song phải đứng về phía **người đang chờ**.
+
+    Số đo thật trên máy 64 nhân:
+
+        16 request song song   7.69 req/s   p50 1.75s
+        32 request song song   8.43 req/s   p50 2.55s
+
+    Quy tắc đầu tiên ("mức cuối còn tăng thông lượng >5%") chọn 32: +9.6% thông lượng.
+    Nhưng p50 tăng **46%**. Đó là món hời cho máy chủ và món lỗ cho mọi người đang
+    chờ — mà bên gọi API mới là người đọc con số này.
+    """
+    from qc_scanner.bench import _recommend
+
+    _recommend(
+        [
+            (1, 1.80, 0.56), (2, 2.60, 0.77), (4, 3.25, 1.12),
+            (8, 5.14, 1.16), (16, 7.69, 1.75), (32, 8.43, 2.55),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "NÊN KHUYÊN: 16 request" in out, out
+
+
+def test_queue_depth_is_reported_as_waiting_time_not_as_megabytes():
+    """`MAX_IN_FLIGHT` được chọn theo **thời gian chờ**, không theo RAM.
+
+    Trên máy server: 64 × 32MB = 2 GB trong tổng 231 GB — bộ nhớ không bao giờ là ràng
+    buộc. Ràng buộc thật là "chờ bao lâu thì thà nhận 503 còn hơn", và đó là quyết
+    định vận hành nên nó phải hiện ra thành số chứ không nằm trong đầu tôi.
+    """
+    import io
+    from contextlib import redirect_stdout
+    from unittest import mock
+
+    from qc_scanner.bench import _recommend
+
+    buf = io.StringIO()
+    with mock.patch("qc_scanner.limits.MAX_IN_FLIGHT", 64), redirect_stdout(buf):
+        _recommend([(16, 7.69, 1.75), (32, 8.43, 2.55)])
+    out = buf.getvalue()
+
+    assert "7.6s" in out, out  # 64 / 8.43
+    assert "⚠️" in out, "chờ 7.6s mà không cảnh báo gì"

@@ -264,7 +264,7 @@ def bench_http(url, blobs, levels):
     # cả hai mới chọn được mức song song — nhìn mỗi req/s thì "gửi 64 cùng lúc" trông
     # y hệt "gửi 8 cùng lúc", chỉ khác là mọi người cùng phải chờ lâu gấp 8 lần.
     print(f"  {'song song':>9} {'req/s':>7} {'p50':>8} {'p95':>8}")
-    best, knee = 0.0, None
+    rows = []
     for n in levels:
         latencies.clear()
         t = time.perf_counter()
@@ -281,17 +281,58 @@ def bench_http(url, blobs, levels):
         p50 = done[len(done) // 2] if done else float("nan")
         p95 = done[max(0, int(len(done) * 0.95) - 1)] if done else float("nan")
         print(f"  {n:>9d} {rate:>7.2f} {p50:>7.2f}s {p95:>7.2f}s")
-        # "Điểm gãy" = mức cuối còn tăng thông lượng đáng kể (>5%). Quá đó thì thêm
-        # request song song chỉ mua thêm thời gian chờ.
-        if rate > best * 1.05:
-            best, knee = rate, n
+        rows.append((n, rate, p50))
 
-    if knee is not None:
+    _recommend(rows)
+
+
+def _recommend(rows):
+    """Mức song song **nên khuyên**: nhỏ nhất còn đạt ≥90% thông lượng đỉnh.
+
+    Quy tắc đầu tiên tôi viết ("mức cuối còn tăng thông lượng >5%") khuyên sai, và số
+    đo trên máy 64 nhân cho thấy sai ở đâu:
+
+        16 request song song   7.69 req/s   p50 1.75s
+        32 request song song   8.43 req/s   p50 2.55s
+
+    Nó chọn 32 vì +9.6% thông lượng vượt ngưỡng 5%. Nhưng cái giá là **p50 tăng 46%**.
+    Đổi 46% độ trễ lấy 9.6% thông lượng là món hời cho *máy chủ* và món lỗ cho **mọi
+    người đang chờ** — mà bên gọi API mới là người đọc con số này.
+
+    Nên đảo lại tiêu chí: gần chạm trần thông lượng, rồi lấy mức **rẻ nhất về độ trễ**
+    đạt được điều đó.
+    """
+    if not rows:
+        return
+    peak = max(rate for _, rate, _ in rows)
+    good = [(n, rate, p50) for n, rate, p50 in rows if rate >= peak * 0.9]
+    n, rate, p50 = min(good, key=lambda r: r[0])
+    print(
+        f"\n  NÊN KHUYÊN: {n} request song song — {rate:.2f} req/s "
+        f"({rate / peak * 100:.0f}% của đỉnh), p50 {p50:.2f}s."
+        "\n  Đây là con số đưa cho bên gọi API. Gửi nhiều hơn chỉ mua thêm thời gian"
+        "\n  chờ cho tất cả, gần như không thêm thông lượng."
+    )
+
+    from .limits import MAX_IN_FLIGHT
+
+    # Hàng đợi sâu bao nhiêu thì request cuối hàng chờ bấy lâu. Đây là con số quyết
+    # định `MAX_IN_FLIGHT` — KHÔNG phải RAM: 64 × 32MB = 2GB trên máy 231GB thì bộ nhớ
+    # chẳng bao giờ là ràng buộc. Ràng buộc thật là "chờ bao lâu thì thà nhận 503 còn
+    # hơn", và đó là quyết định vận hành, nên nó phải hiện ra thành số.
+    if peak > 0:
+        wait = MAX_IN_FLIGHT / peak
         print(
-            f"\n  Điểm gãy ≈ {knee} request song song ({best:.2f} req/s). Gửi nhiều hơn "
-            "không tăng\n  thông lượng, chỉ tăng độ trễ cho tất cả — đây là con số nên "
-            "đưa cho bên gọi API."
+            f"\n  MAX_IN_FLIGHT={MAX_IN_FLIGHT} → request cuối hàng chờ tối đa "
+            f"≈ {wait:.1f}s trước khi\n  được xử lý (trần RAM chỉ "
+            f"{MAX_IN_FLIGHT * 32 / 1024:.1f} GB, nên bộ nhớ không phải ràng buộc)."
         )
+        if wait > 5:
+            print(
+                "  ⚠️  Chờ quá 5s thì phía gọi thường đã timeout — nhận 503 ngay còn"
+                "\n      hơn chờ vô ích. Cân nhắc hạ QC_SCANNER_MAX_IN_FLIGHT xuống"
+                f"\n      ~{int(peak * 4)} (≈4s chờ)."
+            )
 
 
 def ccu_table(rate):
