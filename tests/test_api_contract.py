@@ -242,3 +242,27 @@ def test_scan_endpoint_does_not_block_the_event_loop():
     assert not inspect.iscoroutinefunction(scan_endpoint)
     # Ngược lại: healthz phải ở trên vòng lặp sự kiện thì mới trả lời nổi lúc bận.
     assert inspect.iscoroutinefunction(healthz)
+
+
+def test_require_gpu_kills_the_server_instead_of_running_slowly():
+    """SPD-4: container dựng cho GPU mà chạy CPU là lỗi cấu hình, không phải đường lui.
+
+    Một service chạy **đúng** mà chậm gấp 30 lần là kiểu hỏng tệ hơn service không
+    lên: healthcheck vẫn xanh, không ai được báo gì, và nó sống được nhiều tháng.
+    Đã dính đúng lần dựng đầu trên máy H100 — `/healthz` có nói thật, nhưng phải có
+    người nghĩ ra việc đi đọc nó.
+    """
+    import pytest
+
+    from qc_scanner.cmd.server import _enforce_gpu
+    from qc_scanner.config import Config
+
+    cpu_only = ["CPUExecutionProvider"]
+    # Mặc định: chạy chậm còn hơn không chạy.
+    _enforce_gpu(Config(), cpu_only)
+    # Bật cờ: phải chết, và chết với mã thoát riêng chứ không phải traceback.
+    with pytest.raises(SystemExit) as exc:
+        _enforce_gpu(Config(require_gpu=True), cpu_only)
+    assert exc.value.code == 3
+    # Có GPU thật thì đi tiếp bình thường.
+    _enforce_gpu(Config(require_gpu=True), ["CUDAExecutionProvider", *cpu_only])

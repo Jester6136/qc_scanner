@@ -194,6 +194,18 @@ class Config:
     để so tốc độ.
     """
 
+    require_gpu: bool = False
+    """Không có GPU thì **chết ngay lúc khởi động** thay vì lặng lẽ chạy CPU.
+
+    Mặc định tắt: chạy chậm còn hơn không chạy. Nhưng với container dựng riêng cho GPU
+    thì ngược lại — một service chạy đúng mà chậm gấp 30 lần là kiểu hỏng **tệ hơn**
+    một service không lên, vì nó không báo gì cả và có thể sống nhiều tháng như thế.
+    `docker-compose.gpu.yml` bật cờ này.
+
+    Đây là bài học từ lần dựng đầu trên máy H100: `/healthz` có nói đúng
+    `providers: [CPUExecutionProvider]`, nhưng phải có người nghĩ ra việc đi đọc nó.
+    """
+
     detector: str = "rembg-contour"
     """Detector đường chính: `rembg-contour` hoặc `edge-hough`."""
 

@@ -13,6 +13,7 @@ biệt được nên retry hay sửa code. Nên tham số khai báo lỏng rồi
 
 import argparse
 import os
+import sys
 import threading
 from typing import Optional
 
@@ -42,14 +43,31 @@ MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 # `MAX_CONCURRENCY` bên dưới là thứ chặn số nhân đó.
 starlette.formparsers.MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
 
-#: Số ảnh được xử lý cùng lúc. Xem `_scan_slots`.
-MAX_CONCURRENCY = max(1, int(os.environ.get("QC_SCANNER_MAX_CONCURRENCY", "2")))
+def _default_concurrency():
+    """Suy theo số nhân, không để hằng số 2 cứng.
 
-# Vì sao chặn, thay vì để threadpool của Starlette (40 luồng) chạy thoải mái:
-# phần nặng là onnxruntime, và nó **vốn đã dùng hết số nhân CPU** cho một lần suy
-# luận. Thả 40 lần suy luận song song không tăng thông lượng, chỉ làm mọi request
-# cùng chậm đi và ngốn 40 × ảnh RAM. Chặn lại thì request thứ N+1 **xếp hàng** —
-# chậm nhưng đoán được, thay vì tất cả cùng chậm không đoán được.
+    Vì sao phải chặn thay vì thả threadpool 40 luồng của Starlette chạy thoải mái:
+    phần nặng là onnxruntime và nó **vốn đã dùng hết số nhân CPU** cho một lần suy
+    luận. Thả 40 lần song song không tăng thông lượng, chỉ làm mọi request cùng chậm
+    và ngốn 40 × ảnh RAM. Chặn lại thì request thứ N+1 **xếp hàng** — chậm nhưng đoán
+    được, thay vì tất cả cùng chậm không đoán được.
+
+    Nhưng hằng số 2 là số đo trên máy phát triển **10 nhân**, và đem nguyên sang máy
+    64 nhân thì bỏ phí gần hết: đo trên máy đó, `scan_qc` trực tiếp đạt 8.7 ảnh/s ở
+    16 luồng (**vẫn còn đang tăng**) trong khi đường HTTP chỉ ra 4.9 req/s — chênh
+    lệch đó chính là cái van này khoá lại.
+
+    Quy tắc `cpu/8`, chặn trong [2, 16]: 10 nhân → 2 (giữ nguyên kết quả đã đo),
+    64 nhân → 8. Trần 16 vì bộ nhớ — mỗi ảnh đang xử lý giữ tới 32MB.
+    Máy có GPU thì phần CPU thành nút cổ chai, cứ đặt tay cao hơn.
+    """
+    return max(2, min(16, (os.cpu_count() or 4) // 8))
+
+
+MAX_CONCURRENCY = max(
+    1, int(os.environ.get("QC_SCANNER_MAX_CONCURRENCY") or _default_concurrency())
+)
+
 _scan_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
 app = FastAPI(
@@ -188,6 +206,45 @@ async def healthz():
     }
 
 
+#: Provider được coi là "chạy trên phần cứng tăng tốc".
+ACCELERATED = ("CUDA", "TensorRT", "ROCM", "MIGraphX", "OpenVINO", "CoreML", "DML")
+
+
+def _enforce_gpu(cfg: Config, providers):
+    """`QC_SCANNER_REQUIRE_GPU=1` → không có GPU thì **chết hẳn**, đừng chạy tiếp.
+
+    Vì sao đáng có: một service chạy **đúng** mà chậm gấp 30 lần là kiểu hỏng tệ hơn
+    một service không lên. Nó không báo gì, healthcheck vẫn xanh, và có thể sống như
+    thế nhiều tháng cho tới khi ai đó tình cờ đọc `/healthz`. Container dựng riêng
+    cho GPU thì "chạy được bằng CPU" **không phải** đường lui hợp lệ — nó là lỗi cấu
+    hình đang giả trang thành thành công.
+    """
+    if not cfg.require_gpu or any(p.startswith(ACCELERATED) for p in providers):
+        return
+    print(
+        "\n"
+        "╭──────────────────────────────────────────────────────────────────────╮\n"
+        "│ DỪNG: QC_SCANNER_REQUIRE_GPU đang bật nhưng KHÔNG có provider GPU.   │\n"
+        "╰──────────────────────────────────────────────────────────────────────╯\n"
+        f"  yêu cầu : {cfg.onnx_providers or '(tự dò)'}\n"
+        f"  thực tế : {providers}\n"
+        "\n"
+        "  Chẩn đoán theo thứ tự — dừng ở lệnh đầu tiên cho kết quả sai:\n"
+        "    nvidia-smi                                    # trong container: có thấy GPU?\n"
+        "    python -c \"import ctypes; ctypes.CDLL('libcuda.so.1')\"\n"
+        "                                                  # driver có nạp được?\n"
+        "    pip list | grep -i onnxruntime                # phải là onnxruntime-gpu\n"
+        "\n"
+        "  Hay gặp nhất: container không được cấp GPU (thiếu NVIDIA Container Toolkit,\n"
+        "  hoặc thiếu `deploy.resources.reservations.devices` trong compose).\n"
+        "\n"
+        "  Chấp nhận chạy CPU thì bỏ QC_SCANNER_REQUIRE_GPU.\n",
+        file=sys.stderr,
+        flush=True,
+    )
+    raise SystemExit(3)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="HTTP service chấm QC ảnh tài liệu.")
     ap.add_argument(
@@ -210,12 +267,13 @@ def main(argv=None):
         # In ra provider THẬT SỰ dùng. Đường GPU hỏng âm thầm: thiếu CUDA thì
         # onnxruntime lặng lẽ chạy CPU, không lỗi, chỉ chậm. Dòng log này là thứ
         # phân biệt "GPU đang chạy" với "tưởng là GPU đang chạy".
+        providers = active_providers(cfg.rembg_model, cfg.onnx_providers)
         print(
             f"qc-scanner {__version__} · model={cfg.rembg_model} · "
-            f"providers={active_providers(cfg.rembg_model, cfg.onnx_providers)} · "
-            f"max_concurrency={MAX_CONCURRENCY}",
+            f"providers={providers} · max_concurrency={MAX_CONCURRENCY}",
             flush=True,
         )
+        _enforce_gpu(cfg, providers)
 
     import uvicorn
 

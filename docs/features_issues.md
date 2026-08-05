@@ -748,6 +748,28 @@ khác cộng lại cũng không bằng đổi chỗ chạy cho model**.
    tuân theo. → chuyển sang **file đè lên cùng một service**, khi đó chạy nhầm cả hai là điều
    không thể diễn đạt được.
 
+**Lần dựng đầu trên máy H100 (64 nhân)**: build cả hai image OK, nhưng bên trong container GPU:
+
+```
+Available providers: 'AzureExecutionProvider, CPUExecutionProvider'
+```
+
+`onnxruntime-gpu` **có** cài (chốt chặn build đã pass), nhưng thư viện CUDA EP không nạp được —
+gần như luôn là **container không được cấp GPU** (thiếu NVIDIA Container Toolkit, hoặc
+`deploy.resources.reservations.devices` không có hiệu lực).
+
+Bài học không nằm ở việc chẩn đoán, mà ở chỗ **nó suýt trôi qua**: service vẫn chạy, vẫn trả
+ảnh đúng, healthcheck vẫn xanh, chỉ chậm gấp mấy chục lần. `/healthz` có nói thật, nhưng phải
+có người **nghĩ ra** việc đi đọc nó. → thêm `QC_SCANNER_REQUIRE_GPU`: container dựng riêng cho
+GPU mà không có GPU thì **chết hẳn** kèm ba lệnh chẩn đoán, thay vì chạy tiếp. Ở container đó,
+"chạy được bằng CPU" không phải đường lui hợp lệ — nó là lỗi cấu hình đang giả trang thành
+thành công.
+
+Cũng phát hiện `MAX_CONCURRENCY` mặc định `2` là **số đo trên máy 10 nhân** đem nguyên sang máy
+64 nhân: `scan_qc` trực tiếp đạt 8.7 ảnh/s ở 16 luồng và vẫn còn tăng, trong khi đường HTTP chỉ
+ra 4.9 req/s — chênh lệch đó chính là cái van khoá lại. → mặc định suy theo số nhân
+(`cpu/8`, chặn trong [2, 16]); máy 10 nhân vẫn ra 2 nên kết quả đã đo không đổi.
+
 Thêm chốt chặn lúc build cho lỗi đóng gói hay gặp nhất: cài nhầm `onnxruntime` (CPU) bên cạnh
 `onnxruntime-gpu`. Hai gói ghi đè lên nhau nên `import onnxruntime` lấy bản nào là ngẫu nhiên —
 và bản CPU chạy **đúng**, chỉ chậm gấp mấy chục lần. Thà đứt build còn hơn phát hiện sau.

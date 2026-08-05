@@ -300,7 +300,8 @@ def main(argv=None):
     warmup(cfg.rembg_model, cfg.onnx_providers)
     providers = active_providers(cfg.rembg_model, cfg.onnx_providers)
     print(f"  providers        {providers}")
-    if not any("CUDA" in p or "TensorRT" in p or "ROCM" in p for p in providers):
+    accelerated = any("CUDA" in p or "TensorRT" in p or "ROCM" in p for p in providers)
+    if not accelerated:
         print("  ⚠️  ĐANG CHẠY TRÊN CPU. Cài onnxruntime-gpu và đặt")
         print("      QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider")
         print("      (onnxruntime tụt về CPU trong im lặng — đây là chỗ nhìn ra).")
@@ -322,6 +323,12 @@ def main(argv=None):
 
     if not args.skip_batch:
         _hr("BATCH — dynamic batching đáng bao nhiêu")
+        if not accelerated:
+            # Không có cảnh báo này thì mục dưới rất dễ bị đọc nhầm thành câu trả lời
+            # cuối cùng — trong khi nó mới chỉ nói về CPU.
+            print("  ⚠️  ĐANG ĐO TRÊN CPU nên con số dưới đây KHÔNG trả lời được câu hỏi")
+            print("      về GPU. CPU đã bão hoà từ batch=1; đúng chỗ batching phát huy")
+            print("      (GPU rảnh, chờ đủ việc) thì chưa được đo. Sửa GPU rồi chạy lại.\n")
         per_image = bench_batch(cfg, [int(b) for b in args.batch.split(",")])
         if per_image:
             best_n = min(per_image, key=per_image.get)
@@ -333,7 +340,9 @@ def main(argv=None):
             print(f"  Phần CPU mỗi ảnh (batching KHÔNG chạm tới): {cpu * 1000:.1f} ms.")
             gain = saved / total if total else 0
             print(f"  → Cải thiện tối đa cho cả pipeline: **{gain * 100:.1f}%**")
-            if gain < 0.15:
+            if not accelerated:
+                print("  → CHƯA KẾT LUẬN ĐƯỢC: số trên đo bằng CPU. Sửa GPU rồi chạy lại.")
+            elif gain < 0.15:
                 print("  → Chưa đáng làm. Nút cổ chai nằm ở phần CPU; nhân số tiến trình")
                 print("    lên sẽ hiệu quả hơn nhiều mà không phải viết hàng đợi batching.")
             else:

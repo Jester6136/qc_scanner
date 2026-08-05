@@ -34,11 +34,18 @@ services:
       # YÊU CẦU gì, rồi đối chiếu với cái `/healthz` báo là thật sự ĐANG CHẠY.
       # Vẫn giữ CPU ở cuối làm đường lui — chạy chậm còn hơn không chạy.
       QC_SCANNER_ONNX_PROVIDERS: "CUDAExecutionProvider,CPUExecutionProvider"
+      # Không có GPU thì container CHẾT HẲN, không lặng lẽ chạy CPU.
+      # Ở container dựng riêng cho GPU, "chạy được bằng CPU" không phải đường lui hợp
+      # lệ — nó là lỗi cấu hình đang giả trang thành thành công, và nó sống được nhiều
+      # tháng vì healthcheck vẫn xanh. Đã dính đúng lần dựng đầu trên máy H100.
+      QC_SCANNER_REQUIRE_GPU: "1"
       # Nới hơn bản CPU: khi suy luận chạy trên GPU thì nút cổ chai chuyển sang phần
       # CPU (giải mã ảnh, mã hoá PNG), nên chồng nhiều request lên nhau mới có lợi.
-      # Con số 4 là ƯỚC ĐOÁN, chưa đo. Chỉnh lại sau khi chạy:
+      # Đo trên máy 64 nhân: `scan_qc` trực tiếp đạt 8.7 ảnh/s ở 16 luồng và VẪN CÒN
+      # đang tăng, trong khi đường HTTP với van đặt 4 chỉ ra 4.9 req/s. Nâng lên 16.
+      # Vẫn là ước đoán cho tới khi đo lại lúc GPU chạy thật:
       #     docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
-      QC_SCANNER_MAX_CONCURRENCY: "4"
+      QC_SCANNER_MAX_CONCURRENCY: "16"
 
     deploy:
       resources:
