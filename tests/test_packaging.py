@@ -78,3 +78,102 @@ def test_gpu_dockerfile_checks_packaging_after_the_last_install():
     last_install = text.rindex("pip install")
     guard = text.index("grep -qi '^onnxruntime=='")
     assert guard > last_install
+
+
+#: Đuôi file ảnh — thư mục gốc nào chứa những thứ này là thư mục ảnh thật.
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".tif", ".tiff", ".pdf"}
+
+#: Thư mục ảnh ĐƯỢC PHÉP vào image: ảnh mẫu tự dựng, không phải giấy tờ của ai.
+_ALLOWED_IMAGE_DIRS = {"examples"}
+
+
+def _dockerignore_patterns(name=".dockerignore"):
+    """Mẫu loại trừ, đã bỏ `/` đầu-cuối để so được bằng `fnmatch`.
+
+    `.gitignore` cho phép `tmp/` và `/tmp`; cả hai đều nói về cùng một thư mục.
+    """
+    return [
+        line.strip().strip("/")
+        for line in (ROOT / name).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def _ignored(path_name, patterns):
+    import fnmatch
+
+    return any(fnmatch.fnmatch(path_name, pat) for pat in patterns)
+
+
+#: Mọi file ignore phải chặn ảnh khách. `.gitignore` là hàng rào **nguy hiểm nhất**:
+#: ảnh lọt vào image thì build lại là xong, lọt vào lịch sử git thì xoá đi cũng không
+#: thật sự mất. Các file `*.dockerignore` đứng riêng vì BuildKit ưu tiên
+#: `<tên-Dockerfile>.dockerignore` khi có, và khi đó bản chung **không** được đọc —
+#: mỗi file là một hàng rào độc lập, phải tự đứng vững.
+def _ignore_files():
+    return sorted(p.name for p in ROOT.glob("*.dockerignore")) + [
+        ".dockerignore",
+        ".gitignore",
+    ]
+
+
+#: Tên thư mục nháp chứa ảnh khách. Đây là **quy ước đặt tên**, không phải danh sách
+#: thư mục đang tồn tại — chính vì thế nó kiểm được ở nơi chưa có thư mục nào.
+_SCRATCH_DIR_NAMES = ["tmp", "tmp_2", "tmp_3", "tmp_9", "tmp_99", "tmp-moi"]
+
+
+def test_the_ignore_rule_covers_scratch_dirs_that_do_not_exist_yet():
+    """Kiểm **quy tắc**, không kiểm thứ tình cờ có trên đĩa.
+
+    Bản đầu của test này quét thư mục thật rồi hỏi "cái nào không bị chặn". Nó bắt
+    đúng lỗi lúc đó (`tmp_3/` lọt cả `.gitignore` lẫn `.dockerignore`), nhưng chỉ
+    trên **máy có ảnh khách**. Trên server và trong CI thì `tmp*` không tồn tại —
+    không tìm thấy gì, không có gì để tố, test xanh mà chẳng kiểm gì. Một chốt chặn
+    im lặng đúng ở nơi nó chạy tự động là chốt chặn tệ nhất: nó tạo cảm giác đã
+    được kiểm.
+
+    Nên nó hỏi câu đứng vững ở mọi checkout: *nếu mai có `tmp_4/`, hàng rào có sẵn
+    sàng không.* Đó cũng là lý do các file ignore dùng glob thay vì liệt kê tay —
+    danh sách liệt kê đòi hỏi ai đó nhớ ra, glob thì mặc định đã chặn.
+    """
+    leaking = {}
+    for name in _ignore_files():
+        patterns = _dockerignore_patterns(name)
+        missed = [d for d in _SCRATCH_DIR_NAMES if not _ignored(d, patterns)]
+        if missed:
+            leaking[name] = missed
+
+    assert not leaking, (
+        f"tên thư mục nháp KHÔNG bị chặn: {leaking} — "
+        "dùng glob (vd `tmp[-_]*`) thay vì liệt kê từng thư mục"
+    )
+
+
+def test_no_directory_on_disk_holding_real_images_escapes_the_fence():
+    """Vành đai thứ hai: quét đĩa thật, bắt cả thư mục KHÔNG theo quy ước đặt tên.
+
+    Bổ sung cho test trên chứ không thay thế: test kia kiểm quy tắc và chạy ở mọi
+    nơi; test này kiểm hiện trạng và **chỉ có tác dụng trên máy có ảnh khách**. Nếu
+    ai đó để ảnh vào `anh_khach/` thì glob `tmp[-_]*` không cứu được, chỉ có phép
+    quét này thấy.
+    """
+    image_dirs = []
+    for entry in ROOT.iterdir():
+        if not entry.is_dir() or entry.name.startswith("."):
+            continue
+        if entry.name in _ALLOWED_IMAGE_DIRS:
+            continue
+        if any(child.suffix.lower() in _IMAGE_SUFFIXES for child in entry.rglob("*")):
+            image_dirs.append(entry.name)
+
+    leaking = {}
+    for name in _ignore_files():
+        patterns = _dockerignore_patterns(name)
+        missed = [d for d in image_dirs if not _ignored(d, patterns)]
+        if missed:
+            leaking[name] = sorted(missed)
+
+    assert not leaking, (
+        f"thư mục có ảnh nhưng KHÔNG bị chặn: {leaking} — "
+        "ảnh khách sẽ vào git hoặc vào image đem giao"
+    )

@@ -1,8 +1,14 @@
 # ẢNH THẬT CỦA KHÁCH — tuyệt đối không đưa vào image.
 # `COPY . .` trong Dockerfile lấy mọi thứ không nằm ở đây, nên thiếu một dòng ở mục
 # này nghĩa là CCCD/sổ đỏ bị nướng vĩnh viễn vào một artefact đem đi phân phối.
+#
+# Dùng **glob**, không liệt kê từng thư mục. Chỗ này từng ghi `tmp` + `tmp_2`, rồi
+# `tmp_3/` ra đời và nằm ngoài hàng rào cho tới khi tình cờ bị phát hiện — đúng lớp
+# lỗi mà dòng chú thích ngay trên đang cảnh báo. Danh sách liệt kê tay đòi hỏi ai đó
+# nhớ ra; glob thì mặc định đã chặn, và mặc định phải nghiêng về phía an toàn.
+# `tests/test_packaging.py` khoá quy tắc này lại.
 tmp
-tmp_2
+tmp[-_]*
 *.jpg.bak
 
 .git

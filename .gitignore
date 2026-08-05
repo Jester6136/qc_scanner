@@ -11,7 +11,11 @@ __pycache__/
 # due to using tox and pytest
 .tox
 .cache
+# ẢNH ĐẦU VÀO THẬT — giấy tờ tuỳ thân của khách, tuyệt đối không commit.
+#
+# Glob, không liệt kê tay. Chỗ này từng ghi `tmp/` + `tmp_2/`, rồi `tmp_3/` xuất hiện
+# và nằm ngoài hàng rào — `git add -A` là ảnh CCCD/sổ đỏ vào lịch sử git vĩnh viễn,
+# nơi xoá đi cũng không thật sự mất. Hàng rào tương ứng ở `.dockerignore` (và
+# `Dockerfile.test.dockerignore`) đã dính đúng lỗi này cùng lúc.
 tmp
-# ảnh đầu vào thật (không commit)
-tmp/
-tmp_2/
+tmp[-_]*
