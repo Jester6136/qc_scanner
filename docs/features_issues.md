@@ -28,6 +28,7 @@ yêu cầu ⚫. Chỉ còn **OPS-3**, để cuối vì máy phát triển không
 
 | Mã | Vì sao chưa làm |
 |---|---|
+| OPS-4 in-flight | Cách sửa (`503` khi quá tải) **đổi hợp đồng API** — hiện request thừa xếp hàng và luôn được phục vụ. Chốt với khách trước. |
 | QUAL-3 quét ngưỡng | Cần tập vàng có nhãn của khách (EX-2). Bộ eval đã chạy được, chỉ thiếu dữ liệu. |
 | S-1 đổi model nền | **Đã đo** (xem mục S-1). isnet chậm gấp 3 và đổi 2 verdict; không có nhãn thì không biết đổi là tốt hay tệ. |
 | S-3 DocAligner | Chỗ cắm đã sẵn (S-2). Nguyên tắc "đo trước, đổi sau" cấm đổi đường chính khi chưa có tập vàng. |
@@ -1187,6 +1188,40 @@ Xem [test_eval.md §2](test_eval.md).
 
 **✅ Đã làm**: 122 test trong `tests/`, workflow CI ở `.github/workflows/ci.yml` (cài sạch +
 ruff + pytest trên 3.9/3.12 + build wheel, có cache model rembg).
+
+---
+
+### ⚠️ OPS-4 · P2 · 🔴 · `MAX_CONCURRENCY` không chặn bộ nhớ, chỉ chặn xử lý {#ops-inflight}
+
+Lộ ra khi soạn hướng dẫn gọi song song cho bên tích hợp.
+
+`_scan_slots` được xin **sau khi** thân request đã nằm trong RAM: FastAPI phân tích multipart
+trước khi hàm xử lý chạy, và `file.file.read()` cũng đứng trước `with _scan_slots`. Nên van này
+chặn *số ảnh đang xử lý*, không chặn *số ảnh đang chiếm bộ nhớ*.
+
+Đo được — 24 client gọi cùng lúc với `MAX_CONCURRENCY=2`:
+
+| | |
+|---|---|
+| request đang xử lý (đỉnh) | **2** ✅ đúng như van đặt ra |
+| thân request trong RAM (đỉnh) | **24** ❌ không van nào chặn |
+
+Chốt chặn thật là threadpool của Starlette (mặc định 40 luồng) → trần thật ≈ **40 × 32 MB =
+1.28 GB**, không phải `MAX_CONCURRENCY` × 32MB. Comment trong
+[server.py](../src/qc_scanner/cmd/server.py) trước đây khẳng định điều ngược lại; đã sửa lại
+cho đúng, nhưng **hành vi thì chưa sửa**.
+
+Chưa gây sự cố nào vì chưa ai bắn đủ nhiều request song song, và 1.28 GB vẫn trong tầm của máy
+server. Nó thành vấn đề thật ở đúng kịch bản khách đang hỏi ([EX-16](need_exchange.md#ex-throughput)):
+tải cao + nhiều container trên cùng một máy.
+
+**Hướng**: middleware đếm số request đang bay và trả `503` + `Retry-After` khi vượt trần —
+middleware chạy **trước** khi thân request được phân tích, nên đó là chỗ duy nhất chặn được.
+Đổi lại là bên gọi bắt đầu thấy `503` do quá tải, tức **đổi hợp đồng API**: hiện tại request
+thừa xếp hàng và luôn được phục vụ. Cần chốt trước khi làm.
+
+Trong lúc chờ: [api.md §7b](api.md#song-song) nói rõ bên gọi phải tự giới hạn số request đang
+bay, vì máy chủ không đẩy lùi.
 
 ---
 

@@ -243,7 +243,7 @@ FastAPI dựng sẵn Swagger UI ở `/docs` (và OpenAPI JSON ở `/openapi.json
 
 ---
 
-## 4. `GET /healthz`
+## 4. `GET /healthz` {#healthz}
 
 ```json
 {
@@ -360,19 +360,71 @@ esac
 
 ---
 
+## 7b. Gọi song song {#song-song}
+
+**Có, gọi nhiều request cùng lúc được, và nên làm.** Service không có phiên, không có state
+giữa các request, không có thứ tự nào phải giữ — mỗi request độc lập hoàn toàn. Gửi tuần tự là
+bỏ phí phần lớn năng lực máy chủ.
+
+### Nên gửi bao nhiêu request cùng lúc
+
+Đọc `max_concurrency` ở [`/healthz`](#healthz) và dùng đúng con số đó.
+Nó suy theo số nhân CPU của máy chạy, nên khác nhau giữa các lần triển khai — **đừng ghi cứng
+trong code phía gọi**.
+
+Con số chính xác cho một máy cụ thể thì đo bằng `qc-scanner-bench --url …`, mục HTTP in sẵn
+"điểm gãy" — mức song song cuối cùng còn làm tăng thông lượng.
+
+### Vượt quá thì sao
+
+**Xếp hàng, không lỗi.** Request thứ N+1 chờ đến lượt và vẫn trả `200`/`422` bình thường; không
+có mã lỗi "quá tải" nào. Cái đổi là **độ trễ**: quá `max_concurrency` thì thông lượng đứng yên
+còn thời gian chờ dâng gần như tuyến tính theo số request đang xếp hàng.
+
+Nghĩa là gửi 200 request cùng lúc không nhanh hơn gửi 8, chỉ khiến cả 200 cùng phải chờ. Phía
+gọi nên tự giới hạn số request đang bay thay vì dựa vào máy chủ đẩy lùi — **máy chủ hiện không
+đẩy lùi**.
+
+### Giới hạn phải tôn trọng
+
+⚠️ **Thân request nằm trong RAM ngay khi tới, trước khi xin suất xử lý.** `max_concurrency`
+chặn *số ảnh đang xử lý*, **không** chặn *số ảnh đang nằm trong bộ nhớ*. Đo được: 24 client gọi
+cùng lúc với `max_concurrency=2` → đúng 2 request đang xử lý, nhưng **24 thân request trong
+RAM**.
+
+Trần thật là threadpool của Starlette, mặc định 40 luồng → **≈ 40 × 32 MB = 1.28 GB** ở đỉnh.
+Giữ số request đang bay ở mức `max_concurrency` (× vài lần là cùng) thì không bao giờ chạm tới
+đó. Xem [OPS-4](features_issues.md#ops-inflight).
+
+### Những thứ an toàn khi gọi song song
+
+- **Không có thứ tự**: kết quả không phụ thuộc request nào tới trước.
+- **Retry an toàn**: không có tác dụng phụ nào, không ghi gì xuống đĩa ([EX-12](need_exchange.md)).
+  Cùng một ảnh gửi lại cho cùng một kết quả.
+- **`503` là mã duy nhất nên retry** — kèm `Retry-After`. `400`/`422` thì retry vô ích.
+- **Không có timeout phía máy chủ.** Một request xếp hàng lâu sẽ chờ lâu chứ không bị cắt; phía
+  gọi tự đặt timeout, và đặt rộng hơn `max_concurrency` lần thời gian xử lý một ảnh.
+
+Cần thông lượng cao hơn trần một tiến trình thì chạy nhiều container sau một bộ cân bằng tải —
+service không chia sẻ gì nên nhân bản là chuyện thuần hạ tầng.
+
+---
+
 ## 8. Chưa có, và biết là chưa có
 
 - **Không có xác thực** — dựa hoàn toàn vào việc chỉ chạy trong mạng nội bộ (EX-12).
-- **Không có giới hạn tần suất**; một request nặng ~0.4s CPU.
+- **Không có giới hạn tần suất** và **không đẩy lùi khi quá tải** — request thừa xếp hàng chứ
+  không bị từ chối. Phía gọi tự giới hạn số request đang bay, xem [§7b](#song-song).
 - **Một tiến trình, không `workers`** — mỗi worker nạp một bản model vào RAM, và onnxruntime
   vốn đã dùng nhiều luồng. Trong tiến trình đó, `MAX_CONCURRENCY` ảnh chạy song song trên
   threadpool. Cần thông lượng cao hơn thì đổi sang GPU trước (đó là 80% thời gian), rồi mới
   tính nhiều container sau một bộ cân bằng tải — **đo trước rồi hãy làm**.
-- ⚠️ **Đường GPU chưa từng chạy thử** — [SPD-4](features_issues.md#spd-gpu). Bản CPU thì đã
-  build và chạy được trên máy server.
+- **Đường GPU đã chạy được** trên máy H100 ([SPD-4](features_issues.md#spd-gpu)), nhưng trên máy
+  đó nó cho thông lượng *thấp hơn* bản CPU vì VRAM dùng chung với một service khác.
 - **Mỗi request một ảnh.** Không có khái niệm "hồ sơ nhiều trang" — một giấy chứng nhận chụp
   hai mặt là **hai** request độc lập. Việc ghép và kiểm đủ mặt thuộc hệ gọi, xem
   [EX-15](need_exchange.md#ex-multipage).
 - **Không có endpoint xử lý lô.** Chạy lô dùng CLI `qc-scanner-batch`, không qua HTTP.
-- ⚠️ **Docker image chưa từng build thử** — xem [OPS-3](features_issues.md#ops-docker-unverified).
-  Phần hợp đồng trong tài liệu này thì đã có test giữ và chạy được ngoài Docker.
+- **Docker image đã build và chạy trên máy server.** Còn lại của
+  [OPS-3](features_issues.md#ops-docker-unverified): chưa kiểm gọi từ máy khác qua LAN, chưa
+  kiểm khi ngắt mạng, chưa build trong CI.

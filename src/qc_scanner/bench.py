@@ -236,6 +236,8 @@ def bench_http(url, blobs, levels):
     import urllib.error
     import urllib.request
 
+    latencies = []
+
     def post(blob):
         body = (
             b'--X\r\nContent-Disposition: form-data; name="file"; filename="a.jpg"\r\n\r\n'
@@ -247,13 +249,24 @@ def bench_http(url, blobs, levels):
             data=body,
             headers={"Content-Type": "multipart/form-data; boundary=X"},
         )
+        started = time.perf_counter()
         try:
             urllib.request.urlopen(req, timeout=300).read()
         except urllib.error.HTTPError as exc:
             exc.read()  # 422 = ảnh bị fail, vẫn là một request hoàn tất
+        latencies.append(time.perf_counter() - started)
 
     post(blobs[0])  # làm nóng
+
+    # Độ trễ **từng request**, không phải thời gian tường chia cho n. Hai số đó tách
+    # nhau ra đúng ở chỗ quan trọng nhất: quá `MAX_CONCURRENCY` thì request xếp hàng,
+    # nên thông lượng đứng yên trong khi độ trễ tiếp tục dâng. Bên tích hợp cần thấy
+    # cả hai mới chọn được mức song song — nhìn mỗi req/s thì "gửi 64 cùng lúc" trông
+    # y hệt "gửi 8 cùng lúc", chỉ khác là mọi người cùng phải chờ lâu gấp 8 lần.
+    print(f"  {'song song':>9} {'req/s':>7} {'p50':>8} {'p95':>8}")
+    best, knee = 0.0, None
     for n in levels:
+        latencies.clear()
         t = time.perf_counter()
         threads = [
             threading.Thread(target=post, args=(blobs[i % len(blobs)],)) for i in range(n)
@@ -263,9 +276,21 @@ def bench_http(url, blobs, levels):
         for th in threads:
             th.join()
         d = time.perf_counter() - t
+        rate = n / d
+        done = sorted(latencies)
+        p50 = done[len(done) // 2] if done else float("nan")
+        p95 = done[max(0, int(len(done) * 0.95) - 1)] if done else float("nan")
+        print(f"  {n:>9d} {rate:>7.2f} {p50:>7.2f}s {p95:>7.2f}s")
+        # "Điểm gãy" = mức cuối còn tăng thông lượng đáng kể (>5%). Quá đó thì thêm
+        # request song song chỉ mua thêm thời gian chờ.
+        if rate > best * 1.05:
+            best, knee = rate, n
+
+    if knee is not None:
         print(
-            f"  {n:3d} request song song  {d:6.2f}s  "
-            f"{d / n * 1000:7.1f} ms/req  {n / d:6.2f} req/s"
+            f"\n  Điểm gãy ≈ {knee} request song song ({best:.2f} req/s). Gửi nhiều hơn "
+            "không tăng\n  thông lượng, chỉ tăng độ trễ cho tất cả — đây là con số nên "
+            "đưa cho bên gọi API."
         )
 
 

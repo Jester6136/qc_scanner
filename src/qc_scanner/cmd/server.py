@@ -40,8 +40,15 @@ MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 # * Ghi rồi đọc lại vài MB cho mỗi request là chi phí thuần tuý phí phạm.
 #
 # Nâng ngưỡng bằng đúng trần upload → mọi request hợp lệ nằm trọn trong RAM.
-# Trần RAM vẫn là `MAX_UPLOAD_BYTES` × số request chạy đồng thời, và
-# `MAX_CONCURRENCY` bên dưới là thứ chặn số nhân đó.
+#
+# ⚠️ Trần RAM là `MAX_UPLOAD_BYTES` × số request **đang bay**, và `MAX_CONCURRENCY`
+# KHÔNG chặn con số đó. Chỗ này trước đây ghi ngược lại, và ghi sai: FastAPI phân
+# tích multipart **trước khi** hàm xử lý chạy, nên thân request đã nằm trong RAM từ
+# lâu trước khi ai đó xin suất ở `_scan_slots`. Đo được: 24 client gọi cùng lúc với
+# `MAX_CONCURRENCY=2` → đúng 2 request đang xử lý, nhưng **24 thân request trong RAM**.
+#
+# Chốt chặn thật là threadpool của Starlette (mặc định 40 luồng), tức trần thật
+# ≈ 40 × 32MB = **1.28 GB**, không phải `MAX_CONCURRENCY` × 32MB. Xem OPS-4.
 starlette.formparsers.MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
 
 def _default_concurrency():
