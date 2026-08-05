@@ -13,6 +13,7 @@ import pathlib
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 from ..config import Config
 from ..doc import scan_qc
@@ -31,15 +32,14 @@ def iter_inputs(directory, recursive):
             yield path
 
 
-def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=False):
+def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=False, jobs=1):
     out_path = pathlib.Path(out_dir) if out_dir else None
     if out_path:
         out_path.mkdir(parents=True, exist_ok=True)
 
-    warmup(config.rembg_model)
-    rows = []
+    warmup(config.rembg_model, config.onnx_providers)
 
-    for path in iter_inputs(directory, recursive):
+    def process(path):
         started = time.perf_counter()
         try:
             result = scan_qc(path.read_bytes(), config=config)
@@ -61,10 +61,32 @@ def run(directory, out_dir, config, recursive=False, skip_fail=False, quiet=Fals
                 "reasons": err.code,
                 "seconds": round(time.perf_counter() - started, 3),
             }
-        rows.append(row)
-        if not quiet:
-            line = f"{row['verdict']:5} {row['reasons'] or '-':40} {path.name}"
-            print(line, file=sys.stderr)
+        return path, row
+
+    paths = list(iter_inputs(directory, recursive))
+
+    # SPD-3: luồng (không phải tiến trình) — onnxruntime, cv2.imencode/imdecode đều
+    # **nhả GIL**, nên luồng chồng được phần OpenCV lên phần suy luận. Tiến trình thì
+    # mỗi cái nạp một bản model vào RAM, đắt hơn nhiều mà không nhanh hơn.
+    #
+    # `ex.map` trả kết quả **đúng thứ tự đầu vào**, nên dòng log và CSV vẫn xếp theo
+    # tên file như khi chạy tuần tự — chạy song song không được làm báo cáo xáo trộn.
+    if jobs > 1:
+        pool = ThreadPoolExecutor(jobs)
+        results = pool.map(process, paths)
+    else:
+        pool, results = None, map(process, paths)
+
+    rows = []
+    try:
+        for path, row in results:
+            rows.append(row)
+            if not quiet:
+                line = f"{row['verdict']:5} {row['reasons'] or '-':40} {path.name}"
+                print(line, file=sys.stderr)
+    finally:
+        if pool is not None:
+            pool.shutdown()
 
     return rows
 
@@ -79,6 +101,18 @@ def build_parser():
     ap.add_argument("-r", "--recursive", action="store_true")
     ap.add_argument("--skip-fail", action="store_true", help="Không ghi ảnh bị fail.")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=2,
+        # Mặc định 2 chứ không phải số nhân CPU: onnxruntime **vốn đã dùng hết nhân**
+        # cho một lần suy luận, nên thêm luồng không chia được thêm việc tính toán —
+        # nó chỉ chồng phần OpenCV (giải mã, mã hoá PNG) lên phần suy luận. Đo trên
+        # 37 ảnh: 1→14.2s · 2→11.8s · 3→12.0s · 4→12.7s. Qua 2 là bắt đầu tệ đi.
+        # Máy có GPU thì tỉ lệ đảo ngược (phần CPU thành nút cổ chai) — lúc đó nâng lên.
+        help="Số ảnh xử lý song song (mặc định 2; đo trên CPU thì quá 2 không nhanh thêm).",
+    )
     ap.add_argument("--detector", choices=["rembg-contour", "edge-hough"])
     ap.add_argument("--model", help="Model nền của rembg.")
     ap.add_argument(
@@ -113,6 +147,7 @@ def main(argv=None):
         recursive=args.recursive,
         skip_fail=args.skip_fail,
         quiet=args.quiet,
+        jobs=args.jobs,
     )
 
     if args.report:

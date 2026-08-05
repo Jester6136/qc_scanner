@@ -647,6 +647,110 @@ dòng code nào.
 
 ---
 
+### ⚡ SPD-1 · P2 · 🟢 XONG · Mỗi lần scan giải mã ảnh 2 lần + mã hoá thừa 1 PNG toàn cỡ {#spd-roundtrip}
+
+`rembg.remove()` nhận **bytes** và trả **bytes PNG RGBA nguyên kích thước ảnh gốc**. Nghĩa là
+một lần scan làm chuỗi này: OpenCV giải mã ảnh (`orig`) → PIL giải mã **lại** ảnh đó bên trong
+rembg → ghép mask thành kênh alpha ở full-res → **mã hoá PNG** vài triệu pixel → `cv2.imdecode`
+giải mã ngược lại — tất cả để lấy đúng **một kênh alpha**.
+
+**✅ Đã làm**: `segment_mask()` gọi thẳng `session.predict()` và lấy mask. Bỏ hẳn ghép alpha,
+mã hoá PNG và một lần giải mã.
+
+Đo trên 37 ảnh thật (`tmp/` + `tmp_2/` + `examples/`). Máy đo bị throttle nhiệt nên số tuyệt
+đối trôi giữa các lần chạy — chạy A/B **xen kẽ trong cùng một tiến trình**, 111 cặp, lấy trung
+vị: chặng tách nền **0.566s → 0.409s, nhanh 1.38x**. Chặng này chiếm ~80% một lần scan nên cả
+lần scan nhanh khoảng **1.2x** (~0.16s/ảnh).
+
+Phán quyết **không đổi một ảnh nào**, ảnh ra **trùng byte 37/37**, metric lệch **0.000**.
+
+**Đã thử và loại bỏ**: hạ mẫu ảnh xuống 500px *trước* khi suy luận (model vốn ép về 320×320,
+tưởng là miễn phí). Nhanh thêm ~0.02s/ảnh nhưng hạ mẫu hai chặng làm nhoè thêm và **mask co
+lại thật sự**: `abc1b13…` tụt `alpha_coverage` 0.666→0.606 và **thoát** `NO_CROP_DETECTED` —
+một ảnh không cắt được gì tụt từ `fail` xuống `warn`. Soi mắt thường xác nhận ảnh đó đúng là
+không cắt được gì. Đổi một ca lọt lưới lấy 5% tốc độ là đổi sai chiều.
+
+**Phụ phẩm**: mọi thứ giờ suy ra từ **cùng một mảng**. Đường cũ tính `ratio` giữa ảnh PIL giải
+mã và ảnh OpenCV giải mã, tức ngầm tin hai thư viện xoay EXIF giống hệt nhau — đúng trên thực
+tế, nhưng là giả định không ai kiểm.
+
+---
+
+### ⚡ SPD-2 · P1 · 🟢 XONG · `scan_qc()` chạy trên vòng lặp sự kiện → chặn cả `/healthz` {#spd-event-loop}
+
+Endpoint khai báo `async def` nhưng gọi `scan_qc()` — code **đồng bộ**, ~0.4s CPU. Coroutine
+không nhả điều khiển ở chỗ nào cả, nên nó chạy thẳng trên vòng lặp sự kiện và **chặn toàn bộ
+tiến trình**.
+
+Đo trên server thật, 8 request song song: `/healthz` trễ **trung vị 617ms, tối đa 698ms**. Đây
+không phải chuyện chậm — healthcheck của compose để `timeout: 10s` thì chưa sao, nhưng bất kỳ
+proxy hay orchestrator nào dùng ngưỡng chặt hơn sẽ coi service là chết **đúng lúc nó đang bận
+nhất**, rồi restart container giữa lúc tải cao.
+
+**✅ Đã làm**: đổi endpoint sang `def` (Starlette tự đẩy sang threadpool), giữ `/healthz` ở
+`async def` để nó luôn chạy trên vòng lặp sự kiện. Thêm `QC_SCANNER_MAX_CONCURRENCY` (mặc định
+2) chặn số ảnh xử lý cùng lúc.
+
+Sau khi sửa: `/healthz` **trung vị 2ms, tối đa 9–61ms**. Thông lượng gần như không đổi (2.95s →
+2.83s cho 8 ảnh) — đúng như dự đoán, onnxruntime vốn đã dùng hết nhân CPU nên không còn chỗ
+song song hoá. Quét mặc định bằng số: 1→3.19s · **2→2.83s** · 4→2.93s · 8→3.10s.
+
+Khác biệt nằm gọn ở **một từ khoá**, rất dễ bị "sửa lại cho nhất quán" — nên có test chặn.
+
+---
+
+### ⚡ SPD-3 · P2 · 🟢 XONG · Upload > 1MB bị đổ ra file tạm trên đĩa {#spd-spool}
+
+Starlette mặc định `spool_max_size = 1MB`: phần upload vượt mức đó được ghi xuống
+`SpooledTemporaryFile` **trên đĩa**. Ảnh vào là giấy tờ tuỳ thân và gần như ảnh nào cũng vượt
+1MB, nên [EX-12] "mạng nội bộ, **không lưu ảnh**" trên thực tế đang bị vi phạm ở mọi request.
+
+Container hiện có `tmpfs: /tmp` nên trong Docker nó rơi vào RAM — nhưng đó là may, không phải
+thiết kế: chạy trực tiếp bằng `qc-scanner-server` (đúng cách CI và dev chạy) thì ảnh nằm trên
+đĩa thật.
+
+**✅ Đã làm**: nâng `MultiPartParser.spool_max_size` bằng `MAX_UPLOAD_BYTES` (32MB) → mọi
+request hợp lệ nằm trọn trong RAM. Trần RAM là 32MB × `MAX_CONCURRENCY`, và SPD-2 là thứ chặn
+số nhân đó. Có test chốt ngưỡng.
+
+Chạy lô cũng được thêm `--jobs` (mặc định 2): luồng chồng phần OpenCV lên phần suy luận vì
+onnxruntime và `cv2.imencode/imdecode` đều nhả GIL. Đo trên 37 ảnh: 1→14.2s · **2→11.8s** ·
+3→12.0s · 4→12.7s. `ex.map` giữ **đúng thứ tự đầu vào** nên CSV và log không xáo trộn — có test
+so kết quả chạy song song với chạy tuần tự.
+
+---
+
+### ⚡ SPD-4 · P2 · 🟡 ĐÃ VIẾT, CHƯA CHẠY THỬ · Tuỳ chọn GPU NVIDIA {#spd-gpu}
+
+Sau SPD-1, `inner_session.run()` chiếm **81% tổng thời gian** (12.4s/15.3s trên 37 ảnh). Phần
+còn lại: mã hoá PNG 0.89s, resize PIL 0.48s, giải mã 0.44s. Nói cách khác **mọi tối ưu CPU
+khác cộng lại cũng không bằng đổi chỗ chạy cho model**.
+
+**✅ Đã làm**: `QC_SCANNER_ONNX_PROVIDERS` + [requirements-gpu.txt](../requirements-gpu.txt) +
+[Dockerfile.gpu](../Dockerfile.gpu) + profile `gpu` trong compose.
+
+**⚠️ Chưa có bằng chứng thực nghiệm nào**: máy phát triển là macOS, không có CUDA. Toàn bộ
+đường GPU viết theo tài liệu onnxruntime.
+
+Cái bẫy phải biết trước: **onnxruntime hỏng âm thầm**. Thiếu thư viện CUDA hoặc lệch phiên bản
+CUDA/cuDNN thì nó **không báo lỗi** — chỉ lặng lẽ chạy `CPUExecutionProvider`. Service vẫn
+`healthy`, vẫn trả ảnh đúng, chỉ chậm hơn vài chục lần, và không có gì trong log nói ra điều
+đó. Vì vậy `/healthz` báo cáo `providers` **thật sự đang chạy** (không phải cái được yêu cầu),
+và server in dòng đó lúc khởi động. Kiểm sau khi `up`:
+
+```
+curl -s http://localhost:5000/healthz     # "providers": ["CUDAExecutionProvider", ...]
+```
+
+Cũng lưu ý `onnxruntime` và `onnxruntime-gpu` **xung đột** — cài cả hai thì import lấy bản nào
+là ngẫu nhiên. Phải `pip uninstall onnxruntime` trước.
+
+Khi GPU chạy thật thì nút cổ chai **đảo chiều** sang phần CPU (giải mã ảnh, mã hoá PNG), nên
+`MAX_CONCURRENCY` và `--jobs` phải nâng lên — con số 4 trong `Dockerfile.gpu` là ước đoán,
+phải đo lại trên máy thật.
+
+---
+
 ## C. ISSUES — Chất lượng thuật toán
 
 ### 🎯 QUAL-1 · P1 · 🟢 XONG · Lấy tứ giác ĐẦU TIÊN, không lọc rác {#qual-quad-filter}
@@ -898,7 +1002,7 @@ ruff + pytest trên 3.9/3.12 + build wheel, có cache model rembg).
 | N-07 | Tách nhiều tài liệu trong một ảnh thành nhiều đầu ra | P3 | Nối tiếp QC-9 |
 | N-08 | Đầu vào PDF / đa trang | P3 | Chờ nhu cầu khách (`need_exchange.md` EX-3) |
 | N-09 | Hậu xử lý làm nét/khử bóng (adaptive threshold, shadow removal) | P3 | Đầu ra "giống bản scan"; chờ chốt EX-5 |
-| N-10 | onnxruntime-gpu tùy chọn | P3 | Chỉ đáng làm sau khi đo (N-06 rẻ hơn nhiều) |
+| ~~N-10~~ | 🟡 onnxruntime-gpu tùy chọn | P3 | Đã viết, **chưa chạy thử** — xem [SPD-4](#spd-gpu) |
 
 ---
 

@@ -73,19 +73,41 @@ def test_server_matches_library(lib_output):
 def test_rembg_runs_once_per_scan(monkeypatch):
     """BUG-1 hồi quy: một lần scan() = đúng một lần gọi rembg.
 
-    Chặng này chiếm ~95% thời gian, nên gọi thừa một lần là chậm gấp đôi —
+    Chặng này chiếm ~90% thời gian, nên gọi thừa một lần là chậm gấp đôi —
     và lần thứ hai chạy trên ảnh đã tách nền nên còn cho biên khác.
     """
     import qc_scanner.doc as doc
 
     calls = []
-    real = doc.remove_background
+    real = doc.segment_mask
 
-    def counting(data, *a, **kw):
+    def counting(image, *a, **kw):
         calls.append(1)
-        return real(data, *a, **kw)
+        return real(image, *a, **kw)
 
-    monkeypatch.setattr(doc, "remove_background", counting)
+    monkeypatch.setattr(doc, "segment_mask", counting)
+    doc.scan(SAMPLE.input_bytes)
+    assert len(calls) == 1
+
+
+def test_image_is_decoded_only_once(monkeypatch):
+    """SPD-1: một lần scan = đúng một lần `cv2.imdecode`.
+
+    Đường cũ giải mã hai lần (OpenCV cho ảnh gốc, PIL bên trong rembg) rồi còn giải
+    mã lại lần nữa cái PNG RGBA mà rembg trả về. Bài này chốt chuyện đó không quay lại.
+    """
+    import cv2
+
+    import qc_scanner.doc as doc
+
+    calls = []
+    real = cv2.imdecode
+
+    def counting(*a, **kw):
+        calls.append(1)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(doc.cv2, "imdecode", counting)
     doc.scan(SAMPLE.input_bytes)
     assert len(calls) == 1
 
@@ -185,3 +207,27 @@ def test_library_returns_scan_result():
     result = scan_qc(SAMPLE.input_bytes)
     assert result.verdict in {"pass", "warn", "fail"}
     assert isinstance(result.codes, list)
+
+
+def test_batch_parallel_matches_serial(tmp_path):
+    """SPD-3: `--jobs` chỉ được đổi *tốc độ*, không đổi kết quả lẫn thứ tự.
+
+    Chạy song song mà báo cáo xáo trộn thì không so được hai lần chạy với nhau, và
+    CSV mất giá trị đúng ở chỗ nó có ích nhất: đối chiếu trước/sau khi đổi ngưỡng.
+    """
+    from qc_scanner.cmd.batch import run
+    from qc_scanner.config import Config
+
+    src = tmp_path / "in"
+    src.mkdir()
+    for pair in PAIRS[:3]:
+        (src / pair.input_path.name).write_bytes(pair.input_bytes)
+
+    cfg = Config()
+    serial = run(str(src), None, cfg, quiet=True, jobs=1)
+    parallel = run(str(src), None, cfg, quiet=True, jobs=3)
+
+    def strip(rows):  # `seconds` đương nhiên khác giữa hai lần chạy
+        return [{k: v for k, v in r.items() if k != "seconds"} for r in rows]
+
+    assert strip(serial) == strip(parallel)

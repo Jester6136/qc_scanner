@@ -176,6 +176,24 @@ class Config:
     """Model nền của rembg. `isnet-general-use` / `birefnet-general` thường tốt hơn,
     nhưng KHÔNG đổi mặc định trước khi đo trên tập vàng."""
 
+    onnx_providers: str = ""
+    """Execution provider của onnxruntime, ngăn cách bằng dấu phẩy. Rỗng = để tự chọn.
+
+    Máy có GPU NVIDIA thì cài `onnxruntime-gpu` và đặt::
+
+        QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider
+
+    Luôn để `CPUExecutionProvider` ở cuối làm đường lui. Nhưng **đường lui đó chính là
+    cái bẫy**: thiếu thư viện CUDA thì onnxruntime tụt về CPU trong im lặng — không lỗi,
+    không cảnh báo, chỉ chậm gấp mấy chục lần. Vì thế provider thật sự đang chạy được
+    báo cáo ở `/healthz` và in ra lúc khởi động; đừng tin là GPU đang bật cho tới khi
+    đọc thấy `CUDAExecutionProvider` ở đó.
+
+    Để rỗng thì rembg tự dò: có `onnxruntime-gpu` + GPU thì nó chọn CUDA. Khai báo
+    tường minh vẫn hơn khi muốn chắc chắn — hoặc khi muốn **ép** về CPU trên máy có GPU
+    để so tốc độ.
+    """
+
     detector: str = "rembg-contour"
     """Detector đường chính: `rembg-contour` hoặc `edge-hough`."""
 

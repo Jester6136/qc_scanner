@@ -196,3 +196,49 @@ def test_verdict_headers_are_readable_from_the_browser(client):
     exposed = resp.headers.get("access-control-expose-headers", "")
     assert "X-QC-Scanner-Verdict" in exposed
     assert "X-QC-Scanner-Reasons" in exposed
+
+
+# --- Tốc độ: những tính chất dễ mất mà không ai thấy ------------------------- #
+
+
+def test_healthz_reports_the_providers_actually_in_use(client):
+    """Đường GPU hỏng ÂM THẦM: thiếu CUDA thì onnxruntime tụt về CPU, không lỗi gì.
+
+    Chỉ chậm hơn vài chục lần. `/healthz` là chỗ duy nhất nhìn ra được, nên nó phải
+    báo provider **thật sự đang chạy**, không phải cái được yêu cầu trong cấu hình.
+    """
+    payload = client.get("/healthz").json()
+    assert payload["providers"], "phải nói được nó đang chạy trên cái gì"
+    assert all(p.endswith("ExecutionProvider") for p in payload["providers"])
+    assert payload["max_concurrency"] >= 1
+
+
+def test_uploads_never_touch_the_disk():
+    """[EX-12] hứa **không lưu ảnh** — mà Starlette mặc định đổ upload > 1MB ra file tạm.
+
+    Ảnh vào là giấy tờ tuỳ thân và gần như ảnh nào cũng vượt 1MB, nên mặc định đó
+    biến lời hứa thành lời nói suông. Chốt lại ngưỡng ở đây.
+    """
+    import starlette.formparsers
+
+    from qc_scanner.cmd.server import MAX_UPLOAD_BYTES
+
+    assert starlette.formparsers.MultiPartParser.spool_max_size >= MAX_UPLOAD_BYTES
+
+
+def test_scan_endpoint_does_not_block_the_event_loop():
+    """SPD-2: `scan_qc()` là code đồng bộ ~0.4s CPU.
+
+    Để trong `async def` thì nó chạy thẳng trên vòng lặp sự kiện và chặn cả tiến
+    trình, kể cả `/healthz` — đo được trễ trung vị 617ms khi có 8 request song song,
+    đủ để healthcheck của Docker nhấp nháy và container bị restart oan. Khai báo
+    `def` thì Starlette đẩy sang threadpool. Khác biệt nằm gọn ở một từ khoá, nên
+    rất dễ bị "sửa lại cho nhất quán" — bài này để chặn đúng chuyện đó.
+    """
+    import inspect
+
+    from qc_scanner.cmd.server import healthz, scan_endpoint
+
+    assert not inspect.iscoroutinefunction(scan_endpoint)
+    # Ngược lại: healthz phải ở trên vòng lặp sự kiện thì mới trả lời nổi lúc bận.
+    assert inspect.iscoroutinefunction(healthz)

@@ -156,10 +156,46 @@ FastAPI dựng sẵn Swagger UI ở `/docs` (và OpenAPI JSON ở `/openapi.json
 
 ## 4. `GET /healthz`
 
-Trả `200` và `{"status": "ok"}`. Dùng cho liveness probe.
+```json
+{
+  "status": "ok",
+  "version": "0.2.0",
+  "model": "u2net",
+  "providers": ["CPUExecutionProvider"],
+  "max_concurrency": 2
+}
+```
 
-> Nó **không** kiểm model đã nạp xong chưa. Vì server nạp model *trước khi* mở cổng, nên cổng
-> mở được đã có nghĩa là model sẵn sàng — trừ khi chạy với `--no-warmup`.
+Dùng cho liveness probe. Nó **không** kiểm model đã nạp xong chưa — nhưng server nạp model
+*trước khi* mở cổng, nên cổng mở được đã có nghĩa là model sẵn sàng (trừ khi chạy `--no-warmup`).
+
+Endpoint này trả lời **kể cả khi mọi luồng xử lý ảnh đang bận** ([SPD-2](features_issues.md#spd-event-loop)):
+đo dưới tải 8 request song song, độ trễ trung vị 2ms.
+
+`providers` là execution provider onnxruntime **thật sự đang chạy**, không phải cái được yêu
+cầu trong cấu hình. Đây là chỗ duy nhất kiểm được đường GPU: thiếu thư viện CUDA thì
+onnxruntime **không báo lỗi**, chỉ lặng lẽ tụt về `CPUExecutionProvider` và chạy chậm hơn vài
+chục lần. Thấy `CUDAExecutionProvider` ở đây thì GPU mới thật sự đang chạy.
+
+### Tốc độ và số ảnh xử lý cùng lúc
+
+Một ảnh tốn ~0.4s CPU, trong đó ~80% là bản thân model u2net.
+
+`QC_SCANNER_MAX_CONCURRENCY` (mặc định `2`) chặn số ảnh xử lý cùng lúc; request thứ N+1 **xếp
+hàng** thay vì cùng chậm đi. Đặt 2 vì onnxruntime vốn đã dùng hết số nhân CPU cho một lần suy
+luận — đo trên 8 request song song: 1→3.19s · **2→2.83s** · 4→2.93s · 8→3.10s. Máy có GPU thì
+nút cổ chai đảo sang phần CPU (giải mã ảnh, mã hoá PNG) nên nên nâng lên.
+
+Ảnh upload nằm **trọn trong RAM**, không qua file tạm — trần bộ nhớ là 32MB × `MAX_CONCURRENCY`.
+
+### Chạy trên GPU NVIDIA
+
+```bash
+docker compose --profile gpu up --build -d
+curl -s http://localhost:5000/healthz          # providers phải có CUDAExecutionProvider
+```
+
+⚠️ Đường GPU **chưa từng chạy thử** — xem [SPD-4](features_issues.md#spd-gpu).
 
 ---
 
@@ -218,8 +254,11 @@ esac
 - **Không có xác thực** — dựa hoàn toàn vào việc chỉ chạy trong mạng nội bộ (EX-12).
 - **Không có giới hạn tần suất**; một request nặng ~0.4s CPU.
 - **Một tiến trình, không `workers`** — mỗi worker nạp một bản model vào RAM, và onnxruntime
-  vốn đã dùng nhiều luồng. Cần thông lượng cao hơn thì chạy nhiều container sau một bộ cân
-  bằng tải, **đo trước rồi hãy làm**.
+  vốn đã dùng nhiều luồng. Trong tiến trình đó, `MAX_CONCURRENCY` ảnh chạy song song trên
+  threadpool. Cần thông lượng cao hơn thì đổi sang GPU trước (đó là 80% thời gian), rồi mới
+  tính nhiều container sau một bộ cân bằng tải — **đo trước rồi hãy làm**.
+- ⚠️ **Đường GPU chưa từng chạy thử** — [SPD-4](features_issues.md#spd-gpu). Bản CPU thì đã
+  build và chạy được trên máy server.
 - **Mỗi request một ảnh.** Không có khái niệm "hồ sơ nhiều trang" — một giấy chứng nhận chụp
   hai mặt là **hai** request độc lập. Việc ghép và kiểm đủ mặt thuộc hệ gọi, xem
   [EX-15](need_exchange.md#ex-multipage).

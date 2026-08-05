@@ -13,8 +13,10 @@ biệt được nên retry hay sửa code. Nên tham số khai báo lỏng rồi
 
 import argparse
 import os
+import threading
 from typing import Optional
 
+import starlette.formparsers
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -23,10 +25,32 @@ from .. import __version__
 from ..config import Config
 from ..doc import scan_qc
 from ..qc import ScanError
-from ..rembg_session import warmup
+from ..rembg_session import active_providers, warmup
 
 #: Giới hạn kích thước upload (OPS-1) — chặn ảnh khổng lồ làm cạn RAM worker.
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+
+# Starlette mặc định đổ phần upload vượt 1MB xuống **file tạm trên đĩa**
+# (`SpooledTemporaryFile`). Với service này đó là hai chuyện xấu cùng lúc:
+#
+# * [EX-12] chốt "không lưu ảnh" — mà ảnh vào là giấy tờ tuỳ thân, và gần như ảnh
+#   nào cũng vượt 1MB. Ghi xuống đĩa là đúng thứ đã hứa không làm.
+# * Ghi rồi đọc lại vài MB cho mỗi request là chi phí thuần tuý phí phạm.
+#
+# Nâng ngưỡng bằng đúng trần upload → mọi request hợp lệ nằm trọn trong RAM.
+# Trần RAM vẫn là `MAX_UPLOAD_BYTES` × số request chạy đồng thời, và
+# `MAX_CONCURRENCY` bên dưới là thứ chặn số nhân đó.
+starlette.formparsers.MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
+
+#: Số ảnh được xử lý cùng lúc. Xem `_scan_slots`.
+MAX_CONCURRENCY = max(1, int(os.environ.get("QC_SCANNER_MAX_CONCURRENCY", "2")))
+
+# Vì sao chặn, thay vì để threadpool của Starlette (40 luồng) chạy thoải mái:
+# phần nặng là onnxruntime, và nó **vốn đã dùng hết số nhân CPU** cho một lần suy
+# luận. Thả 40 lần suy luận song song không tăng thông lượng, chỉ làm mọi request
+# cùng chậm đi và ngốn 40 × ảnh RAM. Chặn lại thì request thứ N+1 **xếp hàng** —
+# chậm nhưng đoán được, thay vì tất cả cùng chậm không đoán được.
+_scan_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
 app = FastAPI(
     title="qc-scanner",
@@ -76,10 +100,18 @@ async def limit_upload_size(request: Request, call_next):
 
 
 @app.post("/", summary="Chấm QC một ảnh")
-async def scan_endpoint(
+def scan_endpoint(
     request: Request,
     file: Optional[UploadFile] = File(default=None),
 ):
+    # SPD-2: **`def`, không phải `async def`** — và đó là cả vấn đề. `scan_qc()` là
+    # code đồng bộ nặng (~0.4s CPU); gọi nó trong một `async def` thì nó chạy thẳng
+    # trên vòng lặp sự kiện và **chặn toàn bộ tiến trình**, kể cả `/healthz`. Đo được:
+    # 8 request song song → `/healthz` trễ trung vị **617ms**, đủ để healthcheck của
+    # Docker nhấp nháy và container bị restart oan giữa lúc đang tải.
+    #
+    # Khai báo `def` thì Starlette tự đẩy hàm này sang threadpool, vòng lặp sự kiện
+    # rảnh trở lại. Đây là lý do `/healthz` để `async def` còn hàm này thì không.
     # SEC-1: nhánh `GET /?url=` đã bị bỏ hẳn — nó fetch URL tùy ý (kể cả file://
     # và metadata nội bộ). POST file đủ cho mọi ca dùng thật.
     #
@@ -110,9 +142,10 @@ async def scan_endpoint(
     if params.get("pre_cropped", "").lower() in {"1", "true", "yes"}:
         overrides["pre_cropped"] = True
 
-    content = await file.read()
+    content = file.file.read()  # `.file`, không `await`: đây là endpoint đồng bộ
     try:
-        result = scan_qc(content, config=Config.from_env(**overrides))
+        with _scan_slots:
+            result = scan_qc(content, config=Config.from_env(**overrides))
     except ScanError as err:
         return JSONResponse({"error": err.to_dict()}, status_code=400)
 
@@ -138,7 +171,21 @@ async def scan_endpoint(
 
 @app.get("/healthz", summary="Liveness probe")
 async def healthz():
-    return {"status": "ok"}
+    """`async def` có chủ đích: chạy thẳng trên vòng lặp sự kiện nên vẫn trả lời
+    ngay cả khi mọi luồng xử lý ảnh đang bận. Đó mới đúng nghĩa liveness.
+
+    `providers` báo cáo execution provider onnxruntime **thực sự** đang chạy, không
+    phải cái được yêu cầu. Thiếu thư viện CUDA thì onnxruntime tụt về CPU mà không
+    báo lỗi gì — chỉ chậm hơn vài chục lần. Đây là chỗ duy nhất nhìn ra điều đó.
+    """
+    cfg = Config.from_env()
+    return {
+        "status": "ok",
+        "version": __version__,
+        "model": cfg.rembg_model,
+        "providers": active_providers(cfg.rembg_model, cfg.onnx_providers),
+        "max_concurrency": MAX_CONCURRENCY,
+    }
 
 
 def main(argv=None):
@@ -157,8 +204,18 @@ def main(argv=None):
     # Nạp model TRƯỚC khi mở cổng: request đầu tiên không phải gánh thời gian
     # tải/nạp model, vốn đủ lâu để timeout ở tầng proxy. Đây cũng là lý do
     # `/healthz` trả lời được nghĩa là model đã sẵn sàng.
+    cfg = Config.from_env()
     if not args.no_warmup:
-        warmup(Config.from_env().rembg_model)
+        warmup(cfg.rembg_model, cfg.onnx_providers)
+        # In ra provider THẬT SỰ dùng. Đường GPU hỏng âm thầm: thiếu CUDA thì
+        # onnxruntime lặng lẽ chạy CPU, không lỗi, chỉ chậm. Dòng log này là thứ
+        # phân biệt "GPU đang chạy" với "tưởng là GPU đang chạy".
+        print(
+            f"qc-scanner {__version__} · model={cfg.rembg_model} · "
+            f"providers={active_providers(cfg.rembg_model, cfg.onnx_providers)} · "
+            f"max_concurrency={MAX_CONCURRENCY}",
+            flush=True,
+        )
 
     import uvicorn
 

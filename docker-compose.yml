@@ -1,10 +1,16 @@
 # docker compose up --build -d   →   API sẵn sàng ở http://<IP-máy-này>:5000
 #
+# Máy có GPU NVIDIA:
+#   docker compose --profile gpu up --build -d     (dịch vụ qc-scanner-gpu, cổng 5000)
+# Hai dịch vụ dùng CHUNG cổng nên đừng chạy cả hai; chọn một.
+#
 # Hợp đồng API: docs/api.md
 #
-# ⚠️ CHƯA CHẠY THỬ LẦN NÀO (OPS-3). Máy phát triển hiện tại không build Docker được,
-# nên file này viết theo đúng Dockerfile và server hiện có nhưng KHÔNG có bằng chứng
-# nào là nó dựng lên chạy được. Lần đầu chạy trên máy server phải soi kỹ log.
+# ⚠️ Bản CPU đã build và chạy được trên máy server. Bản GPU thì CHƯA chạy thử lần nào
+# (máy phát triển là macOS). Sau khi `up`, kiểm bằng:
+#     curl -s http://localhost:5000/healthz
+# `providers` phải có `CUDAExecutionProvider`; chỉ thấy `CPUExecutionProvider` nghĩa
+# là onnxruntime đã âm thầm tụt về CPU — sai build, không phải chạy chậm.
 
 services:
   qc-scanner:
@@ -43,6 +49,9 @@ services:
       # Origin được phép gọi từ trình duyệt; "*" là mọi origin. Thu hẹp khi biết
       # rõ app gọi vào chạy ở đâu, ví dụ "http://192.168.1.50:3000".
       QC_SCANNER_CORS_ORIGINS: "*"
+      # Số ảnh xử lý cùng lúc. Trên CPU thì 2 là điểm tốt nhất — onnxruntime vốn đã
+      # dùng hết nhân cho một lần suy luận, nới thêm chỉ làm mọi request cùng chậm.
+      QC_SCANNER_MAX_CONCURRENCY: "2"
 
     restart: unless-stopped
     stop_grace_period: 20s
@@ -69,6 +78,66 @@ services:
     # ngay lúc khởi động, mà mục tiêu của file này là `up` một phát là chạy. Bật lên
     # sau khi đã xác nhận image chạy bình thường.
     # read_only: true
+
+    security_opt:
+      - no-new-privileges:true
+
+  # --------------------------------------------------------------------------- #
+  # Bản GPU NVIDIA (SPD-4) — chỉ chạy khi gọi `--profile gpu`.
+  #
+  # ⚠️ CHƯA CHẠY THỬ. Kiểm bằng `/healthz` như ghi chú ở đầu file.
+  # Cần NVIDIA Container Toolkit trên host; thử trước:
+  #     docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+  qc-scanner-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    image: qc-scanner:gpu
+    container_name: qc-scanner-gpu
+
+    ports:
+      - "${QC_SCANNER_PORT:-5000}:5000"
+
+    environment:
+      U2NET_HOME: /opt/u2net
+      QC_SCANNER_WORK_HEIGHT: "500"
+      QC_SCANNER_HINT_AUDIENCE: "capturer"
+      QC_SCANNER_CORS_ORIGINS: "*"
+      # Khai báo tường minh thay vì để onnxruntime tự dò: muốn biết chắc mình đang
+      # yêu cầu gì, rồi đối chiếu với cái `/healthz` báo là thật sự đang chạy.
+      # Vẫn giữ CPU ở cuối làm đường lui — service chạy chậm hơn là hỏng.
+      QC_SCANNER_ONNX_PROVIDERS: "CUDAExecutionProvider,CPUExecutionProvider"
+      # Nới hơn bản CPU: khi suy luận chạy trên GPU thì nút cổ chai chuyển sang phần
+      # CPU (giải mã ảnh, mã hoá PNG), nên chồng nhiều request lên nhau mới có lợi.
+      # Con số 4 là ước đoán, chưa đo trên máy thật.
+      QC_SCANNER_MAX_CONCURRENCY: "4"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz')"
+      # Rộng tay hơn bản CPU: lần khởi tạo CUDA context đầu tiên tốn thêm thời gian.
+      start_period: 120s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    tmpfs:
+      - /tmp
 
     security_opt:
       - no-new-privileges:true

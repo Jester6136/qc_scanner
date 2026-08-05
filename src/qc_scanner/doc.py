@@ -16,7 +16,7 @@ from . import geometry as geo
 from .config import DEFAULT, Config
 from .detect import get_detector
 from .qc import Metrics, Reason, ScanError, ScanResult
-from .rembg_session import remove_background
+from .rembg_session import segment_mask
 
 # Giữ lại cho mã cũ import trực tiếp; nguồn sự thật nay là Config.
 APPROX_POLY_DP_ACCURACY_RATIO = DEFAULT.approx_poly_epsilon_ratio
@@ -37,12 +37,24 @@ def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanRes
     if not data:
         raise ScanError("FILE_EMPTY")
 
+    # SPD-1: giải mã ảnh **một lần duy nhất**, và lấy thẳng mask thay vì bytes PNG.
+    # Đường cũ giải mã 2 lần (OpenCV cho `orig`, PIL bên trong rembg) rồi ghép +
+    # mã hoá + giải mã lại một ảnh RGBA toàn cỡ chỉ để lấy đúng kênh alpha.
+    #
+    # Phụ phẩm đáng kể: mọi thứ giờ suy ra từ CÙNG một mảng. Đường cũ tính `ratio`
+    # giữa ảnh PIL giải mã và ảnh OpenCV giải mã, tức ngầm tin hai thư viện xoay
+    # EXIF giống hệt nhau — đúng trên thực tế, nhưng là giả định không ai kiểm.
     orig = _decode(data)
-    rgba = _segment(data, cfg)
+    alpha = _segment(orig, cfg)
 
-    work = _to_work_size(rgba, cfg)
-    ratio = rgba.shape[0] / work.shape[0]
-    mask = _alpha_mask(work, cfg)
+    work = _to_work_size(orig, cfg)
+    ratio = orig.shape[0] / work.shape[0]
+    mask = _alpha_mask(_to_work_size(alpha, cfg), cfg)
+
+    # Nền bị bôi đen, đúng như ảnh cutout rembg trả về trước đây: đường lui
+    # edge-hough chạy Canny trên `work` nên nó phải thấy cùng một thứ.
+    if mask is not None:
+        work = cv2.bitwise_and(work, work, mask=mask)
 
     metrics.alpha_coverage = (
         float(np.count_nonzero(mask) / mask.size) if mask is not None else 0.0
@@ -175,16 +187,12 @@ def _decode(data):
     return img
 
 
-def _segment(data, cfg):
-    """rembg → RGBA. Gọi **đúng một lần** cho mọi mặt tiền."""
+def _segment(image, cfg):
+    """rembg → mask xám cùng cỡ ảnh vào. Gọi **đúng một lần** cho mọi mặt tiền."""
     try:
-        processed = remove_background(data, cfg.rembg_model)
+        return segment_mask(image, cfg.rembg_model, cfg.onnx_providers)
     except Exception as exc:
         raise ScanError("DECODE_FAILED", str(exc)) from exc
-    img = cv2.imdecode(np.frombuffer(processed, np.uint8), cv2.IMREAD_UNCHANGED)
-    if img is None:
-        raise ScanError("DECODE_FAILED", "không decode được ảnh sau bước tách nền")
-    return img
 
 
 def _to_work_size(img, cfg: Config):
@@ -194,16 +202,16 @@ def _to_work_size(img, cfg: Config):
     return imutils.resize(img, height=cfg.work_height)
 
 
-def _alpha_mask(work, cfg: Config):
-    """Kênh alpha → mask nhị phân, khử đốm bằng medianBlur suy theo kích thước.
+def _alpha_mask(alpha, cfg: Config):
+    """Mask xám → mask nhị phân, khử đốm bằng medianBlur suy theo kích thước.
 
     medianBlur (không phải Gaussian) vì median giữ **cạnh sắc** trong khi xoá
     đốm — Gaussian làm nhoè góc và hỏng approxPolyDP.
     """
-    if work.ndim != 3 or work.shape[2] != 4:
+    if alpha is None or alpha.ndim != 2:
         return None
-    _, mask = cv2.threshold(work[:, :, 3], 0, 255, cv2.THRESH_BINARY)
-    ksize = int(work.shape[0] * cfg.blur_ksize_ratio) | 1  # ép về số lẻ
+    _, mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)
+    ksize = int(alpha.shape[0] * cfg.blur_ksize_ratio) | 1  # ép về số lẻ
     return cv2.medianBlur(mask, max(3, ksize))
 
 

@@ -1,0 +1,44 @@
+# Bản GPU NVIDIA (SPD-4).  docker compose --profile gpu up --build -d
+#
+# ⚠️ CHƯA CHẠY THỬ LẦN NÀO. Máy phát triển là macOS, không có CUDA. File này viết
+# theo tài liệu onnxruntime; lần đầu chạy trên máy server phải kiểm bằng
+#     curl -s http://localhost:5000/healthz
+# và nhìn `providers`. Thấy `CUDAExecutionProvider` thì GPU đang chạy thật; chỉ thấy
+# `CPUExecutionProvider` nghĩa là nó đã lặng lẽ tụt về CPU — build sai, không phải chạy chậm.
+#
+# Yêu cầu phía host: driver NVIDIA + NVIDIA Container Toolkit.
+# Kiểm trước khi build:  docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
+
+# Ghim cặp CUDA 12.4 + cuDNN 9 vì onnxruntime-gpu 1.19+ dựng trên đúng cặp đó.
+# Lệch phiên bản là kiểu hỏng tệ nhất ở đây: không lỗi, chỉ âm thầm chạy CPU.
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-pip python3-venv libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements-gpu.txt ./
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements-gpu.txt
+
+COPY . .
+RUN pip3 install --no-cache-dir --break-system-packages .
+
+# Nướng model vào image — bước này cần mạng lúc BUILD, không cần lúc chạy.
+ENV U2NET_HOME=/opt/u2net
+RUN python3 -c "from qc_scanner.rembg_session import warmup; warmup()"
+
+EXPOSE 5000
+ENV QC_SCANNER_WORK_HEIGHT=500
+ENV QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider
+
+# Trên GPU, phần suy luận không còn là nút cổ chai — phần CPU (giải mã ảnh, mã hoá
+# PNG) mới là. Nới đồng thời để việc CPU của request này chồng lên GPU của request
+# kia. Con số 4 là ước đoán, chưa đo; chỉnh lại sau khi đo trên máy thật.
+ENV QC_SCANNER_MAX_CONCURRENCY=4
+
+CMD ["qc-scanner-server", "-a", "0.0.0.0", "-p", "5000"]
