@@ -213,6 +213,22 @@ Sau [EX-13](need_exchange.md), image này **chính là thứ bàn giao cho khác
 để hệ khác gọi vào. Một artefact chưa từng được kiểm mà lại là bề mặt bàn giao chính là rủi ro
 lớn nhất hiện tại của dự án.
 
+> **Cập nhật 2026-08-05 — đã build thật, và nó chạy.** `docker compose up --build -d` dựng
+> image trong **386.9s**, container lên `Up (healthy)`, cổng `0.0.0.0:5000->5000`. Rủi ro lớn
+> nhất của dự án ("thứ bàn giao chính chưa có bằng chứng chạy được") **không còn là giả định**.
+>
+> **Bẫy gặp ngay lần đầu, và nó không phải lỗi của mình**: trên macOS cổng 5000 bị **AirPlay
+> Receiver** chiếm sẵn. Docker vẫn bind được, container vẫn `healthy` — vì healthcheck chạy
+> *bên trong* container, nơi cổng 5000 là của nó — nhưng gọi từ host vào nhận `403 Forbidden`
+> với header `Server: AirTunes/890.79.5`. Server của mình **không có mã 403 nào**, nên chính
+> header đó là thứ chỉ ra thủ phạm. Đã cho cổng host đổi được bằng `QC_SCANNER_PORT`.
+>
+> Bài học đáng ghi: `healthy` của compose **không** chứng minh khách gọi được — nó chỉ chứng
+> minh tiến trình bên trong sống. Muốn biết khách gọi được thì phải gọi từ ngoài vào.
+>
+> **Còn lại chưa kiểm**: gọi API từ host qua cổng không bị chiếm · chạy khi **ngắt mạng** ·
+> gọi từ máy B qua LAN · thêm bước build image vào CI.
+
 **Hoãn tới cuối (chốt 2026-08-05)**: máy phát triển hiện tại không build Docker được. Việc này
 làm khi lên máy server. Rủi ro **không giảm** vì hoãn — chỉ dời chỗ; đến lúc build mà hỏng thì
 vẫn hỏng, nên đừng coi phần còn lại "xong" là cả gói đã xong.

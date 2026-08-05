@@ -22,7 +22,14 @@ services:
       # Máy A có IP public hoặc bị NAT port-forward thì phải chặn ở firewall.
       #
       # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5000:5000".
-      - "5000:5000"
+      #
+      # ⚠️ Trên macOS, cổng 5000 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind
+      # được và container vẫn `healthy` (healthcheck chạy BÊN TRONG container), nhưng
+      # gọi từ ngoài vào sẽ nhận `403 Forbidden` kèm header `Server: AirTunes/...`.
+      # Cách nhận ra: `curl -sI http://localhost:5000/healthz | grep Server`.
+      # Cách chữa: đặt cổng khác, ví dụ `QC_SCANNER_PORT=8000 docker compose up -d`
+      # (hoặc tắt AirPlay Receiver trong System Settings → General → AirDrop & Handoff).
+      - "${QC_SCANNER_PORT:-5000}:5000"
 
     environment:
       # Model đã nướng sẵn vào image lúc build → chạy được cả khi ngắt mạng.

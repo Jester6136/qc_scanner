@@ -109,6 +109,9 @@ CSV có một dòng mỗi ảnh: file, verdict, reasons, và toàn bộ metric �
 docker compose up --build -d
 docker compose logs -f qc-scanner
 
+# macOS: cổng 5000 bị AirPlay Receiver chiếm → dùng cổng khác
+QC_SCANNER_PORT=8000 docker compose up --build -d
+
 # từ máy B trong cùng LAN
 curl -F "file=@photo.jpg" "http://<IP-máy-A>:5000/?format=json"
 ```
@@ -123,6 +126,14 @@ service ở máy A – ứng dụng ở máy B.
 > Server không có xác thực — đây là đánh đổi đã chốt ở [EX-12](docs/need_exchange.md), và nó chỉ
 > an toàn chừng nào LAN là mạng tin được. Máy A có IP public hoặc bị NAT port-forward thì phải
 > chặn cổng 5000 ở firewall. Chỉ dùng ngay trên máy A thì đổi lại thành `"127.0.0.1:5000:5000"`.
+
+> **Bẫy trên macOS**: cổng 5000 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind được và
+> container vẫn báo `healthy` (healthcheck chạy *bên trong* container), nhưng gọi từ ngoài vào
+> nhận `403 Forbidden`. Nhận ra bằng `curl -sI http://localhost:5000/healthz | grep Server` —
+> thấy `AirTunes` là dính. Chữa bằng `QC_SCANNER_PORT=8000`.
+>
+> Và lưu ý: **mở `/` bằng trình duyệt luôn ra 405**, kể cả khi mọi thứ đúng. API không có trang
+> web; chỉ có `POST /` và `GET /healthz`. Nhánh `GET /?url=` cũ đã bị bỏ hẳn vì là lỗ SSRF.
 
 > ⚠️ **Image này chưa từng được build thử** — máy phát triển hiện tại không chạy Docker được.
 > Xem [OPS-3](docs/features_issues.md#ops-docker-unverified). Lần đầu dựng trên máy server phải
