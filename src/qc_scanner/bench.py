@@ -324,7 +324,11 @@ def main(argv=None):
     ap.add_argument("--images", help="Thư mục ảnh thật. Không có thì tự sinh ảnh.")
     ap.add_argument("-n", "--count", type=int, default=16, help="Số ảnh dùng để đo.")
     ap.add_argument("--url", help="Đo thêm qua HTTP, ví dụ http://127.0.0.1:5000")
-    ap.add_argument("--jobs", default="1,2,4,8,16", help="Các mức luồng cần quét.")
+    # Quét tới 64: trên máy 64 nhân, mức 16 vẫn CHƯA bão hoà (1.73→2.84→4.16→5.80→
+    # 7.64 ảnh/s), nên dừng ở 16 là dừng đúng chỗ chưa nhìn thấy điểm gãy.
+    ap.add_argument(
+        "--jobs", default="1,2,4,8,16,24,32,48,64", help="Các mức luồng cần quét."
+    )
     ap.add_argument("--batch", default="1,2,4,8,16,32", help="Các cỡ batch cần quét.")
     ap.add_argument("--skip-batch", action="store_true")
     args = ap.parse_args(argv)
@@ -345,6 +349,18 @@ def main(argv=None):
     print(f"  CPU              {os.cpu_count()} nhân")
     concurrency = os.environ.get("QC_SCANNER_MAX_CONCURRENCY", "2")
     print(f"  MAX_CONCURRENCY  {concurrency} (chỉ ảnh hưởng đường HTTP)")
+    # Cái bẫy đã xảy ra thật: `docker-compose.yml` ghi cứng "2" — con số đo trên máy
+    # dev 10 nhân — và đem sang máy 64 nhân thì đường HTTP khoá ở 2.86 req/s trong khi
+    # lõi chạy được 7.64 ảnh/s. Không có gì báo lỗi cả; mục SONG SONG vẫn đẹp, chỉ
+    # HTTP là phẳng lì. Mất một vòng đo mới nhìn ra, nên nay nó tự nói.
+    cores = os.cpu_count() or 0
+    if cores and concurrency * 4 <= cores:
+        print(
+            f"  ⚠️  MAX_CONCURRENCY={concurrency} thấp bất thường so với {cores} nhân.\n"
+            "      Mục HTTP bên dưới sẽ phẳng ở đúng mức này bất kể gửi bao nhiêu\n"
+            "      request song song. Kiểm QC_SCANNER_MAX_CONCURRENCY trong compose/env —\n"
+            "      biến đó ĐÈ LÊN giá trị tự suy theo số nhân."
+        )
     from .rembg_session import GPU_CONCURRENCY, GPU_MEM_LIMIT_MB
 
     limit = f"{GPU_MEM_LIMIT_MB}MB" if GPU_MEM_LIMIT_MB else "(không đặt)"

@@ -60,16 +60,30 @@ def _default_concurrency():
     và ngốn 40 × ảnh RAM. Chặn lại thì request thứ N+1 **xếp hàng** — chậm nhưng đoán
     được, thay vì tất cả cùng chậm không đoán được.
 
-    Nhưng hằng số 2 là số đo trên máy phát triển **10 nhân**, và đem nguyên sang máy
-    64 nhân thì bỏ phí gần hết: đo trên máy đó, `scan_qc` trực tiếp đạt 8.7 ảnh/s ở
-    16 luồng (**vẫn còn đang tăng**) trong khi đường HTTP chỉ ra 4.9 req/s — chênh
-    lệch đó chính là cái van này khoá lại.
+    Nhưng "onnxruntime đã dùng hết nhân" chỉ đúng một nửa, và số đo trên máy 64 nhân
+    nói rõ nửa còn lại — `scan_qc` trực tiếp:
 
-    Quy tắc `cpu/8`, chặn trong [2, 16]: 10 nhân → 2 (giữ nguyên kết quả đã đo),
-    64 nhân → 8. Trần 16 vì bộ nhớ — mỗi ảnh đang xử lý giữ tới 32MB.
-    Máy có GPU thì phần CPU thành nút cổ chai, cứ đặt tay cao hơn.
+        jobs= 1  1.73 ảnh/s     jobs= 4  4.16 ảnh/s     jobs=16  7.64 ảnh/s
+        jobs= 2  2.84 ảnh/s     jobs= 8  5.80 ảnh/s
+
+    Tăng 4.4x từ 1 lên 16 luồng, và **vẫn chưa bão hoà ở 16**. Một lần suy luận không
+    hề dùng hết 64 nhân.
+
+    Quy tắc `cpu/4`, chặn trong [2, 32] — khớp cả hai điểm đã đo:
+
+    * 10 nhân → **2**, đúng mức tốt nhất đo được trên máy dev (1→14.2s · 2→11.8s ·
+      3→12.0s · 4→12.7s trên 37 ảnh);
+    * 64 nhân → **16**, mức cao nhất đo được trên máy server.
+
+    Trần cũ là 16 với lý do "mỗi ảnh đang xử lý giữ tới 32MB". Lý do đó không đứng
+    được: máy server có 231 GB RAM, 16 × 32MB = 512MB. Trần thật của bộ nhớ nay là
+    `MAX_IN_FLIGHT`, đúng chỗ của nó; trần ở đây chỉ còn để chặn ca bệnh lý.
+
+    ⚠️ Đây là giá trị **tự suy theo máy đích**. Đặt `QC_SCANNER_MAX_CONCURRENCY` là vô
+    hiệu hoá nó hoàn toàn — và ghi cứng biến đó vào `docker-compose.yml` từng làm máy
+    64 nhân chạy ở mức của máy 10 nhân, mất ~64% năng lực trong im lặng.
     """
-    return max(2, min(16, (os.cpu_count() or 4) // 8))
+    return max(2, min(32, (os.cpu_count() or 4) // 4))
 
 
 MAX_CONCURRENCY = max(

@@ -157,3 +157,50 @@ def test_healthz_publishes_the_numbers_a_caller_needs_to_self_tune(client):
     assert body["max_concurrency"] >= 1
     assert body["max_in_flight"] >= body["max_concurrency"]
     assert body["in_flight"] >= 0
+
+
+def test_default_concurrency_matches_both_machines_it_was_measured_on():
+    """Neo phép tự suy vào **số đo**, không vào cảm giác.
+
+    Hai điểm đã đo thật:
+
+    * máy dev 10 nhân — 37 ảnh: 1 luồng 14.2s · **2 luồng 11.8s** · 3 luồng 12.0s ·
+      4 luồng 12.7s → tốt nhất ở **2**;
+    * máy server 64 nhân — `scan_qc` trực tiếp: 1→1.73 · 2→2.84 · 4→4.16 · 8→5.80 ·
+      **16→7.64** ảnh/s → tốt nhất trong dải đã quét là **16**.
+
+    Quy tắc cũ (`cpu/8`) cho 8 trên máy 64 nhân, tức bỏ phí mức 16 đo được là tốt hơn.
+    """
+    from unittest import mock
+
+    from qc_scanner.cmd.server import _default_concurrency
+
+    for cores, expected in ((10, 2), (64, 16)):
+        with mock.patch("os.cpu_count", return_value=cores):
+            assert _default_concurrency() == expected, f"{cores} nhân"
+
+
+def test_compose_does_not_hardcode_concurrency():
+    """`docker-compose.yml` từng ghi cứng `QC_SCANNER_MAX_CONCURRENCY: "2"`.
+
+    Đó là con số đo trên máy dev 10 nhân, lọt vào file bàn giao. Trên máy server 64
+    nhân nó khoá đường HTTP ở 2.86 req/s trong khi lõi chạy được 7.64 ảnh/s — **mất
+    ~64% năng lực**, và mất trong im lặng: service vẫn chạy đúng, healthcheck vẫn
+    xanh, chỉ mục HTTP của bench là phẳng lì.
+
+    Biến môi trường **đè lên** giá trị tự suy, nên đặt nó trong file dùng chung là vô
+    hiệu hoá hoàn toàn phép suy theo số nhân.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    offenders = [
+        line.strip()
+        for line in compose.splitlines()
+        if "QC_SCANNER_MAX_CONCURRENCY" in line and not line.strip().startswith("#")
+    ]
+    assert not offenders, (
+        f"docker-compose.yml ghi cứng {offenders} — để trống cho máy đích tự suy, "
+        "cần ép tay thì đặt lúc chạy"
+    )

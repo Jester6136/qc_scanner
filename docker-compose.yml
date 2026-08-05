@@ -51,9 +51,19 @@ services:
       # Origin được phép gọi từ trình duyệt; "*" là mọi origin. Thu hẹp khi biết
       # rõ app gọi vào chạy ở đâu, ví dụ "http://192.168.1.50:3000".
       QC_SCANNER_CORS_ORIGINS: "*"
-      # Số ảnh xử lý cùng lúc. Trên CPU thì 2 là điểm tốt nhất — onnxruntime vốn đã
-      # dùng hết nhân cho một lần suy luận, nới thêm chỉ làm mọi request cùng chậm.
-      QC_SCANNER_MAX_CONCURRENCY: "2"
+      # KHÔNG đặt QC_SCANNER_MAX_CONCURRENCY ở đây — để `_default_concurrency()` suy
+      # theo số nhân của máy đích.
+      #
+      # Chỗ này từng ghi cứng "2", và đó là con số đo trên máy dev 10 nhân lọt vào file
+      # bàn giao. Hậu quả trên máy server 64 nhân: đường HTTP khoá ở 2.86 req/s trong
+      # khi lõi chạy được 7.64 ảnh/s ở 16 luồng — **mất ~64% năng lực máy**, và mất im
+      # lặng, vì service vẫn chạy đúng. Biến môi trường đè lên giá trị tự suy, nên đặt
+      # ở đây là vô hiệu hoá hoàn toàn phép suy đó.
+      #
+      # Cần ép tay thì đặt lúc chạy, đừng ghi vào file dùng chung:
+      #     QC_SCANNER_MAX_CONCURRENCY=24 docker compose up -d
+      #
+      # Trần bộ nhớ (số request đang bay) cũng tự suy — xem QC_SCANNER_MAX_IN_FLIGHT.
 
     restart: unless-stopped
     stop_grace_period: 20s

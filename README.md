@@ -288,7 +288,7 @@ Các biến hay dùng nhất:
 |---|---|---|
 | `QC_SCANNER_HINT_AUDIENCE` | `capturer` | `hint` viết cho người chụp hay người vận hành |
 | `QC_SCANNER_PRE_CROPPED` | `false` | Ảnh đã cắt sát từ trước → bỏ qua các mã về biên |
-| `QC_SCANNER_MAX_CONCURRENCY` | `cpu/8`, trong [2, 16] | Số ảnh **xử lý** cùng lúc — van CPU |
+| `QC_SCANNER_MAX_CONCURRENCY` | `cpu/4`, trong [2, 32] | Số ảnh **xử lý** cùng lúc — van CPU |
 | `QC_SCANNER_MAX_IN_FLIGHT` | `max_concurrency × 4` | Số request **đang bay** — van RAM; vượt → `503` |
 | `QC_SCANNER_GPU_CONCURRENCY` | `2` | Số lần suy luận lên GPU cùng lúc |
 | `QC_SCANNER_GPU_MEM_LIMIT_MB` | `0` (không giới hạn) | Trần bộ nhớ GPU của onnxruntime |
@@ -318,7 +318,7 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 |---|---|
 | Mã lý do | 26 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 351 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 353 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
