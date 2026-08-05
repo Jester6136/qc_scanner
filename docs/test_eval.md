@@ -4,7 +4,7 @@
 > chạy được mọi nơi; qc_scanner may mắn là **PURE toàn bộ** — không DB, không hàng đợi, không
 > service ngoài. Rào cản duy nhất là cài được dependency và tải được model rembg lần đầu.
 >
-> **358 bài** trong `tests/`, chạy bằng `pytest`, kèm CI. §5 (eval trên tập vàng) là phần
+> **381 bài** trong `tests/`, chạy bằng `pytest`, kèm CI. §5 (eval trên tập vàng) là phần
 > **chưa chạy được** — công cụ đã sẵn (`python -m qc_scanner.eval`), chỉ thiếu ảnh có nhãn của
 > khách ([EX-2](need_exchange.md)).
 
@@ -21,7 +21,7 @@ pip install -e .                 # để có lệnh `qc-scanner` / `qc-scanner-b
 Chạy toàn bộ bộ test (~25s sau khi model đã cache):
 
 ```bash
-pytest          # 358 bài
+pytest          # 381 bài
 ruff check src tests
 ```
 
@@ -312,7 +312,7 @@ người dùng làm theo hint sai sẽ chụp lại vẫn sai. Đây là phần 
 
 ## 6. Checklist trước khi release / nghiệm thu
 
-- [x] `pytest` xanh (358 bài) — CI chạy trên môi trường sạch, có cache model.
+- [x] `pytest` xanh (381 bài) — CI chạy trên môi trường sạch, có cache model.
 - [x] Bốn mặt tiền (lib / CLI file / CLI pipe / server) cho **cùng kết quả** — §1.
 - [x] Ca hỏng (file rỗng, rác, ảnh không có tài liệu) trả **mã lý do + hint** — §1.
 - [x] Regression `examples/` không trôi — §2.

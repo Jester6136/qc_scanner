@@ -105,6 +105,27 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
 - `corners` theo thứ tự **TL-TR-BR-BL** trong hệ toạ độ **ảnh gốc**; `null` khi không dựng
   được tứ giác.
 
+### Ảnh trả về đã được nắn thẳng
+
+Ngoài phép nắn phối cảnh, ảnh ra còn được **xoay về ngang** theo phần dư đo được. Hai metric đi
+kèm, và chúng **khác nhau có chủ đích**:
+
+| Metric | Nghĩa |
+|---|---|
+| `text_skew_deg` | góc dòng chữ **đo được**, trước khi sửa. `null` = trang quá ít mực để đo |
+| `deskew_applied_deg` | góc đã thật sự xoay. `null` = không xoay |
+
+`text_skew_deg` giữ nguyên số **trước** khi sửa để bên gọi còn biết ảnh vào lệch bao nhiêu — gộp
+làm một thì mọi ảnh đều báo ~0 và chỉ số mất hết giá trị chẩn đoán.
+
+Lệch quá `8°` thì **không xoay**, mà phát `TEXT_NOT_LEVEL` (`fail`): mức đó không phải "hơi
+nghiêng" mà là dấu hiệu phép nắn đã hỏng — thường do tờ giấy bị gấp góc làm máy nhận nhầm mép.
+Xoay nó về 0 chỉ làm một ảnh đã mất nội dung trông như hợp lệ.
+
+Ảnh ra vì thế **to hơn** khung nắn một chút (trung vị +1.7%, do bốn nêm góc). Tắt bằng
+`QC_SCANNER_DESKEW=0` nếu cần bản gốc lưu trữ — xem
+[QC-19b](features_issues.md#qc-deskew-default).
+
 ### Phản hồi cho PDF nhiều trang
 
 Ảnh rời và PDF **một trang** dùng đúng hợp đồng ở trên, không đổi một byte nào.
@@ -319,8 +340,9 @@ Nhóm theo hành động của phía gọi:
 |---|---|---|
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
 | Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` | **Retry** — ảnh không có vấn đề gì |
-| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` | Chụp lại, hoặc đưa người soi |
+| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
 | Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
+| **Đã ngừng phát** | `SUBJECT_FILLS_FRAME` | Không xuất hiện nữa từ QC-15. Mã vẫn được giữ vì `code` là ổn định vĩnh viễn và log cũ còn tham chiếu — đừng viết nhánh xử lý mới cho nó |
 
 ---
 

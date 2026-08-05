@@ -15,16 +15,17 @@
 
 ## Tình trạng
 
-**Đang mở**: [OPS-3](#ops-docker-unverified) (P0) · [PKG-5](#pkg-license) (P1) ·
+**Đang mở**: [OPS-3](#ops-docker-unverified) (P0) · [PKG-5](#pkg-license) (P1) · [QC-18b](#qc-fold-residual) (P1) ·
 [S-3](#s-docaligner) (P1) · [QUAL-3](#qual-sweep) · [QUAL-4](#qual-knife-edge).
 
 **Chặn nhiều nhất**: tập vàng có nhãn của khách ([EX-2](need_exchange.md)). QUAL-3, QUAL-4, S-1,
 S-3 đều đứng chờ đúng một thứ này — công cụ đo đã dựng xong và chạy được
 (`python -m qc_scanner.eval --labels`).
 
-Mọi ngưỡng trong [`config.py`](../src/qc_scanner/config.py) vẫn là ước đoán, trừ 5 cái đã chốt
+Mọi ngưỡng trong [`config.py`](../src/qc_scanner/config.py) vẫn là ước đoán, trừ 8 cái đã chốt
 bằng số đo: `max_border_ink_ratio` · `no_crop_area_ratio` · `no_crop_min_confidence` ·
-`min_long_side_px` · `min_blur_score`.
+`min_long_side_px` · `min_blur_score` · `max_text_skew_deg` · `edge_grow_percentile` ·
+`no_crop_corner_outside_px`.
 
 ---
 
@@ -110,6 +111,37 @@ ngưỡng cứng** cho một đại lượng liên tục.
 **Hướng**: vùng đệm (0.88–0.92 thì không phát `CONTENT_CLIPPED` nhưng hạ xuống `warn`), hoặc gộp
 thêm `detector_confidence` như `NO_CROP_DETECTED` đã làm. Chưa sửa vì một ảnh không đủ để chốt
 hình dạng vùng đệm — cần [EX-2](need_exchange.md).
+
+---
+
+### 🎯 QC-18b · P1 · Nếp gấp KHÔNG làm lệch tứ giác thì vẫn lọt {#qc-fold-residual}
+
+[QC-18](#qc-text-level) bắt được ảnh gấp mép của khách, nhưng phải nói rõ nó bắt **cái gì**:
+`TEXT_NOT_LEVEL` phát hiện *phép nắn đã hỏng*, không phát hiện *tờ giấy bị gấp*. Hai chuyện đó
+trùng nhau ở ca đã gặp vì nếp gấp cắt mất một góc tờ giấy nên tứ giác lệch hẳn đi.
+
+Ca còn lọt: nếp gấp **nằm giữa trang** hoặc gấp mà 4 góc vẫn đúng chỗ. Khi đó tứ giác đúng, chữ
+vẫn ngang, mọi chỉ số đều đẹp — mà một dải nội dung thì bị che.
+
+**Hai hướng đã đo và bỏ**, ghi lại để không ai đo lại:
+
+| Hướng | Ảnh gấp mép | Ảnh tốt tệ nhất | Kết luận |
+|---|---|---|---|
+| phần dư diện tích `mask \ quad` | 0.912 | 0.9125 | lẫn hẳn vào nhau |
+| thuỳ dư lớn nhất / diện tích tứ giác | 0.0347 | **0.0382** | ảnh tốt còn tệ hơn |
+
+Cả hai chết vì cùng một lý do: `approxPolyDP` cho tứ giác **nội tiếp**, nên nó khớp *dọc theo
+chính nếp gấp* — nếp gấp không sinh phần dư nào. Toàn bộ phần dư đo được là góc bo tròn của mask.
+
+`--cross-check` cũng không cứu: hai detector cho `detector_iou = 0.899`, tức **đồng thuận cao**.
+Chúng sai giống nhau vì cùng đọc một mask.
+
+⚠️ Patent Xerox [US10212299B2](https://patents.google.com/patent/US10212299B2/en) (cấp 2019-02-19)
+phủ đúng bài toán này bằng cách chia ảnh làm 4 góc phần tư + edge profile + tương quan chéo 2-D.
+**Tránh đường đó.** Liên quan [PKG-5](#pkg-license).
+
+**Chặn bởi**: cần ảnh gấp-giữa-trang thật để đo — hiện có đúng 1 ảnh gấp mép. Xem
+[EX-2](need_exchange.md).
 
 ---
 
@@ -200,6 +232,51 @@ không biết mã đó **đúng** (isnet bắt biên sát hơn, phát hiện tà
 
 ---
 
+### 🖼️ QC-17b · Viền quanh ảnh ra: đã siết, và **đây là mức dừng** {#qc-padding-floor}
+
+Yêu cầu ban đầu là "siết `max_edge_grow_ratio` lại, viền to quá". Đo trên 38 ảnh vào thật thì
+**đó là cái núm sai**, và số liệu nói rõ vì sao — viền nền trung bình / số ảnh bị cắt lẹm vào
+giấy quá 1%:
+
+| Siết bằng trần | viền TB | lẹm > 1% | | Siết bằng phân vị | viền TB | lẹm > 1% |
+|---|---|---|---|---|---|---|
+| 0.05 (cũ) | 4.58% | 4 | | 100 (cũ) | 4.58% | 4 |
+| 0.03 | 4.28% | 7 | | **95 (nay)** | **3.38%** | **6** |
+| 0.02 | 3.66% | **9** | | 92 | 3.02% | **12** |
+
+Cùng mức viền, phân vị rẻ hơn hẳn: trần 0.02 cho viền 3.66% với 9 ảnh bị cắt, thua phân vị 95
+ở **cả hai** cột. Lý do: trần chỉ chặn ca bệnh lý, còn phân vị sửa đúng cơ chế — cạnh bị đẩy tới
+**điểm contour xa nhất**, nên một cái gai đơn lẻ trên mask kéo cả cạnh ra và mang nền vào ảnh.
+
+Cột `viền 90%` **không đổi** qua mọi mức trần từ 0.01 đến 0.05 — nhóm ảnh viền dày nhất không hề
+dày vì nới ra.
+
+**Vì sao dừng ở 95**: xuống 92 thì số ảnh bị cắt gấp đôi mà viền chỉ bớt thêm 0.36 điểm.
+
+**Vì sao siết nữa cũng không hết viền**: phần lớn viền còn lại không do nới ra. Ảnh `04.55.30`
+(CCCD), tứ giác **chưa nới** đã cắt vào thẻ ~15px mỗi cạnh; với tài liệu **bo góc**, phủ hết thẻ
+bằng một tứ giác thì bắt buộc kéo theo nền ở bốn góc lượn. Muốn hết hẳn thì phải bỏ mô hình
+"một tứ giác" — tức [S-3](#s-docaligner), không phải chỉnh ngưỡng.
+
+---
+
+### 🖼️ QC-19b · `deskew` mặc định **bật** — và điều kiện để tắt {#qc-deskew-default}
+
+Xoay một góc khác bội số 90° buộc **nội suy lại mọi điểm ảnh**. [FADGI] mức 4 sao vì thế **cấm**
+de-skew bằng phần mềm với bản gốc lưu trữ.
+
+Ta vẫn bật mặc định vì đầu ra của qc_scanner đi vào **OCR**, không vào kho lưu trữ ([EX-13]): ở
+đó chữ nằm ngang đáng giá hơn phần độ phân giải thực bị mất. Đo được: 18/38 ảnh lệch > 0.5° còn
+2, tốn 1.0ms.
+
+**Tắt `QC_SCANNER_DESKEW=0` nếu** khách dùng ảnh ra làm bản gốc lưu trữ, hoặc phải tuân FADGI/
+ISO 19264. Đây là câu hỏi nghiệp vụ, không phải câu hỏi kỹ thuật — chưa hỏi khách bao giờ.
+
+[FADGI]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
+[EX-13]: need_exchange.md
+
+---
+
 ## C. Đã đóng
 
 Chi tiết ở commit tương ứng. Giữ ở đây vì có chỗ khác trỏ tới.
@@ -225,8 +302,30 @@ Chi tiết ở commit tương ứng. Giữ ở đây vì có chỗ khác trỏ t
 | SPD-6 | GPU hết bộ nhớ bị báo thành "ảnh hỏng" (`400`); nay `INFERENCE_FAILED` + `503` | {#spd-oom} |
 | OPS-4 | `MAX_CONCURRENCY` chặn xử lý nhưng **không** chặn bộ nhớ; nay có `MAX_IN_FLIGHT` + `503` | {#ops-inflight} |
 | N-08 | Đầu vào **và** đầu ra PDF, một phán quyết mỗi trang | {#n-pdf} |
+| QC-18 | `TEXT_NOT_LEVEL` — đo góc dòng chữ **sau khi nắn**; chỉ số đầu tiên soi đầu ra | {#qc-text-level} |
+| QC-19 | Nắn thẳng phần dư (18/38 ảnh lệch > 0.5° → còn 2); không xoay khi nắn hỏng | {#qc-deskew} |
+| QC-20 | `NO_CROP_DETECTED` thêm đường vào: detector thua **và** góc lọt ra ngoài ảnh | {#qc-lost-paper} |
 
-Hai bài học đáng giữ lại, vì chúng không nằm trong diff nào:
+Bốn bài học đáng giữ lại, vì chúng không nằm trong diff nào:
+
+**Mốc hồi quy phải đứng yên, kể cả khi nó bắt đúng thứ ta vừa cố tình đổi.** QC-19 làm 6 bài
+`test_regression` đỏ, và phản xạ đầu tiên là dựng lại `examples/*.out.png` bằng pipeline mới.
+Làm rồi mới thấy sai: mốc khi ấy trôi theo mọi tính năng, nên nó thôi phát hiện được thứ nó sinh
+ra để phát hiện — chất lượng tụt dần mà không bài nào đỏ. Cách đúng đã có sẵn tiền lệ từ QC-17:
+**tắt tính năng mới trong fixture** và kiểm nó bằng bài riêng. `examples/*.out.png` là đầu ra
+thuật toán gốc và phải giữ nguyên như vậy; thứ được phép dài thêm là danh sách cờ tắt trong
+`conftest.py`, mỗi dòng ứng với một tính năng đã có bài kiểm của nó.
+
+Hệ quả phụ đáng nhớ: `tests/test_pdf.py` dựng PDF **từ chính** `examples/doc-1.out.png`, nên dựng
+lại ảnh mẫu làm đỏ thêm một bài chẳng liên quan gì tới hồi quy ảnh. Ảnh mẫu là **dữ liệu dùng
+chung**, không phải tài sản riêng của `test_regression.py`.
+
+**Phép đo giả định sẵn thứ nó định kiểm thì luôn trả lời "đạt".** Bản đo góc chữ đầu tiên gộp ký
+tự thành dòng bằng một nhân hình thái **nằm ngang** rồi đo góc — trên ảnh lệch 24° nó trả `0.0°`,
+vì chữ chéo không gộp nổi thành dòng nên rơi khỏi phép đo. Kết quả "sạch" đó suýt được dùng làm
+bằng chứng rằng ý tưởng sai. `tests/test_text_skew.py` dựng lại đúng phép đo mù đó và khoá nó lại.
+Hệ quả chung: **kiểm cái thước trước khi tin số nó đọc** — quay ảnh những góc biết trước rồi bắt
+thước đọc lại là việc rẻ hơn nhiều so với gỡ một kết luận sai.
 
 **Đơn vị đo phải khớp thứ đang bảo vệ.** `MAX_IN_FLIGHT` sinh ra để chặn RAM, nhưng máy server
 có 231 GB nên trần 2 GB chẳng bao giờ là ràng buộc. Ràng buộc thật là **thời gian chờ**, và con

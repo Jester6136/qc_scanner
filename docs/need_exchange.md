@@ -140,7 +140,7 @@
   khách định đặt nó ở mạng có thể truy cập được từ ngoài thì cần thêm một lớp xác thực, và đó
   là việc chưa nằm trong roadmap.
 
-### EX-13 · ✅ Giấy phép & phân phối
+### EX-13 · ✅ Giấy phép & phân phối {#ex-13}
 
 > **✅ Chốt 2026-08-05**: **Docker image, và bên trong có sẵn HTTP service để hệ khác gọi vào** (`qc-scanner-server`, đã là CMD mặc định của image). Nghĩa là bàn giao một thứ duy nhất: `docker run -p 5000:5000 qc-scanner` là hệ khác gọi được ngay. Kèm theo đó, hợp đồng API (`POST /`, `?format=json`, header verdict, HTTP status theo verdict) trở thành **bề mặt bàn giao chính**, không còn là tiện ích phụ — phải có tài liệu API và test hợp đồng. Kiểm giấy phép model trước khi chốt: U²-Net (mặc định hiện tại) khác điều khoản với BiRefNet; DocAligner là Apache-2.0. Đổi model kéo theo ràng buộc giấy phép mới → kiểm trước khi đổi.
 - **Hỏi**: Sản phẩm giao cho khách dưới dạng nào — thư viện PyPI, Docker image, hay mã nguồn?
@@ -256,6 +256,23 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
   chứ không đoán được từ pixel (đã đo ở [EX-14](#ex-precropped): hai nhóm trùng dải).
 - **Trong lúc chờ**: xin ~10 file PDF thật là nhìn ra ngay. Cột `pdf_source` trong CSV của
   `qc-scanner-batch` cũng nói luôn mỗi trang được đọc bằng đường nào.
+
+---
+
+### EX-18 · ❓ Ảnh ra là **bản đọc máy** hay **bản gốc lưu trữ**? {#ex-archival}
+
+- **Hỏi gì**: ảnh qc_scanner trả về sẽ đi đâu — chỉ vào OCR/bóc dữ liệu rồi bỏ, hay được **lưu
+  lại làm bản số hoá chính thức** của hồ sơ?
+- **Vì sao**: quyết định `QC_SCANNER_DESKEW`. Từ QC-19, ảnh ra được **xoay về ngang** theo phần
+  dư đo được — 18/38 ảnh thật lệch > 0.5°, sau khi xoay còn 2. Với OCR thì rõ ràng có lợi.
+  Nhưng xoay một góc khác bội số 90° buộc **nội suy lại mọi điểm ảnh**, và
+  [FADGI](https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf)
+  mức 4 sao **cấm** de-skew bằng phần mềm với bản gốc lưu trữ, đúng vì lý do đó.
+- **Ảnh hưởng**: bản đọc máy → giữ mặc định (bật). Bản gốc lưu trữ → `QC_SCANNER_DESKEW=0`, và
+  khi ấy `text_skew_deg` vẫn được báo cáo để bên nhận tự quyết từng ảnh.
+- **Đang mặc định**: **bật**, chọn theo [EX-13](#ex-13) (bàn giao phục vụ luồng bóc dữ liệu).
+  Đây là suy đoán từ bối cảnh, **chưa hỏi**.
+- **Trong lúc chờ**: không chặn gì — đổi một biến môi trường là xong, không phải đổi code.
 
 ---
 

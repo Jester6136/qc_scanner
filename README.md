@@ -67,7 +67,7 @@ result.image            # PNG bytes
 | `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
 Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
-`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **26 mã**, danh mục đầy
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **27 mã**, danh mục đầy
 đủ trong [docs/api.md](docs/api.md).
 
 ## Cài đặt
@@ -316,15 +316,15 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 
 | | |
 |---|---|
-| Mã lý do | 26 mã, mỗi mã kèm `hint` + `audience` |
+| Mã lý do | 27 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 358 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Bộ đo | 381 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
 
-Đã chạy trên 8 ảnh mẫu + 29 ảnh thật của khách (CCCD, sổ đỏ, hoá đơn, giấy A4):
-13 pass · 14 warn · 10 fail.
+Đã chạy trên 8 ảnh mẫu + 30 ảnh thật của khách (CCCD, sổ đỏ, hoá đơn, giấy A4):
+13 pass · 13 warn · 12 fail.
 
 ### Tốc độ
 
@@ -392,7 +392,7 @@ pip install -e .
 ```
 
 ```bash
-pytest                    # 282 bài, ~45s sau khi model đã cache
+pytest                    # 381 bài, ~45s sau khi model đã cache
 ruff check src tests
 ```
 

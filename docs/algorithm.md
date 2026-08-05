@@ -80,6 +80,11 @@ scan_qc(data, config) -> ScanResult
  9. QC-17: nới 4 cạnh ra bao trọn contour (mép giấy cong vồng ra ngoài dây cung)
     warp trên ảnh GỐC, PNG
 10. metric chất lượng → LOW_RESOLUTION · BLURRY · GLARE · TOO_DARK
+    QC-18: đo góc dòng chữ TRÊN ẢNH ĐÃ NẮN → lệch > 8° → TEXT_NOT_LEVEL (fail).
+    Bước duy nhất kiểm **kết quả** thay vì phỏng đoán từ đầu vào.
+10b. QC-19: xoay về thẳng đúng góc vừa đo — nhưng CHỈ trong ngưỡng trên.
+    Vượt ngưỡng thì không xoay: đó là phép nắn hỏng, xoay chỉ giấu nó đi.
+    Chấm điểm TRƯỚC rồi mới xoay, để metric còn nói được ảnh vào lệch bao nhiêu.
 11. verdict suy từ reasons; pass ⟺ reasons rỗng
 ```
 
@@ -141,6 +146,8 @@ Bất biến: **`verdict == "pass"` ⟺ `reasons == []`**. Không có "pass kèm
 | `border_ink_ratio` | mật độ mực sát mép ảnh, ở cạnh tứ giác bị khung cắt; `0.0` khi tứ giác nằm trọn trong ảnh | bắt `CONTENT_CLIPPED` |
 | `est_dpi` | ước lượng DPI đầu ra (giả định khổ A4) | bắt `LOW_RESOLUTION` |
 | `blur_score` | variance of Laplacian trên ảnh đã nắn | bắt `BLURRY` |
+| `text_skew_deg` | góc nghiêng dòng chữ trên ảnh **đã nắn**, đo **trước** khi sửa; `None` = trang quá ít mực để đo | bắt `TEXT_NOT_LEVEL` |
+| `deskew_applied_deg` | góc đã thật sự xoay để nắn thẳng; `None` = không xoay | minh bạch (QC-19) |
 | `alpha_coverage` | % pixel alpha > 0 sau rembg | bắt `SUBJECT_NOT_FOUND` |
 | `fallback_used` | `none` / `edge_detect` / `original` | minh bạch đường đi |
 
@@ -281,7 +288,7 @@ là mã vô dụng.
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
 | `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
-| `NO_CROP_DETECTED` | fail | `quad_area_ratio > 0.90` **và** `touches_border ≥ 3` **và** detector thua (`conf < 0.9` hoặc góc lọt ra ngoài ảnh) | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
+| `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
 | `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |
 | `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. Chụp **từng tờ một**. | capturer |
@@ -294,6 +301,7 @@ là mã vô dụng.
 | `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại. | capturer |
 | `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt lóa/phản quang che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy tránh phản chiếu. | capturer |
 | `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp nơi sáng hơn hoặc bật đèn. | capturer |
+| `TEXT_NOT_LEVEL` | fail | `|text_skew_deg| > 8` — đo **sau** khi nắn | Ảnh nắn ra bị xiên, chữ chạy chéo. Thường do tờ giấy bị gấp/quặp góc làm máy nhận nhầm mép. Vuốt phẳng cả 4 góc rồi chụp lại. | capturer |
 
 ### Hai ngưỡng đã chốt bằng số đo — và vì sao khác thiết kế ban đầu
 
@@ -410,6 +418,37 @@ trên cùng tập vàng** để so bằng số thay vì bằng cảm tính.
   một tứ giác → tin cao; lệch nhau → `warn` và cho người soi.
 - **Đừng nhảy thẳng lên dewarping.** Đắt, phức tạp, và có thể không giải quyết vấn đề nào của
   ảnh khách. Hỏi trước ([EX-5](need_exchange.md)), đo sau, làm sau cùng.
+- **Đừng dựng lại phép dò nếp gấp theo kiểu edge-profile + tương quan chéo 2-D.** Patent Xerox
+  [US10212299B2](https://patents.google.com/patent/US10212299B2/en) (cấp 2019-02-19) phủ đúng
+  cách đó. Đường skew dòng chữ ([QC-18](features_issues.md#qc-text-level)) là kỹ thuật phổ
+  thông, có tiền lệ công khai, và đã bắt được ca thật.
+
+### 8.4 Đối chiếu với bộ chỉ số của ngành (khảo sát 2026)
+
+Ta không tự nghĩ ra bộ chỉ số này — kiểm lại thì nó gần trùng khít cái ngành đang dùng:
+
+| Chỉ số | [Dynamsoft][dyn] | qc_scanner |
+|---|---|---|
+| mờ | variance of Laplacian, ngưỡng 200 @300dpi | `blur_score`, ngưỡng 25 |
+| cháy sáng | histogram, đỉnh > 240 | `glare_ratio` + `median_brightness` |
+| tỉ lệ khung | lệch > 10% so với khổ chuẩn | `quad_area_ratio` + `est_dpi` |
+| **skew dòng chữ** | contour dòng chữ, ngưỡng **1°** | `text_skew_deg`, ngưỡng **8°** |
+| độ tin OCR | Tesseract confidence | *(không có — ta không chạy OCR)* |
+
+Skew dòng chữ là ô ta thiếu cho tới QC-18. [FADGI][fadgi] mức 4 sao cũng đặt dung sai **±1°** và
+**cấm** de-skew bằng phần mềm.
+
+**Ngưỡng của họ không bê sang được**: cả hai đo máy quét phẳng, ảnh vốn đã thẳng. Ta nhận ảnh
+chụp điện thoại rồi nắn phối cảnh. Trớ trêu là số đo cho thấy đầu ra của ta *cũng* đạt 1.0° —
+nhưng sai số của chính phép đo cũng là 1.0°, nên đặt ngưỡng ở đó là đặt vào giữa nhiễu.
+
+Ngược lại, [Scanbot DQA][scanbot] — sản phẩm thương mại chuyên đúng việc này — chỉ chấm **độ sắc
+nét chữ** thành 5 mức, không dò nếp gấp cũng không dò che khuất. Lỗ hổng [QC-18b](features_issues.md#qc-fold-residual)
+là chuyện bình thường trong ngành; điều đó không làm nó bớt là lỗ hổng.
+
+[dyn]: https://www.dynamsoft.com/codepool/quality-evaluation-of-scanned-document-images.html
+[fadgi]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
+[scanbot]: https://scanbot.io/blog/enhanced-document-quality-analyzer/
 
 > Nguồn tham khảo: [Grizzly Labs — Document Detection](https://blog.thegrizzlylabs.com/2024/10/document-detection.html) ·
 > [Scanner Pro — border detection](https://readdle.com/blog/scanner-pro-border-detection) ·
