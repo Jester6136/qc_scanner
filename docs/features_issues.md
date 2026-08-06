@@ -15,17 +15,26 @@
 
 ## Tình trạng
 
-**Đang mở**: [OPS-3](#ops-docker-unverified) (P0) · [PKG-5](#pkg-license) (P1) · [QC-18b](#qc-fold-residual) (P1) ·
-[S-3](#s-docaligner) (P1) · [QUAL-3](#qual-sweep) · [QUAL-4](#qual-knife-edge).
+**Đang mở**: [OPS-3](#ops-docker-unverified) (P0) · [PKG-6](#pkg-model-licence) (P0) ·
+[PKG-5](#pkg-license) (P1) · [QC-22](#qc-crop-cuts-text) (P1) · [QC-23](#qc-glare-severity) (P1) ·
+[QC-18b](#qc-fold-residual) (P1) · [QUAL-5](#qual-ocr-truth) (P1) · [SPD-8](#spd-onnx-threads) (P1) ·
+[QUAL-3](#qual-sweep) · [QUAL-4](#qual-knife-edge) · [QC-24](#qc-text-height) (P2).
 
-**Chặn nhiều nhất**: tập vàng có nhãn của khách ([EX-2](need_exchange.md)). QUAL-3, QUAL-4, S-1,
-S-3 đều đứng chờ đúng một thứ này — công cụ đo đã dựng xong và chạy được
-(`python -m qc_scanner.eval --labels`).
+**Đã hết chặn một phần**: [S-3 đã đóng](#s-docaligner) — DocAligner là detector mặc định, và
+việc đó quyết được là nhờ **tập vàng công khai** [SmartDoc 2015](https://zenodo.org/records/1230218)
+(CC-BY-4.0, 926 ảnh, 5 nền, nhãn 4 góc). Bộ chuyển: `qc-scanner-smartdoc`. Nghĩa là QUAL-3/QUAL-4
+không còn phải chờ khách nữa cho phần **hình học**; chúng vẫn chờ [EX-2](need_exchange.md) cho
+phần **verdict**, vì SmartDoc không có nhãn verdict và ngưỡng của nó lệch miền (832/836 ảnh bị
+`TOO_SMALL` do khung video để xa).
 
-Mọi ngưỡng trong [`config.py`](../src/qc_scanner/config.py) vẫn là ước đoán, trừ 8 cái đã chốt
+Mọi ngưỡng trong [`config.py`](../src/qc_scanner/config.py) vẫn là ước đoán, trừ 11 cái đã chốt
 bằng số đo: `max_border_ink_ratio` · `no_crop_area_ratio` · `no_crop_min_confidence` ·
 `min_long_side_px` · `min_blur_score` · `max_text_skew_deg` · `edge_grow_percentile` ·
-`no_crop_corner_outside_px`.
+`no_crop_corner_outside_px` · `border_paper_min_ratio` · `border_paper_percentile` ·
+`DocAlignerDetector.low_confidence`.
+
+⚠️ "Chốt bằng số đo" **không đồng nghĩa với đúng**: 8/11 số này đo trên 30–38 ảnh của đúng một
+khách, do chính tôi dán nhãn. Xem [QUAL-5](#qual-ocr-truth).
 
 ---
 
@@ -70,19 +79,102 @@ kèm image.
 
 ---
 
-### 🔬 S-3 · P1 · ⭐ Hồi quy 4 góc trực tiếp (DocAligner) thay cho contour {#s-docaligner}
+### 📦 PKG-6 · P0 · Hai giấy phép model đang bị bỏ ngỏ {#pkg-model-licence}
 
-Hạn chế **cố hữu** của contour, không sửa được bằng tinh chỉnh: chỉ suy được góc **nhìn thấy
-được** — góc bị tay che hoặc nằm ngoài khung là mất hẳn; và không sinh ra **confidence** nào để
-QC dùng.
+**`isnet-general-use`** đang được [`config.py`](../src/qc_scanner/config.py) *khuyên dùng* trong
+docstring của `rembg_model`. Code của nó Apache-2.0, nhưng **dữ liệu huấn luyện DIS5K buộc người
+dùng thương mại ký thoả thuận riêng**. Ta đang chỉ khách đi vào chỗ đó.
 
-[DocAligner](https://github.com/DocsaidLab/DocAligner) (Apache-2.0) xuất thẳng toạ độ 4 góc và
-chạy ONNXRuntime — qc_scanner đã phụ thuộc `onnxruntime` sẵn nên **không thêm runtime mới**. Nó
-thay được **cả** rembg lẫn contour, tức bỏ luôn chặng chiếm ~50% thời gian mỗi ảnh.
+**`QC_SCANNER_REMBG_MODEL` không có allowlist** — nhận bất kỳ tên model nào rembg biết, gồm
+`bria-rmbg` vốn cần giấy phép trả phí. Một biến môi trường đặt sai là vi phạm giấy phép, im lặng.
 
-**Rủi ro**: mỗi ảnh một tài liệu (đa tài liệu cần bước khác); repo không công bố benchmark nên
-bắt buộc tự đo trên ảnh khách. Chỗ cắm đã sẵn (interface `Detector`). **Không đổi mặc định trước
-khi có tập vàng.**
+Ngược lại, phần đang chạy thì **sạch**: DocAligner Apache-2.0, U²-Net Apache-2.0, rembg MIT.
+
+**Việc**: bỏ lời khuyên `isnet-general-use` khỏi docstring; thêm allowlist cho model nền; ghi
+giấy phép từng model vào tài liệu bàn giao. Gắn với [PKG-5](#pkg-license).
+
+---
+
+### 🖼️ QC-22 · P1 · Chữ bị chính đường cắt của ta chém thì KHÔNG ai bắt {#qc-crop-cuts-text}
+
+`border_ink_ratio` chỉ soi dải sát **mép tấm ảnh** — nó trả lời "máy ảnh có cắt mất gì không".
+Tứ giác nằm gọn giữa ảnh mà đường cắt xén qua một dòng chữ thì nó trả `0.0`. Ca thật đo được:
+`04.59.48` chạy DocAligner cắt mất nửa dưới dòng chân trang, `border_ink_ratio = 0.0`, verdict
+`pass`. Đây là kiểu hỏng đắt nhất — **mất nội dung mà cho qua**.
+
+**Đã thử ba cách, cả ba thất bại, số đo kèm theo:**
+
+| cách hỏi | kết quả |
+|---|---|
+| "ngoài đường cắt có giấy và có mực không" | ảnh cắt **đúng** vẫn lên 0.3–1.0 |
+| "có nét mực nào vắt qua đường cắt không" | ca hỏng đã biết chỉ **0.012**, ảnh tốt lên **0.43** |
+| thêm "nét phải thò ra xa đường cắt" | lỏng → không tách; chặt → **mọi ảnh đều 0.000** |
+
+Soi bằng mắt cái đang bị đếm: đó là **bóng mép tờ giấy** — vệt tối mảnh chạy *dọc theo* đường
+cắt, có ở mọi ảnh kể cả ảnh cắt hoàn hảo, và nó vắt qua biên y hệt chữ bị chém.
+
+**Hướng còn lại**, đo trên ảnh **đầu ra** thay vì ảnh gốc: "rìa ảnh giao ra có còn lề trắng
+không". Đo được ngay (rembg trung vị 0.185, DocAligner 0.100) và nó **bắt đúng** ca hỏng. Nhưng
+nó cũng gắn cờ **CCCD**, vốn thiết kế tràn mép nên không bao giờ có lề trắng — mà CCCD là loại
+giấy tờ chính của khách. Chặn ở đó là loại oan cả kho.
+
+**Chưa quyết**: cần tách "thẻ tràn mép" khỏi "giấy bị cắt lẹm". Đề xuất rẻ nhất là dùng
+`text_skew_deg` (đã có) để nhận tài liệu dạng văn bản nhiều chữ rồi chỉ áp luật ở đó.
+
+---
+
+### 🖼️ QC-23 · P1 · `GLARE` và `TOO_DARK` là cờ phẳng, không có mức độ {#qc-glare-severity}
+
+Ảnh thật `04.58.13`: `glare_ratio = 0.843` (ngưỡng `0.02` — vượt **42 lần**),
+`median_brightness = 255.0`. Tức 84% diện tích tài liệu bão hoà trắng, quá nửa ảnh không còn
+thông tin. Verdict: **`warn`**.
+
+Loá 3% và loá 84% cho ra cùng một phán quyết. Nguyên tắc đã chốt với khách là *không đạt thì
+phải nhè ra*, nên mức trên phải là `fail`.
+
+**Việc**: thêm ngưỡng thứ hai cho `GLARE` và `TOO_DARK`, chốt bằng đo trên 30 ảnh thật.
+
+---
+
+### 🎯 QUAL-5 · P1 · Ngưỡng chất lượng đang chốt theo MẮT TÔI, không theo OCR {#qual-ocr-truth}
+
+Khảo sát 2026 (xem [algorithm.md §8.4](algorithm.md#doi-chieu)) cho hai kết quả đổi cách nghĩ:
+
+- **Không có ngưỡng variance-of-Laplacian nào trong văn liệu bình duyệt.** Con số 200 hay lưu
+  truyền là tài liệu nhà cung cấp, không suy dẫn. `min_blur_score = 25.0` của ta cũng vậy —
+  chốt ở chỗ *mắt người thấy xấu*, không phải chỗ *OCR bắt đầu hỏng*.
+- **Trần lý thuyết**: [arXiv:1906.01907](https://arxiv.org/abs/1906.01907) Bảng V — chỉ số nét
+  thủ công tương quan với độ chính xác OCR 0.90 trên tập chỉ-mờ nhưng chỉ **0.62** trên
+  SmartDoc-QA (đa biến dạng). Ảnh khách thuộc loại thứ hai, nên `min_blur_score` dù chốt hoàn
+  hảo cũng chỉ giải thích ~38% phương sai.
+
+**Việc rẻ nhất, không cần thêm ảnh khách**: lấy 30 ảnh đang `pass`, làm mờ/thu nhỏ/tăng loá dần
+theo bước cố định, ghi lại điểm OCR bắt đầu hỏng. Cho ngưỡng **cả 4 chỉ số cùng lúc**.
+
+**Chặn**: ngưỡng phụ thuộc engine OCR (PCC 0.78 PaddleOCR → 0.91 Keras OCR) → phải chốt engine
+hạ nguồn trước ([EX-19](need_exchange.md)). Bộ [SmartDoc-QA](https://zenodo.org/records/5293201)
+(CC-BY-4.0, 4.260 ảnh, ground truth là **kết quả OCR**) dùng được ngay cho việc này.
+
+---
+
+### ⚡ SPD-8 · P1 · Không có tham số nào cho số luồng ONNX {#spd-onnx-threads}
+
+`grep intra_op|num_threads|SessionOptions` trên toàn `src/` và `docs/`: **rỗng**. Mặc định của
+ONNXRuntime là số nhân vật lý, nên máy 64 nhân chạy 16 worker thành ~1024 luồng tranh nhau.
+
+Chưa đo được vì máy dev nhỏ; đây là thứ **rẻ nhất** trong toàn bộ khảo sát hiệu năng và có thể
+thắng lớn nhất trên máy server. Cần đo cùng [OPS-3](#ops-docker-unverified).
+
+---
+
+### 🔬 QC-24 · P2 · Độ phân giải đang đo sai đại lượng {#qc-text-height}
+
+`min_long_side_px = 600` đo cạnh dài tấm ảnh. Khảo sát 2 triệu ký tự (tài liệu Tesseract chính
+thức dẫn): tỉ lệ lỗi OCR tương quan mạnh nhất với **chiều cao chữ tính bằng pixel**, *bất kể dpi
+hay cỡ điểm*. Tối ưu 20–40px; dưới x-height 10px "rất ít cơ hội".
+
+Đo chiều cao chữ thì **không cần biết khổ giấy** — gỡ luôn nút thắt [EX-4](need_exchange.md), vốn
+là lý do `est_dpi` hiện phải giả định A4 và sai với CCCD/hoá đơn.
 
 ---
 
@@ -149,6 +241,47 @@ phủ đúng bài toán này bằng cách chia ảnh làm 4 góc phần tư + ed
 
 Đã đo, đã chốt. Ghi lại vì chúng là **lý do KHÔNG làm** một việc — thứ không nằm trong commit
 nào, và là thứ hay bị đề xuất lại nhất.
+
+### 🔬 S-3b · DocAligner là detector mặc định — và cái giá phải trả {#s-docaligner}
+
+Quyết định dựa trên [SmartDoc 2015](https://zenodo.org/records/1230218) (926 ảnh, 5 nền, nhãn 4
+góc của người khác dựng — **lần đầu tiên** dự án có số không do tôi tự chấm). Bảng đầy đủ nằm
+trong docstring `Config.detector`; điều quyết định là cột `background05`:
+
+| detector | bg01–04 (trung vị IoU) | **bg05** | ≥0.90 toàn bộ |
+|---|---|---|---|
+| rembg + QC-17 | 0.902–0.919 | **0.192** | 73% |
+| rembg tắt QC-17 | 0.956–0.966 | **0.187** | 90% |
+| **DocAligner heatmap** | 0.985–0.988 | **0.988** | **100%** |
+
+`bg05` là bàn làm việc bừa — tạp chí, dây cáp, cốc, tờ giấy nằm chồng lên xấp giấy khác. rembg
+**sụp hoàn toàn** (0/89 ảnh đạt ngưỡng). Đó lại là ca thực tế nhất.
+
+**Đo được thêm hai thứ trước nay chỉ đoán:**
+
+- **QC-17 tốn ~5 điểm IoU** (0.963 → 0.911), đều trên mọi nền. Không có nghĩa QC-17 sai: nó *cố
+  ý* chừa viền, mà IoU so với nhãn ôm sát giấy thì phạt đúng cái nó mua ([EX-1]). Nay biết giá.
+- Kết luận "rembg không thua" rút từ **một nền dễ** là **sai** — chỉ 5 nền đầy đủ mới lộ ra.
+  Đây là lý do cụ thể để không tin bất kỳ so sánh nào chạy trên tập con dễ.
+
+**Cái giá, đã có đường xử lý, không cái nào bỏ được:**
+
+| vấn đề | xử lý |
+|---|---|
+| trả rỗng với ảnh **đã cắt sẵn** (7/30 ảnh thật, và **mọi** trang PDF) | đường lui rembg + `RECOVERED_BY_MASK_FALLBACK`, và mã này nằm trong `BORDER_REASONS` nên ảnh khai `pre_cropped` không bị hạ verdict |
+| `MULTIPLE_DOCUMENTS` suýt **tắt lặng lẽ** — nó đếm ứng viên của detector, mà mô hình hồi quy góc chỉ trả một tứ giác | đếm contour trong mask, độc lập detector |
+| thang confidence không so được (rembg 0.6/0.9 rời rạc; DocAligner số thực, trung vị 0.841) | ngưỡng theo từng detector |
+| không có contour → **QC-17 không chạy** | chưa xử lý — xem [QC-17b](#qc-padding-floor) |
+| mô hình 83MB nằm trên Google Drive | nướng vào image lúc build (`qc-scanner-fetch-models`), mã `MODEL_MISSING` nếu thiếu |
+
+**Hồi quy còn lại**: 1/30 ảnh (sổ đỏ) DocAligner nắn chéo trong khi rembg làm đúng. Cổng QC
+**bắt được** (`fail`), không lọt. Đổi lấy 11 ảnh tốt lên.
+
+**Chưa thu được khoản nhanh**: detector nhanh hơn 7.8× (42ms so với 330ms) nhưng tổng thời gian
+mỗi ảnh lại **nhích lên** 0.395s → 0.436s, vì rembg vẫn chạy cho `alpha_coverage`, đường lui, và
+đếm đa tài liệu. Gỡ rembg khỏi đường chính là việc riêng, chưa làm.
+
+---
 
 ### 🔬 S-5 · Dewarping: đo rồi, **không làm** {#s-dewarp}
 
@@ -291,6 +424,7 @@ Chi tiết ở commit tương ứng. Giữ ở đây vì có chỗ khác trỏ t
 | QC-9 | Nhiều tài liệu trong một ảnh bị âm thầm bỏ qua → `MULTIPLE_DOCUMENTS` | {#qc-multi} |
 | QC-11 | `NO_CROP_DETECTED` — không cắt được gì là `fail`, không phải `warn` | {#qc-no-crop} |
 | QC-12 | `CONTENT_CLIPPED` — mất viền trắng thì được, mất **chữ** thì không | {#qc-content-clipped} |
+| QC-21 | `border_ink_ratio` đếm cả mặt bàn là "mực"; nay lọc theo độ sáng cục bộ (`paper_mask`) | {#qc-paper-gate} |
 | QC-13 | Hint hai tầng: người chụp (chụp lại được) / người vận hành (không) | {#qc-two-tier-hint} |
 | QC-14 | Cờ `pre_cropped`; đo 37 ảnh thấy **không tự đoán được**, phía gọi phải khai báo | {#qc-precropped} |
 | QUAL-1 | Lấy tứ giác **đầu tiên** không lọc rác; nay lọc lồi/diện tích/skew rồi mới chọn | {#qual-quad-filter} |

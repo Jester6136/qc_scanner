@@ -21,10 +21,56 @@ máy B qua LAN) và bật healthcheck vào `/healthz`.
 Mặc định bind `127.0.0.1`. Model rembg được nạp sẵn lúc khởi động (`--no-warmup` để tắt) nên
 request đầu tiên không phải gánh thời gian nạp model.
 
-> ⚠️ **Service KHÔNG có xác thực.** Theo [EX-12](need_exchange.md) nó chạy trong mạng nội bộ,
-> nên **bất cứ máy nào trong LAN cũng gọi được** — chỉ an toàn chừng nào LAN là mạng tin được.
-> Đừng phơi ra Internet; máy chạy có IP public hoặc bị NAT port-forward thì chặn ở firewall.
-> Ảnh chỉ đi qua RAM, **không ghi xuống đĩa**.
+Ảnh chỉ đi qua RAM, **không ghi xuống đĩa** ([EX-12](need_exchange.md)).
+
+---
+
+## 1b. Xác thực {#xac-thuc}
+
+Mọi request cần một API key ở header `Authorization`, kiểu Bearer token:
+
+```bash
+curl -s http://<IP>:5000/ \
+  -H "Authorization: Bearer qcs-a1b2c3..." \
+  -F "file=@anh.jpg"
+```
+
+**Sinh key** (in ra dòng cấu hình dán được ngay):
+
+```bash
+qc-scanner-apikey app-web
+# QC_SCANNER_API_KEYS="app-web:qcs-9f3a…"
+```
+
+**Cấu hình** — nhiều key, mỗi client một cái, ngăn cách bằng dấu phẩy:
+
+```yaml
+environment:
+  QC_SCANNER_API_KEYS: "app-web:qcs-9f3a…,batch:qcs-77c1…"
+```
+
+| | |
+|---|---|
+| Thiếu key / key sai | `401` + `{"error": {"code": "UNAUTHORIZED", …}}` + header `WWW-Authenticate` |
+| `/healthz` | **Không** cần key (healthcheck của Docker không có chỗ nhét key). Nó chỉ trả `auth: "on"/"off"`, không bao giờ trả key hay tên client |
+| Preflight `OPTIONS` | Không cần key — trình duyệt không gửi header tuỳ biến ở bước preflight, và bước đó không đọc được dữ liệu gì |
+
+**Xoay key không cần dừng service**: thêm key mới vào danh sách → chuyển client sang → bỏ key
+cũ. Hai key cùng sống một lúc là trạng thái bình thường. Thu hồi một client thì xoá đúng mục
+của client đó, các client khác không bị ảnh hưởng.
+
+**Chưa đặt key thì server không khởi động.** Muốn chạy mở phải khai báo tường minh
+`QC_SCANNER_AUTH=off` — không có đường vô tình rơi vào trạng thái mở, vì đó là kiểu hỏng không
+tự biểu hiện: service vẫn chạy, `/healthz` vẫn `ok`, và chỉ lộ ra khi đã có người lạ đọc được
+giấy tờ của khách. Chạy mở thì mỗi lần khởi động in một cảnh báo ra `stderr`.
+
+> ⚠️ **Giới hạn thật.** Key đi qua HTTP thuần là **gửi mật khẩu dạng chữ rõ**: ai bắt được gói
+> tin trong LAN là đọc được key và dùng lại vô thời hạn. Lớp này chặn được người gọi nhầm và
+> người dò cổng, **không** chặn được người nghe lén trên chính đường truyền. Muốn kín thật thì
+> đặt một reverse proxy có TLS (Caddy/nginx) trước container.
+>
+> Vẫn giữ nguyên: đừng phơi ra Internet; máy chạy có IP public hoặc bị NAT port-forward thì
+> chặn ở firewall.
 
 ---
 
@@ -50,6 +96,7 @@ Giới hạn kích thước upload: **32 MB** (vượt → `413`).
 | `200` | `verdict` là `pass` hoặc `warn` | PNG đã nắn, hoặc JSON nếu `?format=json` |
 | `422` | `verdict` là `fail` — ảnh hợp lệ nhưng đầu ra **không đáng tin cho OCR** | Luôn là JSON |
 | `400` | Đầu vào không đánh giá được (thiếu `file`, ảnh hỏng, tham số sai) | JSON `{"error": {...}}` |
+| `401` | Thiếu hoặc sai API key (`UNAUTHORIZED`) — xem [§1b](#xac-thuc) | JSON, kèm `WWW-Authenticate` |
 | `413` | File vượt 32 MB | `{"error": "payload quá lớn"}` |
 | `503` | Máy chủ kín tải (`SERVER_BUSY`) hoặc lỗi tài nguyên (`INFERENCE_FAILED`, hay gặp: hết bộ nhớ GPU) | JSON, kèm header `Retry-After` |
 
@@ -79,8 +126,8 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
     {
       "code": "CLIPPED_EDGE",         // mã ỔN ĐỊNH VĨNH VIỄN — khoá để đối chiếu
       "severity": "warn",             // "warn" | "fail"
-      "message": "Có góc tài liệu nằm sát/ngoài mép ảnh.",
-      "hint": "Một phần tài liệu nằm ngoài khung hình. Lùi máy ra...",
+      "message": "Có góc tài liệu nằm sát hoặc ngoài mép ảnh.",
+      "hint": "Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép.",
       "audience": "capturer",         // hint ở trên viết cho ai
       "hints": {                      // CẢ HAI tầng, để tự hiển thị lại theo vai
         "capturer": "...",
@@ -339,9 +386,9 @@ Nhóm theo hành động của phía gọi:
 | Nhóm | Mã | Phía gọi nên làm gì |
 |---|---|---|
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
-| Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` | **Retry** — ảnh không có vấn đề gì |
+| Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` `MODEL_MISSING` `UNAUTHORIZED` | **Retry** — ảnh không có vấn đề gì (`MODEL_MISSING` cần sửa image trước) |
 | Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
-| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
+| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_EDGE_FALLBACK` `RECOVERED_BY_MASK_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 | **Đã ngừng phát** | `SUBJECT_FILLS_FRAME` | Không xuất hiện nữa từ QC-15. Mã vẫn được giữ vì `code` là ổn định vĩnh viễn và log cũ còn tham chiếu — đừng viết nhánh xử lý mới cho nó |
 
 ---

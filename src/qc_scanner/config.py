@@ -77,6 +77,25 @@ class Config:
     content_clip_band_ratio: float = 0.01
     """Bề rộng dải sát mép ảnh đem soi mực, theo cạnh ngắn của ảnh gốc (QC-12)."""
 
+    border_paper_min_ratio: float = 0.6
+    """Ngưỡng "còn là giấy": độ sáng cục bộ ≥ ngưỡng này × mốc giấy của chính ảnh.
+
+    QC-21. `0` = tắt, quay lại cách đếm cũ (mọi pixel tối đều là mực).
+
+    Đo trên 30 ảnh thật, đổi `CONTENT_CLIPPED` (fail) → `CLIPPED_EDGE` (warn) đúng
+    1 ảnh, và đó là ảnh soi mắt thường **không mất chữ nào**. 0.4/0.5 không đủ gỡ ca
+    `04.57.20` (0.2271 → vẫn > 0.08); 0.6 gỡ được (→ 0.0621); 0.7 y hệt 0.6; 0.8 bắt
+    đầu ăn vào ảnh khác. Chọn 0.6 vì đó là mức thấp nhất sửa được lỗi đã biết.
+    """
+
+    border_paper_percentile: float = 90.0
+    """Phân vị độ sáng cục bộ dùng làm mốc "giấy" (QC-21).
+
+    Phân vị 75 là lựa chọn đầu và **hỏng im lặng**: tứ giác trùm 78% mặt bàn thì p75
+    rơi vào vùng nền, mốc tụt theo, và 100% mặt bàn được nhận là giấy — mọi kiểm tra
+    cắt xén tắt hết mà không mã lý do nào bật lên. Cùng ca đó p85 → 1%, p90 → 0%.
+    """
+
     max_border_ink_ratio: float = 0.08
     """Trên mức này coi như đã cắt vào **chữ**, không phải chỉ mất viền trắng (QC-12).
 
@@ -427,8 +446,50 @@ class Config:
     `providers: [CPUExecutionProvider]`, nhưng phải có người nghĩ ra việc đi đọc nó.
     """
 
-    detector: str = "rembg-contour"
-    """Detector đường chính: `rembg-contour` hoặc `edge-hough`."""
+    detector: str = "docaligner"
+    """Detector đường chính: `docaligner`, `rembg-contour` hoặc `edge-hough`.
+
+    Đổi từ `rembg-contour` sang `docaligner` sau khi đo được trên tập vàng công
+    khai SmartDoc 2015 (926 ảnh, 5 nền, nhãn 4 góc của người khác dựng):
+
+    ==================  =====  =====  =====  =====  ==========  ======
+    detector             bg01   bg02   bg03   bg04  **bg05**    TỔNG
+    ==================  =====  =====  =====  =====  ==========  ======
+    rembg + QC-17       0.916  0.902  0.911  0.919  **0.192**   0.911
+    rembg (tắt QC-17)   0.965  0.956  0.966  0.966  **0.187**   0.963
+    docaligner heatmap  0.988  0.985  0.987  0.988  **0.988**   0.987
+    ==================  =====  =====  =====  =====  ==========  ======
+
+    (trung vị IoU. Tỉ lệ đạt ≥0.90: rembg 73%, docaligner **100%**.)
+
+    Điều quyết định không nằm ở mấy phần trăm trung bình mà ở cột `bg05`: bàn làm
+    việc bừa bộn — tạp chí, dây cáp, cốc, và tờ giấy nằm chồng trên xấp giấy khác.
+    rembg **sụp hoàn toàn** ở đó (0/89 ảnh đạt ngưỡng), docaligner giữ nguyên phong
+    độ. Đó lại đúng là ca thực tế nhất: người dùng chụp giấy tờ trên bàn có đồ.
+
+    Kèm theo: nhanh hơn 7.8× (42ms so với 330ms).
+
+    Đánh đổi đã biết, đều đã có đường xử lý: docaligner không trả contour nên QC-17
+    không chạy; nó trả rỗng với ảnh ĐÃ cắt sẵn (7/30 ảnh thật) nên có đường lui
+    `RECOVERED_BY_MASK_FALLBACK`; và thang độ tin cậy khác hẳn — xem
+    `no_crop_min_confidence`.
+    """
+
+    docaligner_model: str = ""
+    """Đường dẫn file `.onnx` của DocAligner. Rỗng = detector đó không dùng được.
+
+    KHÔNG có mặc định tải tự động, và đó là chủ ý: mô hình nằm trên Google Drive,
+    còn khách chạy trong mạng nội bộ không ra Internet ([EX-12]). Một phụ thuộc
+    tải-lúc-chạy sẽ hỏng ở đúng nơi khó gỡ nhất — máy khách, lần chạy đầu.
+    """
+
+    docaligner_head: str = "heatmap"
+    """`heatmap` (fastvit_sa24, 83MB, chính xác nhất) hay `point` (lcnet050, 4.9MB).
+
+    Ghi lại vì lệch với tài liệu: khảo sát ghi lcnet050 nặng 1.7MB, file fp32 tải
+    thật về là **4.9MB**. Con số 1.7MB nhiều khả năng là bản lượng tử hoá hoặc chỉ
+    tính tham số. Đây đúng loại số cần tự cân, đừng chép từ bảng.
+    """
 
     cross_check_detectors: bool = False
     """Chạy thêm detector thứ hai; hai bên lệch nhau → DETECTOR_DISAGREEMENT (S-6)."""

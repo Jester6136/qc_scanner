@@ -31,11 +31,15 @@ better extraction downstream.
 ## Cách hoạt động
 
 ```
-photo ──► rembg (U²-Net)  ──►  alpha mask  ──►  lọc + chọn tứ giác  ──►  4 corners
-              │                    │                                        │
-              │  rembg thua        │  metric hình học + chất lượng          │
-              ▼                    ▼                                        ▼
-        edge-Hough fallback   reasons[] + verdict          four-point transform → PNG
+photo ──► DocAligner (hồi quy thẳng 4 góc)  ─────────────────────────►  4 corners
+              │                                                             │
+              │  trả rỗng (ảnh ĐÃ cắt sẵn)          metric hình học         │
+              ▼                                     + chất lượng            │
+        rembg (U²-Net) → alpha mask → contour  ──►  reasons[] + verdict      ▼
+              │                                                   four-point transform → PNG
+              │  rembg cũng thua
+              ▼
+        edge-Hough fallback
 ```
 
 Một hàm lõi `scan_qc()`, ba mặt tiền (CLI, HTTP server, Python library) gọi chung nó. Không
@@ -67,7 +71,7 @@ result.image            # PNG bytes
 | `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
 Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
-`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **27 mã**, danh mục đầy
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **30 mã**, danh mục đầy
 đủ trong [docs/api.md](docs/api.md).
 
 ## Cài đặt
@@ -79,8 +83,14 @@ pip install -r requirements.txt
 pip install .
 ```
 
-Lần chạy đầu tải model rembg (~176MB, về `~/.u2net/`); máy không có mạng sẽ dừng ở bước này.
-[Dockerfile](Dockerfile) nướng sẵn model vào image nên container chạy được offline.
+Cần **hai** model, tải một lần:
+
+```bash
+qc-scanner-fetch-models --head heatmap    # DocAligner ~83MB → ~/.cache/qc-scanner/docaligner/
+```
+
+rembg (~176MB → `~/.u2net/`) tự tải ở lần chạy đầu. Máy không có mạng sẽ dừng ở bước này;
+[Dockerfile](Dockerfile) nướng sẵn **cả hai** vào image nên container chạy được offline.
 
 ## CLI
 
@@ -316,9 +326,10 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 
 | | |
 |---|---|
-| Mã lý do | 27 mã, mỗi mã kèm `hint` + `audience` |
-| Đường lui | Không tìm được biên → trả ảnh gốc kèm `FALLBACK_ORIGINAL` (fail); rembg thua → dò cạnh kèm `RECOVERED_BY_EDGE_FALLBACK` (warn) |
-| Bộ đo | 381 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy |
+| Xác thực | API key kiểu Bearer, nhiều key thu hồi riêng từng client; không đặt key thì **server không khởi động** |
+| Mã lý do | 30 mã, mỗi mã kèm `hint` + `audience` |
+| Đường lui | DocAligner trả rỗng → rembg (`RECOVERED_BY_MASK_FALLBACK`); rembg thua → dò cạnh (`RECOVERED_BY_EDGE_FALLBACK`); hết đường → ảnh gốc kèm `FALLBACK_ORIGINAL` (fail) |
+| Bộ đo | 401 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy. Tập vàng công khai: `qc-scanner-smartdoc` (SmartDoc 2015, CC-BY-4.0) |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
@@ -392,7 +403,7 @@ pip install -e .
 ```
 
 ```bash
-pytest                    # 381 bài, ~45s sau khi model đã cache
+pytest                    # 424 bài, ~95s sau khi model đã cache
 ruff check src tests
 ```
 

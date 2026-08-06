@@ -64,9 +64,15 @@ scan_qc(data, config) -> ScanResult
  4. work  = hạ mẫu về work_height (KHÔNG phóng to ảnh nhỏ hơn)
     mask  = threshold(alpha) → medianBlur(ksize ≈ 3% chiều cao)
     metrics.alpha_coverage = tỉ lệ pixel alpha > 0
- 5. candidates = detector.all_candidates(work, mask)   # contour ≥ 5% diện tích
-    quad       = best_candidate(...)                   # LỌC rồi mới chọn, không lấy cái đầu
- 6. nếu quad None HOẶC alpha_coverage < 0.05 (rembg KHÔNG tìm thấy gì):
+ 5. quad = detector.find_quad(...)    # MẶC ĐỊNH: docaligner — hồi quy thẳng 4 góc,
+                                      # nhận ảnh CHƯA bôi nền đen (Detector.uses_mask)
+    mask_candidates = contour trong mask   # luôn tính, độc lập detector — MULTIPLE_DOCUMENTS
+                                           # đếm ở đây, không đếm ứng viên của detector
+ 6. nếu quad None và detector chính KHÔNG phải rembg:
+        thử rembg-contour → qua lọc thì dùng + RECOVERED_BY_MASK_FALLBACK (warn)
+        (docaligner trả rỗng với ảnh ĐÃ cắt sẵn: không còn nền quanh giấy để nhận ra
+         "có tài liệu" — mọi trang PDF rơi vào đây)
+    nếu vẫn None HOẶC alpha_coverage < 0.05:
         thử đường lui edge-hough → qua lọc thì dùng + RECOVERED_BY_EDGE_FALLBACK (warn)
     (QC-16: KHÔNG chạy đường lui khi rembg tìm thấy *quá nhiều* — đo thấy nó ghi đè
      tứ giác đúng bằng tứ giác sai, thắng 0/3 trên ảnh thật)
@@ -75,7 +81,7 @@ scan_qc(data, config) -> ScanResult
  8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE
     tứ giác gần trọn khung + chạm ≥3 mép + detector THUA → NO_CROP_DETECTED (thay CLIPPED_EDGE)
     có cắt thật, mà chỗ cắt CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
-    ≥2 ứng viên → MULTIPLE_DOCUMENTS
+    ≥2 contour trong mask → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
  9. QC-17: nới 4 cạnh ra bao trọn contour (mép giấy cong vồng ra ngoài dây cung)
     warp trên ảnh GỐC, PNG
@@ -206,6 +212,15 @@ Ba chỗ mà thuật toán quyết định hình dạng HTTP:
 | phần còn lại (resize, contour, warp, mã hoá PNG) | ~231 | 39% |
 | **tổng** | **~584** | |
 
+⚠️ Bảng trên đo trên **máy server 64 nhân**. Trên máy dev (Apple Silicon) cùng luồng ấy tốn
+~1669ms — con số bạn sẽ thấy trong vài docstring của [`geometry.py`](../src/qc_scanner/geometry.py).
+Hai số không mâu thuẫn, nhưng đừng trộn chúng vào cùng một phép tính tỉ trọng.
+
+**Đã đổi từ khi chuyển detector mặc định sang DocAligner (S-3b):** riêng chặng dò biên nhanh hơn
+**7.8×** (330ms → 42ms trên cùng máy dev), nhưng **tổng thời gian mỗi ảnh lại nhích lên**
+(0.395s → 0.436s) vì rembg vẫn phải chạy cho `alpha_coverage`, đường lui, và đếm đa tài liệu.
+Muốn thu khoản đó thì phải gỡ rembg khỏi đường chính — việc riêng, chưa làm.
+
 **Kết luận đã đổi so với bản đầu.** Tài liệu này từng ghi "rembg chiếm ~95%, đừng tối ưu
 OpenCV". Con số đó đo trên bản **tạo lại session mỗi lần gọi** (~3.0s/ảnh), nên phần nạp model
 lấn át tất cả. Bỏ được nó rồi thì tỉ lệ thật lộ ra: **gần một nửa thời gian nằm ngoài rembg**,
@@ -255,53 +270,56 @@ là mã vô dụng.
 
 | Mã | Sev | Điều kiện phát hiện | Hướng xử lý (hint) | Ai |
 |---|---|---|---|---|
-| `DECODE_FAILED` | fail | `imdecode` trả None | File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG. | system |
-| `FILE_EMPTY` | fail | `len(data) == 0` | Không nhận được dữ liệu. Kiểm tra lại bước tải/upload. | system |
-| `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh — báo bên phát triển. | system |
-| `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Qua HTTP là `503` kèm `Retry-After`. | system |
-| `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi phía máy chủ, **không phải lỗi ảnh** — cho chạy lại, đừng loại ảnh. Qua HTTP là `503` kèm `Retry-After`. | system |
-| `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
+| `DECODE_FAILED` | fail | `imdecode` trả None | File hỏng hoặc sai định dạng, không mở ra được. Xin lại bản gốc. | system |
+| `FILE_EMPTY` | fail | `len(data) == 0` | Không có gì để soi. Báo bên gửi kiểm tra bước tải lên. | system |
+| `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh: request thiếu trường `file`. Báo bên phát triển. | system |
+| `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Cho chạy lại. Gặp thường xuyên thì giảm request song song, hoặc thêm container. | system |
+| `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi tài nguyên máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. Cho chạy lại, đừng loại ảnh. | system |
+| `UNAUTHORIZED` | fail | request thiếu `Authorization: Bearer <key>` hợp lệ | Request không kèm `Authorization: Bearer <key>` hợp lệ. Ảnh **chưa được xử lý lần nào** — đây là lỗi tích hợp, không phải lỗi ảnh. | system |
+| `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** (`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image. | system |
+| `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc. Lại gần hơn rồi chụp lại. | capturer |
 
 ### Đầu vào PDF (N-08)
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `PDF_DECODE_FAILED` | fail | pdfium không mở được file | PDF hỏng, hoặc **có mật khẩu**. Xin lại bản gốc / bản đã gỡ mật khẩu. | system |
-| `PDF_NO_PAGES` | fail | mở được nhưng 0 trang | PDF rỗng — báo bên gửi kiểm tra bước xuất file. | system |
-| `PDF_TOO_MANY_PAGES` | fail | số trang > `pdf_max_pages` (50) | Tách file, hoặc nâng `QC_SCANNER_PDF_MAX_PAGES`. **Không trang nào được xử lý** — cắt bớt trong im lặng sẽ khiến bên gọi tưởng đã soi hết. | operator |
-| `PDF_MULTIPAGE` | fail | PDF > 1 trang đưa vào `scan_qc()` | Lỗi tích hợp: dùng `scan_document()`. Qua HTTP thì phản hồi nhiều trang đã là mặc định. | system |
+| `PDF_DECODE_FAILED` | fail | pdfium không mở được file | PDF hỏng hoặc có mật khẩu, không mở ra được. Xin lại bản đã gỡ mật khẩu. | system |
+| `PDF_NO_PAGES` | fail | mở được nhưng 0 trang | PDF rỗng, không có gì để soi. Báo bên gửi kiểm tra bước xuất file. | system |
+| `PDF_TOO_MANY_PAGES` | fail | số trang > `pdf_max_pages` (50) | Vượt trần `pdf_max_pages` nên **không trang nào** được xử lý — cắt bớt trong im lặng sẽ khiến bên gọi tưởng đã soi hết. Tách file, hoặc nâng `QC_SCANNER_PDF_MAX_PAGES`. | operator |
+| `PDF_MULTIPAGE` | fail | PDF > 1 trang đưa vào `scan_qc()` | Lỗi tích hợp: `scan_qc()` trả đúng một kết quả nên không chứa nổi PDF nhiều trang. Dùng `scan_document()`; qua HTTP thì đã là mặc định. | system |
 
 ### Tách chủ thể
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Không tách được tờ giấy khỏi nền. Đặt tài liệu lên **nền tối, tương phản** (bàn sẫm màu) rồi chụp lại. | capturer |
-| ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. Lùi ra để lộ viền nền quanh tài liệu. | capturer |
-| `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, nên soi mắt thường trước khi dùng. | operator |
-| `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận — kết quả kém chắc chắn, nên soi mắt thường. | operator |
+| `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Máy không thấy tờ giấy. Đặt lên nền tối rồi chụp lại. | capturer |
+| ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Giấy chiếm gần hết khung, có thể mất mép. Lùi máy ra rồi chụp lại. | capturer |
+| `RECOVERED_BY_MASK_FALLBACK` | warn | detector chính trả rỗng → tách nền tìm được (hay gặp với ảnh **đã cắt sẵn**) | Detector chính trả rỗng, tứ giác này do tách nền tìm ra. Hay gặp với ảnh **đã cắt sẵn**. Soi trước khi dùng. | operator |
+| `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Nắn bằng phương án dự phòng nên kém tin cậy hơn. Soi trước khi dùng. | operator |
+| `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận nên kết quả kém chắc. Soi trước khi dùng. | operator |
 
 ### Hình học biên
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
-| `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
-| `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
-| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
-| `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
-| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
-| `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |
-| `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. Chụp **từng tờ một**. | capturer |
-| `FALLBACK_ORIGINAL` | fail | trả ảnh gốc không nắn | Không nắn được, ảnh trả về là ảnh gốc chưa xử lý. Không đưa thẳng vào OCR. | operator |
+| `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Máy không thấy đủ 4 góc. Mở phẳng tờ giấy, đừng che góc, chụp lại cả tờ. | capturer |
+| `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu quá nhỏ trong khung. Lại gần hoặc zoom vào rồi chụp lại. | capturer |
+| `NOT_CONVEX` | fail | `not is_convex` | Biên bị méo, thường do nếp gấp. Vuốt phẳng tài liệu rồi chụp lại. | capturer |
+| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Mất **chữ** chứ không chỉ mất viền. Lùi máy ra, chụp lại cả tờ kèm chút nền. | capturer |
+| `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Máy không tìm được biên tờ giấy. Đặt lên nền tối rồi chụp lại cả 4 mép. | capturer |
+| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép. | capturer |
+| `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Chụp quá nghiêng nên chữ bị kéo giãn. Chụp vuông góc từ trên xuống. | capturer |
+| `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Ảnh có nhiều tờ, máy chỉ lấy tờ lớn nhất. Chụp từng tờ một. | capturer |
+| `FALLBACK_ORIGINAL` | fail | trả ảnh gốc không nắn | Ảnh trả về là ảnh gốc chưa xử lý. Đừng đưa thẳng vào OCR. | operator |
 
 ### Chất lượng ảnh (Giai đoạn 2)
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại. | capturer |
-| `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt lóa/phản quang che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy tránh phản chiếu. | capturer |
-| `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp nơi sáng hơn hoặc bật đèn. | capturer |
-| `TEXT_NOT_LEVEL` | fail | `|text_skew_deg| > 8` — đo **sau** khi nắn | Ảnh nắn ra bị xiên, chữ chạy chéo. Thường do tờ giấy bị gấp/quặp góc làm máy nhận nhầm mép. Vuốt phẳng cả 4 góc rồi chụp lại. | capturer |
+| `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ hoặc rung. Giữ máy vững, chạm lấy nét rồi chụp lại. | capturer |
+| `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt loá che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy. | capturer |
+| `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp ở nơi sáng hơn. | capturer |
+| `TEXT_NOT_LEVEL` | fail | `|text_skew_deg| > 8` — đo **sau** khi nắn | Ảnh nắn ra bị xiên, thường do gấp góc giấy. Vuốt phẳng cả 4 góc rồi chụp lại. | capturer |
 
 ### Hai ngưỡng đã chốt bằng số đo — và vì sao khác thiết kế ban đầu
 
@@ -412,40 +430,75 @@ trên cùng tập vàng** để so bằng số thay vì bằng cảm tính.
 
 ### 8.3 Điều KHÔNG nên làm
 
-- **Đừng thay detector trước khi có bộ đo.** Không có tập vàng thì "mô hình mới xịn hơn" chỉ là
-  niềm tin — và ta sẽ không phát hiện được nó tệ hơn ở đúng nhóm ảnh của khách.
-- **Đừng bỏ hẳn đường cũ.** Hai detector bất đồng chính là **tín hiệu QC miễn phí**: cùng chỉ
-  một tứ giác → tin cao; lệch nhau → `warn` và cho người soi.
+- **Đừng thay detector trước khi có bộ đo.** Nguyên tắc này đã được **thi hành**: DocAligner
+  nằm im sau cờ cấu hình cho tới khi có [SmartDoc 2015](https://zenodo.org/records/1230218) rồi
+  mới thành mặc định ([S-3b](features_issues.md#s-docaligner)). Và nó tự chứng minh giá trị theo
+  cách khó chịu: đo trên **một nền dễ** cho kết luận "rembg không thua", đủ 5 nền thì kết luận
+  đó **sai hẳn**. Bộ đo chạy trên tập con dễ còn nguy hiểm hơn không có bộ đo.
+- **Đừng bỏ hẳn đường cũ.** Nay có bằng chứng cứng thay cho lập luận: docaligner trả rỗng với
+  ảnh **đã cắt sẵn** (7/30 ảnh thật + mọi trang PDF) còn rembg lấy được cả; ngược lại rembg sụp
+  ở nền bàn bừa bộn còn docaligner giữ nguyên. Hai họ thuật toán thua ở hai chỗ **khác nhau**.
+- **Đừng để một phép kiểm QC phụ thuộc detector.** `MULTIPLE_DOCUMENTS` từng đếm ứng viên của
+  detector; đổi sang mô hình hồi quy góc (chỉ trả một tứ giác) là nó **tắt lặng lẽ**. Mất một
+  phép kiểm vì đổi detector là cái giá không ai đồng ý trả, mà lại không có gì báo.
+- **Đừng bê ngưỡng confidence từ detector này sang detector kia.** rembg trả hai giá trị rời rạc
+  (0.9 / 0.6); docaligner trả số thực (trung vị 0.841 trên ảnh thật). Không cùng đơn vị.
 - **Đừng nhảy thẳng lên dewarping.** Đắt, phức tạp, và có thể không giải quyết vấn đề nào của
   ảnh khách. Hỏi trước ([EX-5](need_exchange.md)), đo sau, làm sau cùng.
 - **Đừng dựng lại phép dò nếp gấp theo kiểu edge-profile + tương quan chéo 2-D.** Patent Xerox
   [US10212299B2](https://patents.google.com/patent/US10212299B2/en) (cấp 2019-02-19) phủ đúng
   cách đó. Đường skew dòng chữ ([QC-18](features_issues.md#qc-text-level)) là kỹ thuật phổ
   thông, có tiền lệ công khai, và đã bắt được ca thật.
+- **Đừng quảng cáo `cross_check_detectors` như một điểm mạnh trước khi hỏi pháp lý.** Adobe
+  [US10970847B2](https://patents.google.com/patent/US10970847B2/en) (hiệu lực tới 2039) phủ đúng
+  "sinh tứ giác bằng Hough + sinh tứ giác bằng CNN → quyết định dựa trên cả hai tập". Đó gần như
+  là mô tả của S-6. Mặc định đang **tắt**; giữ nguyên như vậy.
+- **Đừng thêm thủ thuật "chọn kênh màu tốt nhất"** (Kodak Alaris
+  [US9122921B2](https://patents.google.com/patent/US9122921B2/en)) và **đừng làm preview dò biên
+  realtime** (họ patent "live document detection").
 
 ### 8.4 Đối chiếu với bộ chỉ số của ngành (khảo sát 2026)
 
 Ta không tự nghĩ ra bộ chỉ số này — kiểm lại thì nó gần trùng khít cái ngành đang dùng:
 
-| Chỉ số | [Dynamsoft][dyn] | qc_scanner |
+| Chỉ số | [Google Document AI][gdai] | qc_scanner |
 |---|---|---|
-| mờ | variance of Laplacian, ngưỡng 200 @300dpi | `blur_score`, ngưỡng 25 |
-| cháy sáng | histogram, đỉnh > 240 | `glare_ratio` + `median_brightness` |
-| tỉ lệ khung | lệch > 10% so với khổ chuẩn | `quad_area_ratio` + `est_dpi` |
-| **skew dòng chữ** | contour dòng chữ, ngưỡng **1°** | `text_skew_deg`, ngưỡng **8°** |
-| độ tin OCR | Tesseract confidence | *(không có — ta không chạy OCR)* |
+| mờ | `defect_blurry` | `blur_score`, ngưỡng 25 |
+| cháy sáng | `defect_glare` | `glare_ratio` + `median_brightness` |
+| cắt mất nội dung | `defect_document_cutoff` / `defect_text_cutoff` | `CLIPPED_EDGE` / `CONTENT_CLIPPED` |
+| chữ quá nhỏ | `defect_text_too_small` | `LOW_RESOLUTION` (xem [QC-24](features_issues.md#qc-text-height)) |
+| nhiều tài liệu trong một ảnh | *(không có)* | `MULTIPLE_DOCUMENTS` |
+| skew dòng chữ | *(không công bố)* | `text_skew_deg`, ngưỡng **8°** |
 
-Skew dòng chữ là ô ta thiếu cho tới QC-18. [FADGI][fadgi] mức 4 sao cũng đặt dung sai **±1°** và
-**cấm** de-skew bằng phần mềm.
+Taxonomy của Google trùng gần hết bộ mã của ta, và đó là **tài liệu sản phẩm thật** (1,50
+USD/1.000 trang, kèm OCR). Ô ta hơn: đa tài liệu.
 
-**Ngưỡng của họ không bê sang được**: cả hai đo máy quét phẳng, ảnh vốn đã thẳng. Ta nhận ảnh
-chụp điện thoại rồi nắn phối cảnh. Trớ trêu là số đo cho thấy đầu ra của ta *cũng* đạt 1.0° —
-nhưng sai số của chính phép đo cũng là 1.0°, nên đặt ngưỡng ở đó là đặt vào giữa nhiễu.
+> **Hai chỗ bản trước của tài liệu này trích SAI, đã sửa:**
+>
+> 1. Cột đối chiếu cũ là **Dynamsoft**, lấy từ một [bài blog demo][dyn] — chính bài đó ghi các
+>    ngưỡng là *"suggested starting values"*, và Dynamsoft không bán sản phẩm nào tên "DIQA".
+>    Nó không đủ tư cách làm cột đối chứng.
+> 2. Câu "[FADGI][fadgi] 4 sao đặt dung sai ±1° và **cấm** de-skew phần mềm" là quy tắc của bản
+>    **2016**, trong khi link trỏ bản **2023**. Bản 3rd Edition (05/2023) đã **rút** quy tắc đó:
+>    *"the guidelines now allow for rotation correction to be applied to images"*. Hệ quả:
+>    lập luận của [EX-18](need_exchange.md#ex-archival) (tắt deskew cho bản lưu trữ) mất chỗ
+>    dựa, và `deskew = True` mặc định vững hơn lúc đặt nó.
+
+**Ngưỡng của tiêu chuẩn số hoá không bê sang được**: ISO 19264-1, FADGI và Metamorfoze đều đo
+**thiết bị chụp qua bia kiểm chuẩn đặt trong khung hình**, không đo ảnh đơn lẻ. Ta nhận ảnh chụp
+điện thoại, không có bia. Sẽ không bao giờ có ngưỡng cho ta ở đó.
+
+**Mô hình đúng để bắt chước nằm ở sinh trắc học, không ở ngành scan**: ISO/IEC 29794 +
+[NFIQ 2](https://github.com/usnistgov/nfiq2) — điểm chất lượng **hiệu chuẩn theo lỗi của hệ nhận
+dạng phía sau**, kèm cài đặt tham chiếu mã nguồn mở. Áp vào ta: nhãn vàng nên là *"OCR đọc đủ
+trường bắt buộc không"*, không phải *"người thấy ảnh xấu"*. Xem
+[QUAL-5](features_issues.md#qual-ocr-truth).
 
 Ngược lại, [Scanbot DQA][scanbot] — sản phẩm thương mại chuyên đúng việc này — chỉ chấm **độ sắc
 nét chữ** thành 5 mức, không dò nếp gấp cũng không dò che khuất. Lỗ hổng [QC-18b](features_issues.md#qc-fold-residual)
 là chuyện bình thường trong ngành; điều đó không làm nó bớt là lỗ hổng.
 
+[gdai]: https://cloud.google.com/document-ai/docs/process-documents-ocr
 [dyn]: https://www.dynamsoft.com/codepool/quality-evaluation-of-scanned-document-images.html
 [fadgi]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
 [scanbot]: https://scanbot.io/blog/enhanced-document-quality-analyzer/

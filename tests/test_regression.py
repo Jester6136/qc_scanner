@@ -79,20 +79,22 @@ def test_content_matches_reference(pair, scan_cache_inscribed):
 # --- QC-17: nới cạnh chỉ được THÊM lề, không được bớt nội dung --------------- #
 
 
-def test_containing_quad_only_adds_margin(pair, scan_cache, scan_cache_inscribed):
+def test_containing_quad_only_adds_margin(pair, scan_cache_contour, scan_cache_inscribed):
     """Khung cắt mặc định phải **bao** khung cắt nội tiếp, không bao giờ nhỏ hơn.
 
     Đây là bài thay cho việc so byte với ảnh mẫu ở chế độ mặc định: QC-17 cố ý đổi
     khung cắt, nên câu hỏi đúng không còn là "có giống ảnh cũ không" mà là "có mất
     gì so với ảnh cũ không".
     """
-    grown = decode(scan_cache[pair.name])
+    grown = decode(scan_cache_contour[pair.name])
     inscribed = decode(scan_cache_inscribed[pair.name])
     assert grown.shape[0] >= inscribed.shape[0]
     assert grown.shape[1] >= inscribed.shape[1]
 
 
-def test_containing_quad_keeps_the_same_document(pair, scan_cache, scan_cache_inscribed):
+def test_containing_quad_keeps_the_same_document(
+    pair, scan_cache_contour, scan_cache_inscribed
+):
     """Nới lề không được biến nó thành tài liệu khác.
 
     **Dò mẫu chứ không so pixel tại chỗ**: khung cắt mới rộng hơn nên nội dung cũ
@@ -104,7 +106,7 @@ def test_containing_quad_keeps_the_same_document(pair, scan_cache, scan_cache_in
     khác mà bài "chỉ thêm lề" ở trên vẫn xanh.
     """
     score = _contains_content(
-        decode(scan_cache[pair.name]), decode(scan_cache_inscribed[pair.name])
+        decode(scan_cache_contour[pair.name]), decode(scan_cache_inscribed[pair.name])
     )
     assert score > NCC_THRESHOLD, f"{pair.name}: khớp mẫu {score:.4f}"
 

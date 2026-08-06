@@ -30,7 +30,7 @@
   `EXTREME_SKEW` 1.8, `LOW_RESOLUTION` 150 DPI) hiện là con số **ta tự đặt**.
 - **Nếu chưa rõ**: chấm điểm theo chuẩn của mình, nghiệm thu theo chuẩn của khách → lệch.
 
-### EX-2 · ✅ Tập ảnh thật + tập vàng có nhãn
+### EX-2 · ✅ Tập ảnh thật + tập vàng có nhãn {#ex-2}
 
 > **✅ Chốt 2026-08-05**: **Khách cấp ảnh, bên làm gán nhãn, khách duyệt.** Cần ≥100 ảnh, ≥30% là ca xấu. Việc tiếp theo: dựng công cụ hỗ trợ gán nhãn + quy trình duyệt. **Đang chờ ảnh.**
 - **Hỏi**: Xin **≥100 ảnh thật** đại diện, trong đó **≥30% là ca xấu** (mờ, nghiêng, nền lẫn,
@@ -265,14 +265,51 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
   lại làm bản số hoá chính thức** của hồ sơ?
 - **Vì sao**: quyết định `QC_SCANNER_DESKEW`. Từ QC-19, ảnh ra được **xoay về ngang** theo phần
   dư đo được — 18/38 ảnh thật lệch > 0.5°, sau khi xoay còn 2. Với OCR thì rõ ràng có lợi.
-  Nhưng xoay một góc khác bội số 90° buộc **nội suy lại mọi điểm ảnh**, và
-  [FADGI](https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf)
-  mức 4 sao **cấm** de-skew bằng phần mềm với bản gốc lưu trữ, đúng vì lý do đó.
+  Nhưng xoay một góc khác bội số 90° buộc **nội suy lại mọi điểm ảnh**.
+- ⚠️ **Lập luận phản đối đã yếu đi hẳn.** Bản trước của mục này viết
+  "[FADGI](https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf)
+  mức 4 sao **cấm** de-skew phần mềm" — đó là quy tắc của bản **2016**, còn link trỏ bản
+  **2023**. Bản 3rd Edition (05/2023) đã **rút** nó: *"the guidelines now allow for rotation
+  correction to be applied to images"*, và bảng đánh giá không còn dòng skew nào có số. Câu hỏi
+  vẫn đáng hỏi (nội suy vẫn là mất mát không đảo ngược được), nhưng nó **không còn là vi phạm
+  tiêu chuẩn**.
 - **Ảnh hưởng**: bản đọc máy → giữ mặc định (bật). Bản gốc lưu trữ → `QC_SCANNER_DESKEW=0`, và
   khi ấy `text_skew_deg` vẫn được báo cáo để bên nhận tự quyết từng ảnh.
 - **Đang mặc định**: **bật**, chọn theo [EX-13](#ex-13) (bàn giao phục vụ luồng bóc dữ liệu).
   Đây là suy đoán từ bối cảnh, **chưa hỏi**.
 - **Trong lúc chờ**: không chặn gì — đổi một biến môi trường là xong, không phải đổi code.
+
+---
+
+### EX-19 · ❓ OCR hạ nguồn là engine nào? {#ex-ocr-engine}
+
+- **Hỏi gì**: ảnh qc_scanner trả về sẽ được engine nào đọc — PaddleOCR, Tesseract, VietOCR,
+  Google Document AI, hay một dịch vụ nội bộ?
+- **Vì sao**: đây là câu hỏi **ngang tầm quan trọng với [EX-2](#ex-2)**, và trước nay ta chưa
+  hỏi. Mọi ngưỡng chất lượng (`min_blur_score`, `glare_ratio`, `min_long_side_px`,
+  `min_median_brightness`) hiện chốt ở chỗ **mắt tôi thấy xấu**, không phải chỗ **OCR bắt đầu
+  hỏng** — mà hai chỗ đó khác nhau, và chỗ thứ hai còn **khác nhau giữa các engine**: cùng một
+  bộ ảnh, tương quan chất-lượng↔độ-chính-xác là 0.78 với PaddleOCR nhưng 0.91 với Keras OCR.
+- **Ảnh hưởng**: biết engine thì chạy được phép đo ở [QUAL-5](features_issues.md#qual-ocr-truth)
+  — làm mờ/thu nhỏ/tăng loá 30 ảnh đang `pass` theo bước cố định, ghi lại điểm engine đó bắt đầu
+  đọc sai, và lấy chính điểm ấy làm ngưỡng. Cho ngưỡng **cả 4 chỉ số cùng lúc**, không cần xin
+  thêm một tấm ảnh nào.
+- **Trong lúc chờ**: ngưỡng hiện tại vẫn chạy, nhưng đừng gọi chúng là "đã hiệu chuẩn".
+
+---
+
+### EX-20 · ❓ 100 ảnh của EX-2 KHÔNG đủ để cam kết false pass ≤1% {#ex-sample-size}
+
+- **Nói gì với khách**: với ~30 ảnh nhãn xấu và 0 ca lọt, thống kê chỉ khẳng định được false
+  pass **≤10%**, không phải ≤1%. Muốn ≤1% cần khoảng **300 ảnh nhãn xấu**.
+- **Vì sao phải nói trước**: đây là chuyện của lúc **thoả thuận nghiệm thu**, không phải lúc
+  nghiệm thu. Hứa một con số mà cỡ mẫu không đỡ nổi là tự đặt bẫy cho chính mình.
+- **Đề xuất hai tầng**: ~150 ảnh nhãn đầy đủ (verdict + mã lý do + 4 góc) cho phát triển;
+  ~400–600 ảnh **chỉ nhãn verdict** cho nghiệm thu — bỏ nhãn 4 góc vì đó là phần đắt nhất, mà
+  độ chính xác hình học đã đo được miễn phí trên
+  [SmartDoc 2015](https://zenodo.org/records/1230218).
+- **Kèm theo**: giao thức đồng thuận giữa người dán nhãn (Krippendorff α ≥ 0.80, đo trên mẫu
+  chồng lấn 20%) — không có nó thì "nhãn vàng" chỉ là ý kiến của một người.
 
 ---
 

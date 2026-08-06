@@ -57,34 +57,52 @@ REASONS: dict[str, ReasonSpec] = {
             "FILE_EMPTY",
             "fail",
             "Không nhận được dữ liệu ảnh (0 byte).",
-            "Không nhận được dữ liệu. Kiểm tra lại bước tải/upload.",
-            "Không có gì để soi. Báo bên gửi ảnh kiểm tra bước tải lên.",
+            "Chưa nhận được ảnh. Kiểm tra lại bước tải lên.",
+            "Không có gì để soi. Báo bên gửi kiểm tra bước tải lên.",
             "system",
         ),
         _spec(
             "MISSING_FILE",
             "fail",
-            "Request không có trường form `file`.",
-            "Ảnh chưa được đính kèm. Kiểm tra lại bước chọn/tải ảnh.",
-            "Hệ gọi gửi request thiếu trường `file`. Đây là lỗi tích hợp, "
-            "báo bên phát triển — không phải lỗi của ảnh.",
+            "Request thiếu trường form `file`.",
+            "Chưa đính kèm ảnh. Chọn ảnh rồi gửi lại.",
+            "Lỗi tích hợp, không phải lỗi ảnh: request thiếu trường `file`. "
+            "Báo bên phát triển.",
             "system",
         ),
         _spec(
             "DECODE_FAILED",
             "fail",
             "Không giải mã được dữ liệu thành ảnh.",
-            "File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG.",
-            "File hỏng hoặc sai định dạng — không mở ra để soi được. Xin lại bản gốc.",
+            "File không phải ảnh hợp lệ. Gửi lại dạng JPG hoặc PNG.",
+            "File hỏng hoặc sai định dạng, không mở ra được. Xin lại bản gốc.",
             "system",
         ),
         _spec(
             "INFERENCE_FAILED",
             "fail",
-            "Model tách nền chạy lỗi (thiếu tài nguyên hoặc hỏng thiết bị).",
-            "Lỗi phía máy chủ, không phải do ảnh của bạn. Thử lại sau ít phút.",
-            "Lỗi tài nguyên phía máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. "
-            "Ảnh này vẫn dùng được — cho chạy lại, đừng loại nó.",
+            "Model chạy lỗi (hết tài nguyên hoặc hỏng thiết bị).",
+            "Lỗi máy chủ, không phải do ảnh. Thử lại sau ít phút.",
+            "Lỗi tài nguyên máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. "
+            "Cho chạy lại, đừng loại ảnh.",
+            "system",
+        ),
+        _spec(
+            "MODEL_MISSING",
+            "fail",
+            "Thiếu file mô hình — máy chủ chưa cài đặt xong.",
+            "Lỗi máy chủ, không phải do ảnh. Báo người quản trị.",
+            "Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** "
+            "(`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image.",
+            "system",
+        ),
+        _spec(
+            "UNAUTHORIZED",
+            "fail",
+            "Thiếu hoặc sai API key.",
+            "Yêu cầu chưa được xác thực. Báo bên tích hợp kiểm tra API key.",
+            "Request không kèm `Authorization: Bearer <key>` hợp lệ. Ảnh **chưa được "
+            "xử lý lần nào** — đây là lỗi tích hợp, không phải lỗi ảnh.",
             "system",
         ),
         # --- Đầu vào PDF ---
@@ -92,57 +110,53 @@ REASONS: dict[str, ReasonSpec] = {
             "PDF_DECODE_FAILED",
             "fail",
             "Không mở được file PDF.",
-            "File PDF hỏng, hoặc có mật khẩu mở file. Gửi lại bản không đặt mật khẩu.",
-            "PDF hỏng hoặc được đặt mật khẩu — không mở ra để soi được. "
-            "Xin lại bản gốc, hoặc bản đã gỡ mật khẩu.",
+            "PDF hỏng hoặc có mật khẩu. Gửi lại bản không đặt mật khẩu.",
+            "PDF hỏng hoặc có mật khẩu, không mở ra được. Xin lại bản đã gỡ mật khẩu.",
             "system",
         ),
         _spec(
             "PDF_NO_PAGES",
             "fail",
             "File PDF không có trang nào.",
-            "File PDF rỗng (0 trang). Kiểm tra lại bước xuất/tải file.",
+            "File PDF rỗng. Kiểm tra lại bước xuất file.",
             "PDF rỗng, không có gì để soi. Báo bên gửi kiểm tra bước xuất file.",
             "system",
         ),
         _spec(
             "PDF_TOO_MANY_PAGES",
             "fail",
-            "File PDF vượt trần số trang cho một lần xử lý.",
-            "File quá nhiều trang cho một lần gửi. Tách nhỏ rồi gửi lại.",
-            "Vượt trần `pdf_max_pages`. Không trang nào được xử lý — cắt bớt trong im "
-            "lặng sẽ khiến bên gọi tưởng đã soi hết. Tách file, hoặc nâng "
-            "`QC_SCANNER_PDF_MAX_PAGES` nếu máy chủ chịu được thời gian xử lý.",
+            "PDF vượt trần số trang cho một lần xử lý.",
+            "File quá nhiều trang. Tách nhỏ rồi gửi lại.",
+            "Vượt trần `pdf_max_pages` nên **không trang nào** được xử lý — cắt bớt "
+            "trong im lặng sẽ khiến bên gọi tưởng đã soi hết. Tách file, hoặc nâng "
+            "`QC_SCANNER_PDF_MAX_PAGES`.",
             "operator",
         ),
         _spec(
             "PDF_MULTIPAGE",
             "fail",
-            "PDF nhiều trang được đưa vào đường xử lý một-ảnh.",
-            "File PDF có nhiều trang. Gửi từng trang, hoặc dùng luồng xử lý nhiều trang.",
-            "Đây là lỗi tích hợp, không phải lỗi tài liệu: `scan_qc()` trả đúng một kết "
-            "quả nên không chứa nổi PDF nhiều trang. Dùng `scan_document()` — hoặc với "
-            "HTTP thì phản hồi nhiều trang đã là mặc định, không cần đổi gì.",
+            "PDF nhiều trang đưa vào đường xử lý một-ảnh.",
+            "PDF có nhiều trang. Gửi từng trang một.",
+            "Lỗi tích hợp: `scan_qc()` trả đúng một kết quả nên không chứa nổi PDF "
+            "nhiều trang. Dùng `scan_document()`; qua HTTP thì đã là mặc định.",
             "system",
         ),
         _spec(
             "SERVER_BUSY",
             "fail",
-            "Máy chủ đang kín tải, không nhận thêm request lúc này.",
-            "Hệ thống đang bận. Thử lại sau vài giây — ảnh của bạn không có vấn đề gì.",
-            "Quá tải tạm thời, **không phải lỗi ảnh**. Ảnh này chưa được xử lý lần nào; "
-            "cho chạy lại, đừng loại. Gặp thường xuyên thì giảm số request gửi song "
-            "song, hoặc thêm container.",
+            "Máy chủ kín tải, chưa nhận thêm request.",
+            "Hệ thống đang bận. Thử lại sau vài giây.",
+            "Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. "
+            "Cho chạy lại. Gặp thường xuyên thì giảm request song song, hoặc thêm container.",
             "system",
         ),
         _spec(
             "LOW_RESOLUTION",
             "fail",
-            "Độ phân giải ước lượng thấp hơn ngưỡng OCR đọc được.",
-            "Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, "
-            "hoặc lại gần tài liệu hơn.",
-            "Ảnh quá nhỏ để OCR đọc; cắt tay cũng không thêm được điểm ảnh. "
-            "Tìm bản chụp lớn hơn trong kho, không có thì nhập tay.",
+            "Ảnh quá nhỏ so với ngưỡng OCR đọc được.",
+            "Ảnh quá nhỏ để OCR đọc. Lại gần hơn rồi chụp lại.",
+            "Quá nhỏ để OCR đọc, cắt tay cũng không thêm được điểm ảnh. "
+            "Tìm bản lớn hơn, không có thì nhập tay.",
             "capturer",
         ),
         # --- Tách chủ thể ---
@@ -150,9 +164,9 @@ REASONS: dict[str, ReasonSpec] = {
             "SUBJECT_NOT_FOUND",
             "fail",
             "Không tách được tờ giấy khỏi nền.",
-            "Đặt tài liệu lên nền tối, tương phản (bàn sẫm màu) rồi chụp lại.",
-            "Máy không tách được tờ giấy khỏi nền (thường do giấy trắng trên nền "
-            "sáng). Cắt tay theo mép giấy trước khi cho xuống OCR.",
+            "Máy không thấy tờ giấy. Đặt lên nền tối rồi chụp lại.",
+            "Không tách được giấy khỏi nền (thường là giấy trắng trên nền sáng). "
+            "Cắt tay theo mép giấy trước khi cho xuống OCR.",
             "capturer",
         ),
         # ⚠️ KHÔNG CÒN ĐƯỢC PHÁT kể từ QC-15 (2026-08-05). Giữ định nghĩa lại để log
@@ -161,158 +175,149 @@ REASONS: dict[str, ReasonSpec] = {
         _spec(
             "SUBJECT_FILLS_FRAME",
             "warn",
-            "Tờ giấy chiếm gần hết khung hình. (Mã đã ngừng phát — xem QC-15.)",
-            "Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. "
-            "Lùi ra để lộ viền nền quanh tài liệu.",
+            "Tờ giấy chiếm gần hết khung. (Đã ngừng phát — xem QC-15.)",
+            "Giấy chiếm gần hết khung, có thể mất mép. Lùi máy ra rồi chụp lại.",
             "Giấy chiếm gần hết khung nên không chắc còn đủ 4 mép. "
-            "Soi xem có mất phần nào của tài liệu không rồi mới cho qua.",
+            "Soi xem có mất phần nào không.",
             "capturer",
         ),
         _spec(
             "RECOVERED_BY_EDGE_FALLBACK",
             "warn",
-            "Đã nắn được bằng phương án dự phòng dò cạnh.",
-            "Ảnh vẫn dùng được, nhưng máy phải dò biên bằng phương án dự phòng. "
-            "Chụp trên nền tối, tương phản thì lần sau chắc chắn hơn.",
-            "Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, "
-            "nên soi mắt thường trước khi dùng.",
+            "Nắn được bằng phương án dự phòng dò cạnh.",
+            "Ảnh vẫn dùng được. Chụp trên nền tối thì lần sau chắc hơn.",
+            "Nắn bằng phương án dự phòng nên kém tin cậy hơn. Soi trước khi dùng.",
+            "operator",
+        ),
+        _spec(
+            "RECOVERED_BY_MASK_FALLBACK",
+            "warn",
+            "Detector chính không thấy tài liệu; tách nền tìm được.",
+            "Ảnh vẫn dùng được. Chụp thấy trọn 4 mép thì lần sau chắc hơn.",
+            "Detector chính trả rỗng, tứ giác này do tách nền tìm ra. Hay gặp với ảnh "
+            "**đã cắt sẵn**. Soi trước khi dùng.",
             "operator",
         ),
         # --- Hình học biên ---
         _spec(
             "QUAD_NOT_FOUND",
             "fail",
-            "Không tìm được tứ giác nào đạt bộ lọc hình học.",
-            "Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, "
-            "chụp lại toàn bộ tờ.",
-            "Máy không dựng được 4 góc tờ giấy. Cắt tay theo mép giấy rồi đưa lại "
-            "vào luồng.",
+            "Không dựng được tứ giác nào đạt bộ lọc hình học.",
+            "Máy không thấy đủ 4 góc. Mở phẳng tờ giấy, đừng che góc, chụp lại cả tờ.",
+            "Không dựng được 4 góc. Cắt tay theo mép giấy rồi đưa lại vào luồng.",
             "capturer",
         ),
         _spec(
             "TOO_SMALL",
             "fail",
             "Tứ giác chiếm quá ít diện tích khung hình.",
-            "Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu.",
-            "Tài liệu quá nhỏ trong khung nên phần cắt ra thiếu điểm ảnh cho OCR. "
+            "Tài liệu quá nhỏ trong khung. Lại gần hoặc zoom vào rồi chụp lại.",
+            "Quá nhỏ trong khung nên phần cắt ra thiếu điểm ảnh cho OCR. "
             "Tìm bản chụp gần hơn, không có thì nhập tay.",
             "capturer",
         ),
         _spec(
             "NOT_CONVEX",
             "fail",
-            "Tứ giác phát hiện được không lồi.",
-            "Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). "
-            "Vuốt phẳng tài liệu và chụp lại.",
-            "Biên méo, thường do nếp gấp hoặc bóng đổ. Soi xem chữ có bị kéo méo "
-            "không; nếu có thì cắt tay theo mép giấy.",
+            "Tứ giác dựng được không lồi.",
+            "Biên bị méo, thường do nếp gấp. Vuốt phẳng tài liệu rồi chụp lại.",
+            "Biên méo, thường do nếp gấp hoặc bóng đổ. Soi xem chữ có bị kéo méo không; "
+            "có thì cắt tay theo mép giấy.",
             "capturer",
         ),
         _spec(
             "CLIPPED_EDGE",
             "warn",
-            "Có góc tài liệu nằm sát/ngoài mép ảnh.",
-            "Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép.",
-            "Có góc nằm sát/ngoài mép ảnh. Máy không thấy chữ ở chỗ đó nên chỉ báo "
-            "nhắc — soi lại xem phần mất là viền trắng hay có nội dung.",
+            "Có góc tài liệu nằm sát hoặc ngoài mép ảnh.",
+            "Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép.",
+            "Có góc nằm sát/ngoài mép ảnh. Soi xem phần mất là viền trắng hay có chữ.",
             "capturer",
         ),
         _spec(
             "CONTENT_CLIPPED",
             "fail",
-            "Có chữ chạy tới sát mép ảnh ở cạnh bị khung hình cắt — nội dung đã mất.",
-            "Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. "
-            "Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép.",
-            "Chữ đã nằm ngoài khung hình — phần đó KHÔNG lấy lại được từ ảnh này, "
-            "cắt tay cũng vô ích. Tìm bản chụp khác của cùng tài liệu, hoặc nhập tay.",
+            "Chữ chạy ra ngoài mép ảnh — đã mất nội dung.",
+            "Mất **chữ** chứ không chỉ mất viền. Lùi máy ra, chụp lại cả tờ kèm chút nền.",
+            "Chữ đã nằm ngoài khung, **không lấy lại được** từ ảnh này — cắt tay cũng vô ích. "
+            "Tìm bản chụp khác, hoặc nhập tay.",
             "capturer",
         ),
         _spec(
             "NO_CROP_DETECTED",
             "fail",
-            "Tứ giác gần trọn khung và chạm cả 4 mép — thực chất không cắt được gì.",
-            "Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. "
-            "Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép.",
-            "Máy không cắt được gì, ảnh ra gần như ảnh vào. Cắt tay theo mép giấy "
-            "trước khi cho xuống OCR.",
+            "Không cắt được gì — ảnh ra gần như ảnh vào.",
+            "Máy không tìm được biên tờ giấy. Đặt lên nền tối rồi chụp lại cả 4 mép.",
+            "Máy không cắt được gì. Cắt tay theo mép giấy trước khi cho xuống OCR.",
             "capturer",
         ),
         _spec(
             "EXTREME_SKEW",
             "warn",
-            "Góc chụp nghiêng mạnh, cạnh đối lệch nhau nhiều.",
-            "Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. "
-            "Chụp vuông góc từ trên xuống.",
-            "Góc chụp rất nghiêng nên chữ bị kéo giãn sau khi nắn. "
-            "Soi kỹ vùng chữ nhỏ/số trước khi cho qua.",
+            "Góc chụp nghiêng mạnh, hai cạnh đối lệch nhau nhiều.",
+            "Chụp quá nghiêng nên chữ bị kéo giãn. Chụp vuông góc từ trên xuống.",
+            "Chữ bị kéo giãn sau khi nắn. Soi kỹ vùng chữ nhỏ và số trước khi cho qua.",
             "capturer",
         ),
         _spec(
             "TEXT_NOT_LEVEL",
             "fail",
-            "Dòng chữ vẫn nghiêng mạnh SAU khi nắn — phép nắn đã hỏng.",
-            "Ảnh nắn ra bị xiên, chữ chạy chéo. Thường do tờ giấy bị gấp/quặp góc "
-            "làm máy nhận nhầm mép. Vuốt phẳng cả 4 góc rồi chụp lại.",
-            "Ảnh nắn ra bị xiên, chữ chạy chéo — đừng đưa xuống OCR. Kiểm xem tờ "
-            "giấy có bị gấp góc không; có thì cắt tay theo mép thật của tờ giấy.",
+            "Chữ vẫn nghiêng sau khi nắn — phép nắn đã hỏng.",
+            "Ảnh nắn ra bị xiên, thường do gấp góc giấy. "
+            "Vuốt phẳng cả 4 góc rồi chụp lại.",
+            "Ảnh nắn ra xiên, chữ chạy chéo — đừng đưa xuống OCR. "
+            "Kiểm xem giấy có gấp góc không; có thì cắt tay theo mép thật.",
             "capturer",
         ),
         _spec(
             "MULTIPLE_DOCUMENTS",
             "warn",
-            "Phát hiện nhiều hơn một tài liệu lớn trong ảnh.",
-            "Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. "
-            "Chụp từng tờ một.",
-            "Ảnh có nhiều tờ, máy chỉ xử lý tờ lớn nhất. Kiểm xem tờ cắt ra có "
-            "đúng tờ cần lấy không, và các tờ còn lại có bị bỏ sót không.",
+            "Có nhiều hơn một tài liệu lớn trong ảnh.",
+            "Ảnh có nhiều tờ, máy chỉ lấy tờ lớn nhất. Chụp từng tờ một.",
+            "Máy chỉ xử lý tờ lớn nhất. Kiểm xem có đúng tờ cần lấy không, "
+            "và các tờ còn lại có bị bỏ sót không.",
             "capturer",
         ),
         _spec(
             "FALLBACK_ORIGINAL",
             "fail",
             "Trả ảnh gốc chưa nắn vì không dựng được tứ giác.",
-            "Không nắn được ảnh này. Chụp lại trên nền tối, tương phản, "
-            "thấy trọn 4 mép tờ giấy.",
-            "Không nắn được, ảnh trả về là ảnh gốc chưa xử lý. Không đưa thẳng vào OCR.",
+            "Máy không nắn được ảnh này. Chụp lại trên nền tối, thấy trọn 4 mép.",
+            "Ảnh trả về là ảnh gốc chưa xử lý. Đừng đưa thẳng vào OCR.",
             "operator",
         ),
         _spec(
             "DETECTOR_DISAGREEMENT",
             "warn",
             "Hai detector cho tứ giác lệch nhau đáng kể.",
-            "Máy chưa chắc chắn về biên tờ giấy. Chụp trên nền tối, tương phản "
-            "sẽ cho kết quả chắc hơn.",
-            "Hai phương pháp dò biên không đồng thuận — kết quả kém chắc chắn, "
-            "nên soi mắt thường trước khi dùng.",
+            "Máy chưa chắc về biên tờ giấy. Chụp trên nền tối sẽ chắc hơn.",
+            "Hai phương pháp dò biên không đồng thuận nên kết quả kém chắc. "
+            "Soi trước khi dùng.",
             "operator",
         ),
         # --- Chất lượng ảnh ---
         _spec(
             "BLURRY",
             "fail",
-            "Ảnh mờ (variance of Laplacian dưới ngưỡng).",
-            "Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại.",
-            "Ảnh mờ/rung nên OCR sẽ đọc sai; không xử lý lại được bằng cắt tay. "
+            "Ảnh mờ, dưới ngưỡng độ nét.",
+            "Ảnh mờ hoặc rung. Giữ máy vững, chạm lấy nét rồi chụp lại.",
+            "Mờ/rung nên OCR sẽ đọc sai, cắt tay không cứu được. "
             "Tìm bản chụp khác, không có thì nhập tay.",
             "capturer",
         ),
         _spec(
             "GLARE",
             "warn",
-            "Có vùng bão hòa sáng lớn trên tài liệu.",
-            "Có vệt lóa/phản quang che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy "
-            "tránh phản chiếu.",
-            "Có vệt lóa trên tài liệu. Soi xem chỗ lóa có che đúng dữ liệu cần "
-            "lấy không rồi mới quyết.",
+            "Có vùng bão hoà sáng lớn trên tài liệu.",
+            "Có vệt loá che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy.",
+            "Có vệt loá trên tài liệu. Soi xem chỗ loá có che dữ liệu cần lấy không.",
             "capturer",
         ),
         _spec(
             "TOO_DARK",
             "warn",
-            "Độ sáng trung vị của tài liệu quá thấp.",
-            "Ảnh thiếu sáng. Chụp nơi sáng hơn hoặc bật đèn.",
-            "Ảnh thiếu sáng. Tăng sáng/tương phản khi soi; chữ vẫn không đọc nổi "
-            "thì nhập tay.",
+            "Tài liệu quá tối.",
+            "Ảnh thiếu sáng. Chụp ở nơi sáng hơn.",
+            "Ảnh thiếu sáng. Tăng sáng khi soi; vẫn không đọc nổi thì nhập tay.",
             "capturer",
         ),
     ]

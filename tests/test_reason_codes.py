@@ -84,7 +84,12 @@ def test_junk_input_raises_decode_failed():
 
 def test_subject_not_found_falls_back_to_original():
     """Không tách được chủ thể → vẫn trả ảnh, nhưng NÓI RÕ là ảnh gốc chưa nắn."""
-    config = Config(enable_edge_fallback=False, candidate_area_ratio=0.5)
+    # Ghim `rembg-contour`: đây là bài kiểm **nhánh tách nền** thất bại thế nào.
+    # `candidate_area_ratio` là tham số lọc contour, docaligner không đọc nó — chạy
+    # bài này ở mặc định mới thì nó không còn dựng được ca "không tách được chủ thể".
+    config = Config(
+        detector="rembg-contour", enable_edge_fallback=False, candidate_area_ratio=0.5
+    )
     result = scan_qc(S.tiny_document(), config=config)
     assert result.verdict == "fail"
     assert "FALLBACK_ORIGINAL" in result.codes

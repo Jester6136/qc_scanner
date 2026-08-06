@@ -16,6 +16,7 @@ import numpy as np
 
 from . import geometry as geo
 from .config import Config
+from .qc import ScanError
 
 
 @dataclass
@@ -41,6 +42,26 @@ class Detector:
     """Giao thức: nhận ảnh làm việc → trả tứ giác tốt nhất, hoặc None."""
 
     name = "base"
+
+    low_confidence = None
+    """Dưới mức này thì coi như detector **không chắc** — `None` = dùng cấu hình.
+
+    Phải theo từng detector vì các thang này KHÔNG so được với nhau: rembg trả
+    đúng hai giá trị rời rạc (0.9 khi `approxPolyDP` ra 4 đỉnh, 0.6 khi phải ép về
+    `minAreaRect`), còn docaligner trả đỉnh thấp nhất trong 4 bản đồ nhiệt — một
+    số thực liên tục. Áp ngưỡng 0.9 của rembg lên docaligner là gắn cờ gần như mọi
+    ảnh: trung vị của nó trên 30 ảnh thật là 0.841.
+    """
+
+    uses_mask = True
+    """Detector này có đọc mask rembg không.
+
+    `False` thì lõi đưa cho nó ảnh **chưa bôi nền đen**. Chuyện này quan trọng hơn
+    vẻ ngoài: bôi nền là đã áp kết quả của rembg lên đầu vào, nên một detector độc
+    lập sẽ thừa hưởng luôn cái sai của rembg — đúng thứ mà phép so sánh đang muốn
+    đo xem có tránh được không. Chưa kể mô hình học trên ảnh chụp thật, ảnh có
+    nền đen tuyệt đối nằm ngoài phân phối nó từng thấy.
+    """
 
     def find_quad(self, work_img, mask, config) -> Optional[QuadCandidate]:
         raise NotImplementedError
@@ -174,9 +195,57 @@ def best_candidate(candidates, reference_img, config: Config):
     return max(candidates, key=score)
 
 
+class DocAlignerDetector(Detector):
+    """Hồi quy 4 góc trực tiếp — KHÔNG qua mask, KHÔNG qua contour.
+
+    Khác hẳn hai detector kia về bản chất: chúng đi tìm *vùng*, rồi suy ra góc từ
+    biên vùng đó; cái này đoán thẳng 4 góc. Hệ quả thực tế là nó **không có
+    contour** để trả về, nên bước nới cạnh bao mép giấy cong (QC-17) tự bỏ qua —
+    đây là điều phải nhớ khi đọc kết quả so sánh, chứ không phải lỗi.
+
+    Cần trỏ `docaligner_model` vào file `.onnx` đã tải sẵn. Xem `docaligner.py`
+    về lý do không tải tự động.
+    """
+
+    name = "docaligner"
+    uses_mask = False
+
+    #: Đo được: trên 926 ảnh SmartDoc có nhãn, thang này nằm gọn trong 0.912–0.945
+    #: và **không ảnh nào** IoU < 0.90 — tức ở đó không có ca thua nào để hiệu
+    #: chuẩn, và tương quan conf–IoU chỉ −0.08. Trên 30 ảnh thật của khách thì
+    #: rộng hơn hẳn: 0.349–0.935, trung vị 0.841, phân vị 10 là 0.449.
+    #:
+    #: Chưa có bằng chứng "conf thấp ⇒ cắt sai", nên đặt ở phân vị 10 và để nó chỉ
+    #: nói *một nửa* câu: `NO_CROP_DETECTED` còn đòi thêm góc lọt ra ngoài khung.
+    #: Đặt cao hơn là gắn cờ hàng loạt dựa trên một tín hiệu chưa chứng minh được.
+    low_confidence = 0.45
+
+    def find_quad(self, work_img, mask, config: Config):
+        from . import docaligner as da
+
+        path = da.resolve_model(config.docaligner_head, config.docaligner_model)
+        if path is None:
+            raise ScanError(
+                "MODEL_MISSING",
+                f"thiếu mô hình DocAligner (tìm ở {da.model_home()}); "
+                "chạy `qc-scanner-fetch-models` hoặc trỏ QC_SCANNER_DOCALIGNER_MODEL",
+            )
+
+        if config.docaligner_head == "point":
+            corners, confidence = da.predict_point(path, work_img, config.onnx_providers)
+        else:
+            corners, confidence = da.predict_heatmap(
+                path, work_img, config.onnx_providers
+            )
+        if corners is None:
+            return None
+        return QuadCandidate(corners, float(confidence), self.name)
+
+
 DETECTORS = {
     RembgContourDetector.name: RembgContourDetector,
     EdgeHoughDetector.name: EdgeHoughDetector,
+    DocAlignerDetector.name: DocAlignerDetector,
 }
 
 

@@ -16,8 +16,13 @@ COPY . .
 RUN pip install --no-cache-dir .
 
 # Nướng model vào image — bước này cần mạng lúc BUILD, không cần lúc chạy.
+#
+# Cả HAI model đều cần: DocAligner là detector chính, rembg là đường lui (và ảnh
+# đã cắt sẵn chỉ có rembg tìm ra được). Thiếu một cái là mất nguyên một nhánh.
 ENV U2NET_HOME=/opt/u2net
-RUN python -c "from qc_scanner.rembg_session import warmup; warmup()"
+ENV DOCALIGNER_HOME=/opt/docaligner
+RUN python -c "from qc_scanner.rembg_session import warmup; warmup()" \
+ && qc-scanner-fetch-models --head heatmap
 
 EXPOSE 5000
 ENV QC_SCANNER_WORK_HEIGHT=500

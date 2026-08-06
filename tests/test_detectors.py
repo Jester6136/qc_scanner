@@ -15,10 +15,23 @@ def test_unknown_detector_fails_loudly():
         get_detector("không-tồn-tại")
 
 
+#: Detector cần file mô hình ngoài, không chạy được trong test mặc định.
+#:
+#: Bỏ qua ở đây là **có điều kiện**, không phải miễn trừ: mô hình DocAligner nằm
+#: trên Google Drive, mà repo thì không tải gì lúc chạy test — nhưng trỏ
+#: `QC_SCANNER_DOCALIGNER_MODEL` vào file đã tải là test chạy thật. Xem `docaligner.py`.
+_NEEDS_EXTERNAL_MODEL = {"docaligner": "docaligner_model"}
+
+
 @pytest.mark.parametrize("name", sorted(DETECTORS))
 def test_every_detector_is_usable_as_primary(name):
     """Đổi detector phải là đổi một dòng cấu hình, không phải viết lại lõi."""
-    result = scan_qc(S.document_on_dark_background(), config=Config(detector=name))
+    field = _NEEDS_EXTERNAL_MODEL.get(name)
+    if field and not getattr(Config.from_env(), field):
+        pytest.skip(f"cần QC_SCANNER_{field.upper()} trỏ vào file mô hình")
+    result = scan_qc(
+        S.document_on_dark_background(), config=Config.from_env(detector=name)
+    )
     assert result.verdict in {"pass", "warn", "fail"}
     assert result.image is not None
 

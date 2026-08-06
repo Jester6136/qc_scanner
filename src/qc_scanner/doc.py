@@ -15,7 +15,7 @@ from imutils import perspective
 
 from . import geometry as geo
 from .config import DEFAULT, Config
-from .detect import get_detector
+from .detect import DETECTORS, RembgContourDetector, get_detector
 from .pdf import is_pdf, page_images
 from .qc import DocumentResult, Metrics, Reason, ScanError, ScanResult
 from .rembg_session import segment_mask
@@ -117,6 +117,7 @@ def scan_image(
 
     # Nền bị bôi đen, đúng như ảnh cutout rembg trả về trước đây: đường lui
     # edge-hough chạy Canny trên `work` nên nó phải thấy cùng một thứ.
+    work_unmasked = work
     if mask is not None:
         work = cv2.bitwise_and(work, work, mask=mask)
 
@@ -126,8 +127,22 @@ def scan_image(
     _debug(debug, "mask", mask)
 
     detector = get_detector(cfg.detector)
-    candidates = detector.all_candidates(work, mask, cfg)
-    metrics.contour_candidates = len(candidates)
+    detector_input = work if detector.uses_mask else work_unmasked
+    candidates = detector.all_candidates(detector_input, mask, cfg)
+
+    # `MULTIPLE_DOCUMENTS` đếm **contour trong mask**, không đếm ứng viên của
+    # detector đang chạy. Hai thứ này trùng nhau khi detector chính là rembg, và
+    # tách hẳn ra khi nó là docaligner — mô hình hồi quy góc chỉ trả về MỘT tứ
+    # giác, nên nếu đếm ứng viên thì mã này lặng lẽ tắt hẳn khi đổi mặc định.
+    # Mất một phép kiểm QC vì đổi detector là cái giá không ai đồng ý trả, mà lại
+    # không có gì báo. Mask thì vẫn được tính sẵn cho `alpha_coverage`, nên đếm
+    # thêm ở đây không tốn lần chạy model nào.
+    mask_candidates = (
+        candidates
+        if detector.name == RembgContourDetector.name
+        else RembgContourDetector().all_candidates(work, mask, cfg)
+    )
+    metrics.contour_candidates = len(mask_candidates)
 
     quad = _pick(detector, candidates, work, mask, cfg)
 
@@ -147,6 +162,19 @@ def scan_image(
     # còn edge-hough chỉ bắt được một mảnh (0.461 · 0.404 · 0.422) — lần lượt mất
     # trang trong có chữ viết tay, mất nửa trên, và mất hẳn một trang. Đường lui thắng
     # 0/3. Nới điều kiện ở đây là đổi một tứ giác đúng lấy một tứ giác sai.
+    # Đường lui THỨ NHẤT: detector hồi quy góc (docaligner) trả rỗng thì thử tách
+    # nền. Hai họ thuật toán này thua ở hai chỗ khác nhau, nên chúng bù được cho
+    # nhau — đo trên 30 ảnh thật: docaligner không ra tứ giác ở 7 ảnh, toàn ảnh ĐÃ
+    # cắt sẵn (không còn nền quanh giấy nên mô hình không thấy "vật thể tài liệu"),
+    # và rembg lấy được cả 7. Ngược lại rembg sụp ở nền bàn bừa bộn (SmartDoc
+    # background05: IoU 0.19, 0/89 đạt) còn docaligner giữ 0.988.
+    if quad is None and cfg.detector != RembgContourDetector.name:
+        recovered = get_detector(RembgContourDetector.name).find_quad(work, mask, cfg)
+        if recovered is not None and _passes_filters(recovered.corners, work, cfg):
+            quad = recovered
+            metrics.fallback_used = "mask_contour"
+            reasons.append(Reason.of("RECOVERED_BY_MASK_FALLBACK"))
+
     fallback_needed = quad is None or metrics.alpha_coverage < cfg.min_alpha_coverage
 
     if fallback_needed and cfg.enable_edge_fallback:
@@ -189,9 +217,11 @@ def scan_image(
     if cfg.cross_check_detectors:
         reasons += _cross_check(quad, work, mask, cfg, metrics)
 
-    if len(candidates) >= 2:
+    if len(mask_candidates) >= 2:
         reasons.append(
-            Reason.of("MULTIPLE_DOCUMENTS", f"contour_candidates={len(candidates)}")
+            Reason.of(
+                "MULTIPLE_DOCUMENTS", f"contour_candidates={len(mask_candidates)}"
+            )
         )
 
     # Phán quyết hình học nói về **biên tờ giấy detector tìm được**, không nói về lề
@@ -414,6 +444,8 @@ def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons)
         corners_full,
         band_ratio=cfg.content_clip_band_ratio,
         margin_px=cfg.border_margin_px,
+        paper_min_ratio=cfg.border_paper_min_ratio,
+        paper_percentile=cfg.border_paper_percentile,
     )
     if metrics.border_ink_ratio <= cfg.max_border_ink_ratio:
         return reasons
@@ -472,9 +504,18 @@ def _no_crop_detected(metrics: Metrics, cfg: Config, struggled: bool) -> bool:
     Tách thành hàm thuần để test được bằng metrics dựng sẵn, không phải gọi rembg —
     và để test **không phải chép lại** điều kiện, thứ chỉ kiểm được một bản sao.
     """
+    # Ngưỡng "không chắc" đi theo DETECTOR đã sinh ra tứ giác, không theo cấu hình
+    # chung: `metrics.detector` cho biết ai thật sự chạy, kể cả khi đó là đường lui.
+    # Lấy ngưỡng của rembg áp lên docaligner là gắn cờ hàng loạt — hai thang số
+    # không cùng đơn vị, xem `Detector.low_confidence`.
+    detector = DETECTORS.get(metrics.detector)
+    floor = getattr(detector, "low_confidence", None) if detector else None
+    if floor is None:
+        floor = cfg.no_crop_min_confidence
+
     lost_the_paper = (
         metrics.detector_confidence is not None
-        and metrics.detector_confidence < cfg.no_crop_min_confidence
+        and metrics.detector_confidence < floor
         and (metrics.corners_outside_px or 0) > cfg.no_crop_corner_outside_px
     )
     frame_sized = (
@@ -500,8 +541,20 @@ def _deskew(warped, cfg: Config, metrics: Metrics):
 
 #: Các mã chỉ có nghĩa khi ảnh vào là ảnh CHỤP. Với ảnh đã cắt sẵn thì "giấy chạm
 #: mép khung" là điều đương nhiên, không phải lỗi. QC-14.
+#:
+#: `RECOVERED_BY_MASK_FALLBACK` nằm ở đây vì với ảnh đã cắt sẵn thì đường lui là
+#: đường **bình thường**, không phải sự cố: detector hồi quy góc cần thấy nền
+#: quanh tờ giấy mới nhận ra "có một tài liệu ở đây", mà ảnh đã cắt thì không còn
+#: nền nào. Trang PDF luôn rơi vào đúng ca đó — không xử lý thì mọi trang PDF tụt
+#: từ `pass` xuống `warn` và cả kho ảnh cũ chảy vào hàng chờ người soi ([EX-8]).
 BORDER_REASONS = frozenset(
-    {"CLIPPED_EDGE", "CONTENT_CLIPPED", "NO_CROP_DETECTED", "SUBJECT_FILLS_FRAME"}
+    {
+        "CLIPPED_EDGE",
+        "CONTENT_CLIPPED",
+        "NO_CROP_DETECTED",
+        "SUBJECT_FILLS_FRAME",
+        "RECOVERED_BY_MASK_FALLBACK",
+    }
 )
 
 
