@@ -416,6 +416,8 @@ def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons)
         corners_full,
         band_ratio=cfg.content_clip_band_ratio,
         margin_px=cfg.border_margin_px,
+        paper_min_ratio=cfg.border_paper_min_ratio,
+        paper_percentile=cfg.border_paper_percentile,
     )
     if metrics.border_ink_ratio <= cfg.max_border_ink_ratio:
         return reasons

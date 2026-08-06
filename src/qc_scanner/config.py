@@ -77,6 +77,25 @@ class Config:
     content_clip_band_ratio: float = 0.01
     """Bề rộng dải sát mép ảnh đem soi mực, theo cạnh ngắn của ảnh gốc (QC-12)."""
 
+    border_paper_min_ratio: float = 0.6
+    """Ngưỡng "còn là giấy": độ sáng cục bộ ≥ ngưỡng này × mốc giấy của chính ảnh.
+
+    QC-21. `0` = tắt, quay lại cách đếm cũ (mọi pixel tối đều là mực).
+
+    Đo trên 30 ảnh thật, đổi `CONTENT_CLIPPED` (fail) → `CLIPPED_EDGE` (warn) đúng
+    1 ảnh, và đó là ảnh soi mắt thường **không mất chữ nào**. 0.4/0.5 không đủ gỡ ca
+    `04.57.20` (0.2271 → vẫn > 0.08); 0.6 gỡ được (→ 0.0621); 0.7 y hệt 0.6; 0.8 bắt
+    đầu ăn vào ảnh khác. Chọn 0.6 vì đó là mức thấp nhất sửa được lỗi đã biết.
+    """
+
+    border_paper_percentile: float = 90.0
+    """Phân vị độ sáng cục bộ dùng làm mốc "giấy" (QC-21).
+
+    Phân vị 75 là lựa chọn đầu và **hỏng im lặng**: tứ giác trùm 78% mặt bàn thì p75
+    rơi vào vùng nền, mốc tụt theo, và 100% mặt bàn được nhận là giấy — mọi kiểm tra
+    cắt xén tắt hết mà không mã lý do nào bật lên. Cùng ca đó p85 → 1%, p90 → 0%.
+    """
+
     max_border_ink_ratio: float = 0.08
     """Trên mức này coi như đã cắt vào **chữ**, không phải chỉ mất viền trắng (QC-12).
 

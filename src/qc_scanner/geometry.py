@@ -282,7 +282,47 @@ def ink_mask(image, block_ratio=0.05, offset=15):
     return cv2.medianBlur(mask, 3)  # bỏ đốm lẻ, giữ nét chữ
 
 
-def ink_at_image_border(image, corners, band_ratio=0.01, margin_px=2):
+def paper_mask(image, corners, min_ratio=0.6, percentile=90.0, block_ratio=0.05):
+    """Pixel nào là **giấy**, phân biệt với nền lọt vào trong tứ giác (QC-21).
+
+    `ink_mask` trả lời "tối hơn xung quanh". Câu đó đúng cho chữ trên giấy, nhưng
+    **cũng đúng cho vân gỗ trên mặt bàn** — và khi detector khoanh nhầm cả mặt bàn
+    vào tứ giác thì hai thứ đó không còn phân biệt được nữa. Đo trên `04.57.20`:
+    dải phải cho `border_ink_ratio` = 0.2271, và nền cục bộ tại chính những pixel
+    bị gọi là "mực" có trung vị **64** — mặt bàn — trong khi vùng giấy thật của
+    cùng ảnh nằm ở 130–155. Không mất một chữ nào, nhưng ảnh bị `warn`.
+
+    Cách tách: mực là nét tối **trên nền sáng**. Lấy độ sáng trung bình cục bộ làm
+    thước: nền cục bộ sáng ≈ giấy, nền cục bộ tối ≈ bàn/bóng đổ.
+
+    Mốc "sáng" suy từ chính ảnh đó, không phải hằng số tuyệt đối — ảnh chụp thiếu
+    sáng thì cả tờ giấy cũng tối đi. Lấy **phân vị cao** của độ sáng cục bộ trong
+    tứ giác: tứ giác trùm cả nền thì trung vị bị nền kéo xuống, mốc giấy tụt theo
+    đúng lúc cần nó đứng yên nhất.
+
+    Phân vị 75 là lựa chọn đầu và nó **hỏng**: dựng ca tứ giác trùm 78% mặt bàn
+    thì p75 rơi thẳng vào vùng nền, mốc tụt, và toàn bộ mặt bàn được nhận là giấy
+    (tỉ lệ nhận nhầm 1.00). Cùng ca đó: p85 → 0.01, p90 → 0.00. Chọn **p90** cho
+    có khoảng đệm, vì cái hỏng ở đây hỏng im lặng — mọi kiểm tra cắt xén tắt hết
+    mà không có mã lý do nào bật lên.
+    """
+    gray = _gray(image)
+    block = max(15, int(min(gray.shape[:2]) * block_ratio) | 1)
+    local = cv2.blur(gray, (block, block))
+
+    inside = np.zeros(gray.shape, dtype=np.uint8)
+    cv2.fillConvexPoly(inside, np.round(order_corners(corners)).astype(np.int32), 255)
+    values = local[inside > 0]
+    if values.size == 0:
+        return np.ones(gray.shape, dtype=bool)
+
+    paper_level = float(np.percentile(values, percentile))
+    return local >= paper_level * min_ratio
+
+
+def ink_at_image_border(
+    image, corners, band_ratio=0.01, margin_px=2, paper_min_ratio=0.6, paper_percentile=90.0
+):
     """QC-12: có **chữ** chạy tới sát mép ảnh không, ở những cạnh tứ giác bị khung cắt.
 
     Chỉ xét các cạnh mà tứ giác **chạm mép ảnh** — đó mới là chỗ nội dung có thể đã
@@ -312,6 +352,16 @@ def ink_at_image_border(image, corners, band_ratio=0.01, margin_px=2):
 
     ink = ink_mask(image)
     band = max(2, int(round(min(h, w) * band_ratio)))
+
+    # QC-21: bỏ khỏi phép đếm mọi pixel không phải giấy — cả tử số lẫn **mẫu số**.
+    # Giữ nền trong mẫu số cũng sai, chỉ sai theo hướng ngược lại: nó pha loãng tỉ
+    # lệ và giấu mất chữ thật bị cắt ở một dải phần lớn là mặt bàn.
+    if paper_min_ratio > 0:
+        paper = paper_mask(
+            image, corners, min_ratio=paper_min_ratio, percentile=paper_percentile
+        )
+    else:
+        paper = np.ones(ink.shape, dtype=bool)
 
     #: Tỉ lệ tối thiểu của một mép ảnh mà tứ giác phải áp vào thì mới coi là bị
     #: khung cắt. Tứ giác chạm mép bằng đúng một góc thì cạnh nó cắt chéo qua dải,
@@ -347,6 +397,7 @@ def ink_at_image_border(image, corners, band_ratio=0.01, margin_px=2):
             region[~along, :] = 0
         else:
             region[:, ~along] = 0
+        region = region & np.where(paper[rows, cols], 255, 0).astype(np.uint8)
         paper_px = int(np.count_nonzero(region))
         if paper_px == 0:
             continue
