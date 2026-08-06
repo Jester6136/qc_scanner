@@ -13,14 +13,84 @@ Mô hình vẫn là Apache-2.0 (DocsaidLab/DocAligner). File `.onnx` phải tự
 trỏ `QC_SCANNER_DOCALIGNER_MODEL` vào — **không** tải tự động, đúng lý do trên.
 """
 
+import os
+import pathlib
 import threading
+import urllib.request
 
 import cv2
 import numpy as np
 
+#: File mô hình cho từng nhánh, kèm id Google Drive của tác giả.
+#:
+#: Tải **lúc build image**, không bao giờ lúc chạy — khách chạy trong mạng nội bộ
+#: không ra Internet ([EX-12]), và một phụ thuộc tải-lúc-chạy sẽ hỏng ở đúng nơi
+#: khó gỡ nhất: máy khách, lần chạy đầu, sau khi đã bàn giao. Cùng lý do rembg
+#: được nướng sẵn vào image.
+MODELS = {
+    "heatmap": ("fastvit_sa24_heatmap.onnx", "14vUH77v6yGg7zFctUgcT6BzV5Iisg4Dl"),
+    "point": ("lcnet050_point.onnx", "1J7cRuupeEIudYrH_CCSV9WvFfu9JM_qU"),
+}
+
+#: Nơi chứa mô hình. Đặt tên theo lối `U2NET_HOME` của rembg cho nhất quán.
+HOME_ENV = "DOCALIGNER_HOME"
+DEFAULT_HOME = "~/.cache/qc-scanner/docaligner"
+
+
+def model_home():
+    return pathlib.Path(os.environ.get(HOME_ENV) or DEFAULT_HOME).expanduser()
+
+
+def resolve_model(head, configured=""):
+    """Đường dẫn file `.onnx`, hoặc `None` nếu chưa có sẵn.
+
+    Trả `None` thay vì tự tải: hàm này chạy trong đường xử lý request, và một
+    request đầu tiên treo vài chục giây để tải 83MB là kiểu hỏng tệ hơn báo lỗi.
+    """
+    if configured:
+        path = pathlib.Path(configured).expanduser()
+        return path if path.exists() else None
+    name, _ = MODELS[head]
+    path = model_home() / name
+    return path if path.exists() else None
+
+
+def fetch(head, dest=None):
+    """Tải mô hình về. Gọi lúc **build image** hoặc lúc dựng máy dev, không lúc chạy."""
+    name, file_id = MODELS[head]
+    target = pathlib.Path(dest or model_home()) / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        return target
+    url = (
+        "https://drive.usercontent.google.com/download"
+        f"?id={file_id}&export=download&confirm=t"
+    )
+    with urllib.request.urlopen(url) as response, open(target, "wb") as fh:
+        fh.write(response.read())
+    return target
+
 #: Cả hai kiến trúc đều chạy ở đúng 256×256. Đây là **hằng số của mô hình**, không
 #: phải tham số chỉnh được: đồ thị ONNX cố định kích thước đầu vào.
 INPUT_SIZE = 256
+
+
+def main(argv=None):
+    """`qc-scanner-fetch-models` — tải mô hình về máy này.
+
+    Bước BUILD, không phải bước chạy. Dockerfile gọi nó để nướng mô hình vào image.
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
+    ap.add_argument("--head", choices=sorted(MODELS), action="append")
+    ap.add_argument("--dest", help=f"Mặc định ${HOME_ENV} hoặc {DEFAULT_HOME}")
+    args = ap.parse_args(argv)
+
+    for head in args.head or ["heatmap"]:
+        path = fetch(head, args.dest)
+        print(f"{head}: {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    return 0
 
 _sessions = {}
 _lock = threading.Lock()

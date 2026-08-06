@@ -87,6 +87,16 @@ REASONS: dict[str, ReasonSpec] = {
             "Ảnh này vẫn dùng được — cho chạy lại, đừng loại nó.",
             "system",
         ),
+        _spec(
+            "MODEL_MISSING",
+            "fail",
+            "Thiếu file mô hình của detector — máy chủ chưa cài đặt xong.",
+            "Lỗi phía máy chủ, không phải do ảnh của bạn. Báo người quản trị.",
+            "Image thiếu mô hình DocAligner. Nó phải được nướng vào lúc **build** "
+            "(`qc-scanner-fetch-models`); máy khách không ra Internet nên không có "
+            "đường tải lúc chạy. Ảnh không có lỗi gì — chạy lại sau khi sửa image.",
+            "system",
+        ),
         # --- Đầu vào PDF ---
         _spec(
             "PDF_DECODE_FAILED",
@@ -176,6 +186,16 @@ REASONS: dict[str, ReasonSpec] = {
             "Chụp trên nền tối, tương phản thì lần sau chắc chắn hơn.",
             "Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, "
             "nên soi mắt thường trước khi dùng.",
+            "operator",
+        ),
+        _spec(
+            "RECOVERED_BY_MASK_FALLBACK",
+            "warn",
+            "Detector chính không thấy tài liệu; đã lấy được bằng tách nền.",
+            "Ảnh vẫn dùng được. Máy phải dùng phương án dự phòng để tìm tờ giấy — "
+            "chụp sao cho thấy trọn 4 mép trên nền tương phản thì chắc chắn hơn.",
+            "Detector chính trả về rỗng, tứ giác này do tách nền tìm ra. Hay gặp "
+            "với ảnh ĐÃ cắt sẵn (không còn nền quanh giấy). Soi trước khi dùng.",
             "operator",
         ),
         # --- Hình học biên ---

@@ -45,6 +45,7 @@ setup(
             "qc-scanner-bench=qc_scanner.bench:main",
             "qc-scanner-eval=qc_scanner.eval:main",
             "qc-scanner-smartdoc=qc_scanner.smartdoc:main",
+            "qc-scanner-fetch-models=qc_scanner.docaligner:main",
         ],
     },
 )

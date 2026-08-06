@@ -446,8 +446,34 @@ class Config:
     `providers: [CPUExecutionProvider]`, nhưng phải có người nghĩ ra việc đi đọc nó.
     """
 
-    detector: str = "rembg-contour"
-    """Detector đường chính: `rembg-contour`, `edge-hough` hoặc `docaligner`."""
+    detector: str = "docaligner"
+    """Detector đường chính: `docaligner`, `rembg-contour` hoặc `edge-hough`.
+
+    Đổi từ `rembg-contour` sang `docaligner` sau khi đo được trên tập vàng công
+    khai SmartDoc 2015 (926 ảnh, 5 nền, nhãn 4 góc của người khác dựng):
+
+    ==================  =====  =====  =====  =====  ==========  ======
+    detector             bg01   bg02   bg03   bg04  **bg05**    TỔNG
+    ==================  =====  =====  =====  =====  ==========  ======
+    rembg + QC-17       0.916  0.902  0.911  0.919  **0.192**   0.911
+    rembg (tắt QC-17)   0.965  0.956  0.966  0.966  **0.187**   0.963
+    docaligner heatmap  0.988  0.985  0.987  0.988  **0.988**   0.987
+    ==================  =====  =====  =====  =====  ==========  ======
+
+    (trung vị IoU. Tỉ lệ đạt ≥0.90: rembg 73%, docaligner **100%**.)
+
+    Điều quyết định không nằm ở mấy phần trăm trung bình mà ở cột `bg05`: bàn làm
+    việc bừa bộn — tạp chí, dây cáp, cốc, và tờ giấy nằm chồng trên xấp giấy khác.
+    rembg **sụp hoàn toàn** ở đó (0/89 ảnh đạt ngưỡng), docaligner giữ nguyên phong
+    độ. Đó lại đúng là ca thực tế nhất: người dùng chụp giấy tờ trên bàn có đồ.
+
+    Kèm theo: nhanh hơn 7.8× (42ms so với 330ms).
+
+    Đánh đổi đã biết, đều đã có đường xử lý: docaligner không trả contour nên QC-17
+    không chạy; nó trả rỗng với ảnh ĐÃ cắt sẵn (7/30 ảnh thật) nên có đường lui
+    `RECOVERED_BY_MASK_FALLBACK`; và thang độ tin cậy khác hẳn — xem
+    `no_crop_min_confidence`.
+    """
 
     docaligner_model: str = ""
     """Đường dẫn file `.onnx` của DocAligner. Rỗng = detector đó không dùng được.

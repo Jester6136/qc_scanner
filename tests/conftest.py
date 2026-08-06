@@ -63,6 +63,23 @@ def scan_cache(scan_cache_qc):
 
 
 @pytest.fixture(scope="session")
+def scan_cache_contour():
+    """name -> PNG bytes, nhánh `rembg-contour` với QC-17 BẬT.
+
+    Cặp đôi của `scan_cache_inscribed`: hai fixture này chỉ khác nhau đúng ở QC-17,
+    nên hiệu của chúng đo được QC-17 và không đo gì khác. Không thể dùng
+    `scan_cache` (mặc định) cho việc đó nữa — mặc định nay là `docaligner`, vốn
+    không trả contour nên QC-17 không chạy, và phép so sẽ thành so hai detector
+    khác nhau chứ không phải so bật/tắt một tính năng.
+    """
+    from qc_scanner.config import Config
+    from qc_scanner.doc import scan_qc
+
+    config = Config(detector="rembg-contour", deskew=False)
+    return {p.name: scan_qc(p.input_bytes, config=config).image for p in PAIRS}
+
+
+@pytest.fixture(scope="session")
 def scan_cache_inscribed():
     """name -> PNG bytes, với QC-17 và QC-19 TẮT (cắt theo tứ giác nội tiếp, không xoay).
 
@@ -76,11 +93,19 @@ def scan_cache_inscribed():
     sinh ra để phát hiện — chất lượng tụt dần một cách im lặng. Mốc phải đứng yên;
     thứ thay đổi là danh sách tính năng được tắt ở đây, và mỗi dòng tắt là một tính
     năng đã có bài kiểm riêng.
+
+    `detector` cũng bị ghim, cùng lý do: `examples/*.out.png` là đầu ra của
+    `rembg-contour`, nên bộ hồi quy phải tiếp tục hỏi *"nhánh đó còn chạy đúng
+    như cũ không"*. Mặc định đã chuyển sang `docaligner`, và chất lượng của nhánh
+    mới được đo bằng IoU trên tập vàng SmartDoc — đó mới là bài kiểm hợp với nó,
+    chứ không phải so byte với ảnh do nhánh cũ sinh ra.
     """
     from qc_scanner.config import Config
     from qc_scanner.doc import scan_qc
 
-    config = Config(contain_paper_contour=False, deskew=False)
+    config = Config(
+        detector="rembg-contour", contain_paper_contour=False, deskew=False
+    )
     return {p.name: scan_qc(p.input_bytes, config=config).image for p in PAIRS}
 
 
