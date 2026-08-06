@@ -34,6 +34,7 @@ import numpy as np
 
 from . import geometry as geo
 from .config import Config
+from .detect import DETECTORS
 from .doc import scan_qc
 from .qc import Metrics, ScanError
 
@@ -212,8 +213,10 @@ def main(argv=None):
     ap.add_argument("--labels", help="File JSONL nhãn vàng (tuỳ chọn).")
     ap.add_argument("--csv", help="Ghi metric từng ảnh ra CSV.")
     ap.add_argument("--baseline", help="CSV của lần chạy trước để so verdict.")
-    ap.add_argument("--detector", choices=["rembg-contour", "edge-hough"])
+    ap.add_argument("--detector", choices=sorted(DETECTORS))
     ap.add_argument("--model", help="Model nền của rembg.")
+    ap.add_argument("--docaligner-model", help="File .onnx cho detector docaligner.")
+    ap.add_argument("--docaligner-head", choices=["heatmap", "point"])
     ap.add_argument("--cross-check", action="store_true")
     args = ap.parse_args(argv)
 
@@ -222,6 +225,10 @@ def main(argv=None):
         overrides["detector"] = args.detector
     if args.model:
         overrides["rembg_model"] = args.model
+    if args.docaligner_model:
+        overrides["docaligner_model"] = args.docaligner_model
+    if args.docaligner_head:
+        overrides["docaligner_head"] = args.docaligner_head
     if args.cross_check:
         overrides["cross_check_detectors"] = True
 

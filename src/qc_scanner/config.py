@@ -428,7 +428,23 @@ class Config:
     """
 
     detector: str = "rembg-contour"
-    """Detector đường chính: `rembg-contour` hoặc `edge-hough`."""
+    """Detector đường chính: `rembg-contour`, `edge-hough` hoặc `docaligner`."""
+
+    docaligner_model: str = ""
+    """Đường dẫn file `.onnx` của DocAligner. Rỗng = detector đó không dùng được.
+
+    KHÔNG có mặc định tải tự động, và đó là chủ ý: mô hình nằm trên Google Drive,
+    còn khách chạy trong mạng nội bộ không ra Internet ([EX-12]). Một phụ thuộc
+    tải-lúc-chạy sẽ hỏng ở đúng nơi khó gỡ nhất — máy khách, lần chạy đầu.
+    """
+
+    docaligner_head: str = "heatmap"
+    """`heatmap` (fastvit_sa24, 83MB, chính xác nhất) hay `point` (lcnet050, 4.9MB).
+
+    Ghi lại vì lệch với tài liệu: khảo sát ghi lcnet050 nặng 1.7MB, file fp32 tải
+    thật về là **4.9MB**. Con số 1.7MB nhiều khả năng là bản lượng tử hoá hoặc chỉ
+    tính tham số. Đây đúng loại số cần tự cân, đừng chép từ bảng.
+    """
 
     cross_check_detectors: bool = False
     """Chạy thêm detector thứ hai; hai bên lệch nhau → DETECTOR_DISAGREEMENT (S-6)."""

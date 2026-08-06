@@ -42,6 +42,16 @@ class Detector:
 
     name = "base"
 
+    uses_mask = True
+    """Detector này có đọc mask rembg không.
+
+    `False` thì lõi đưa cho nó ảnh **chưa bôi nền đen**. Chuyện này quan trọng hơn
+    vẻ ngoài: bôi nền là đã áp kết quả của rembg lên đầu vào, nên một detector độc
+    lập sẽ thừa hưởng luôn cái sai của rembg — đúng thứ mà phép so sánh đang muốn
+    đo xem có tránh được không. Chưa kể mô hình học trên ảnh chụp thật, ảnh có
+    nền đen tuyệt đối nằm ngoài phân phối nó từng thấy.
+    """
+
     def find_quad(self, work_img, mask, config) -> Optional[QuadCandidate]:
         raise NotImplementedError
 
@@ -174,9 +184,46 @@ def best_candidate(candidates, reference_img, config: Config):
     return max(candidates, key=score)
 
 
+class DocAlignerDetector(Detector):
+    """Hồi quy 4 góc trực tiếp — KHÔNG qua mask, KHÔNG qua contour.
+
+    Khác hẳn hai detector kia về bản chất: chúng đi tìm *vùng*, rồi suy ra góc từ
+    biên vùng đó; cái này đoán thẳng 4 góc. Hệ quả thực tế là nó **không có
+    contour** để trả về, nên bước nới cạnh bao mép giấy cong (QC-17) tự bỏ qua —
+    đây là điều phải nhớ khi đọc kết quả so sánh, chứ không phải lỗi.
+
+    Cần trỏ `docaligner_model` vào file `.onnx` đã tải sẵn. Xem `docaligner.py`
+    về lý do không tải tự động.
+    """
+
+    name = "docaligner"
+    uses_mask = False
+
+    def find_quad(self, work_img, mask, config: Config):
+        from . import docaligner as da
+
+        path = config.docaligner_model
+        if not path:
+            raise ValueError(
+                "detector 'docaligner' cần QC_SCANNER_DOCALIGNER_MODEL trỏ vào "
+                "file .onnx đã tải sẵn"
+            )
+
+        if config.docaligner_head == "point":
+            corners, confidence = da.predict_point(path, work_img, config.onnx_providers)
+        else:
+            corners, confidence = da.predict_heatmap(
+                path, work_img, config.onnx_providers
+            )
+        if corners is None:
+            return None
+        return QuadCandidate(corners, float(confidence), self.name)
+
+
 DETECTORS = {
     RembgContourDetector.name: RembgContourDetector,
     EdgeHoughDetector.name: EdgeHoughDetector,
+    DocAlignerDetector.name: DocAlignerDetector,
 }
 
 

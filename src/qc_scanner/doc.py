@@ -117,6 +117,7 @@ def scan_image(
 
     # Nền bị bôi đen, đúng như ảnh cutout rembg trả về trước đây: đường lui
     # edge-hough chạy Canny trên `work` nên nó phải thấy cùng một thứ.
+    work_unmasked = work
     if mask is not None:
         work = cv2.bitwise_and(work, work, mask=mask)
 
@@ -126,7 +127,8 @@ def scan_image(
     _debug(debug, "mask", mask)
 
     detector = get_detector(cfg.detector)
-    candidates = detector.all_candidates(work, mask, cfg)
+    detector_input = work if detector.uses_mask else work_unmasked
+    candidates = detector.all_candidates(detector_input, mask, cfg)
     metrics.contour_candidates = len(candidates)
 
     quad = _pick(detector, candidates, work, mask, cfg)
