@@ -96,6 +96,15 @@ REASONS: dict[str, ReasonSpec] = {
             "(`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image.",
             "system",
         ),
+        _spec(
+            "UNAUTHORIZED",
+            "fail",
+            "Thiếu hoặc sai API key.",
+            "Yêu cầu chưa được xác thực. Báo bên tích hợp kiểm tra API key.",
+            "Request không kèm `Authorization: Bearer <key>` hợp lệ. Ảnh **chưa được "
+            "xử lý lần nào** — đây là lỗi tích hợp, không phải lỗi ảnh.",
+            "system",
+        ),
         # --- Đầu vào PDF ---
         _spec(
             "PDF_DECODE_FAILED",

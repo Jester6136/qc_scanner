@@ -275,6 +275,7 @@ là mã vô dụng.
 | `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh: request thiếu trường `file`. Báo bên phát triển. | system |
 | `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Cho chạy lại. Gặp thường xuyên thì giảm request song song, hoặc thêm container. | system |
 | `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi tài nguyên máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. Cho chạy lại, đừng loại ảnh. | system |
+| `UNAUTHORIZED` | fail | request thiếu `Authorization: Bearer <key>` hợp lệ | Request không kèm `Authorization: Bearer <key>` hợp lệ. Ảnh **chưa được xử lý lần nào** — đây là lỗi tích hợp, không phải lỗi ảnh. | system |
 | `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** (`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image. | system |
 | `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc. Lại gần hơn rồi chụp lại. | capturer |
 

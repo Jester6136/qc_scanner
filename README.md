@@ -71,7 +71,7 @@ result.image            # PNG bytes
 | `fail` | Ảnh vào hợp lệ nhưng đầu ra không đáng tin cho OCR |
 
 Bất biến: `verdict == "pass"` ⟺ `reasons == []`. Mỗi mã lý do kèm `hint` (làm gì tiếp theo) và
-`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **29 mã**, danh mục đầy
+`audience` (ai thực hiện: người chụp / vận hành / hệ thống gọi). Hiện có **30 mã**, danh mục đầy
 đủ trong [docs/api.md](docs/api.md).
 
 ## Cài đặt
@@ -326,7 +326,8 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 
 | | |
 |---|---|
-| Mã lý do | 29 mã, mỗi mã kèm `hint` + `audience` |
+| Xác thực | API key kiểu Bearer, nhiều key thu hồi riêng từng client; không đặt key thì **server không khởi động** |
+| Mã lý do | 30 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | DocAligner trả rỗng → rembg (`RECOVERED_BY_MASK_FALLBACK`); rembg thua → dò cạnh (`RECOVERED_BY_EDGE_FALLBACK`); hết đường → ảnh gốc kèm `FALLBACK_ORIGINAL` (fail) |
 | Bộ đo | 401 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy. Tập vàng công khai: `qc-scanner-smartdoc` (SmartDoc 2015, CC-BY-4.0) |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
@@ -402,7 +403,7 @@ pip install -e .
 ```
 
 ```bash
-pytest                    # 401 bài, ~95s sau khi model đã cache
+pytest                    # 424 bài, ~95s sau khi model đã cache
 ruff check src tests
 ```
 

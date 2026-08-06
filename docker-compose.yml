@@ -23,11 +23,11 @@ services:
     ports:
       # Mở ra LAN: service dựng ở máy A, ứng dụng gọi từ máy B → http://<IP-máy-A>:5000
       #
-      # ⚠️ Server KHÔNG có xác thực. Cổng này mở trên MỌI giao diện mạng của máy A,
-      # nên bất cứ ai trong LAN cũng gọi được, và ảnh gửi lên là giấy tờ tuỳ thân.
-      # Đây là đánh đổi đã chốt ở EX-12 (mạng nội bộ, không lưu ảnh) — nó chỉ an toàn
-      # chừng nào máy A **không** có đường ra Internet và LAN là mạng tin được.
-      # Máy A có IP public hoặc bị NAT port-forward thì phải chặn ở firewall.
+      # Cổng này mở trên MỌI giao diện mạng của máy A. Server có xác thực API key
+      # (xem QC_SCANNER_API_KEYS bên dưới), nhưng key đi qua HTTP thuần là gửi mật
+      # khẩu dạng chữ rõ — chặn được người gọi nhầm và người dò cổng, KHÔNG chặn
+      # được người nghe lén trong LAN. Muốn kín thật thì đặt reverse proxy có TLS.
+      # Máy A có IP public hoặc bị NAT port-forward thì vẫn phải chặn ở firewall.
       #
       # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5000:5000".
       #
@@ -40,8 +40,23 @@ services:
       - "${QC_SCANNER_PORT:-5000}:5000"
 
     environment:
+      # ── BẮT BUỘC: không có key thì server KHÔNG khởi động ──────────────────
+      # Sinh key:  docker compose run --rm qc-scanner qc-scanner-apikey app-web
+      # Nhiều client thì nhiều key, ngăn cách bằng dấu phẩy — thu hồi được từng
+      # cái, và log biết ai đang gọi:
+      #     QC_SCANNER_API_KEYS: "app-web:qcs-…,batch:qcs-…"
+      #
+      # ⚠️ ĐỪNG ghi key thẳng vào file này rồi commit. Dùng biến của máy chạy:
+      #     QC_SCANNER_API_KEYS="app-web:qcs-…" docker compose up -d
+      QC_SCANNER_API_KEYS: "${QC_SCANNER_API_KEYS:?chưa đặt API key — chạy qc-scanner-apikey để sinh}"
+      #
+      # Chạy KHÔNG xác thực (chỉ khi cổng đã bị chặn ở firewall): bỏ dòng trên và
+      # đặt QC_SCANNER_AUTH=off. Phải khai báo tường minh — không có đường vô tình.
+      # ──────────────────────────────────────────────────────────────────────
+
       # Model đã nướng sẵn vào image lúc build → chạy được cả khi ngắt mạng.
       U2NET_HOME: /opt/u2net
+      DOCALIGNER_HOME: /opt/docaligner
       # Mọi ngưỡng QC đều override được theo dạng QC_SCANNER_<TÊN_TRƯỜNG>;
       # danh sách đầy đủ nằm trong src/qc_scanner/config.py.
       QC_SCANNER_WORK_HEIGHT: "500"

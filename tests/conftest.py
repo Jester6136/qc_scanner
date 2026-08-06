@@ -4,12 +4,23 @@
 chạy rembg đúng một lần cho mỗi ảnh.
 """
 
+import os
 import pathlib
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 import pytest
+
+# Bộ test cũ nói về **hợp đồng API**, không nói về xác thực, nên nó chạy ở chế độ
+# mở. Đặt ở đây — trước khi bất kỳ test nào import `cmd.server` — vì module đó đọc
+# cấu hình xác thực đúng một lần lúc nạp.
+#
+# Xác thực có bài riêng (`test_auth.py`), và bài đó nạp lại module với key thật.
+# Trộn hai thứ vào nhau thì mỗi test API lại phải mang theo một header, và cái giá
+# là: hôm nào xác thực hỏng, hàng chục bài đỏ cùng lúc mà không bài nào chỉ đúng
+# nguyên nhân.
+os.environ.setdefault("QC_SCANNER_AUTH", "off")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES = ROOT / "examples"

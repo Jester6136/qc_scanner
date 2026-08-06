@@ -22,7 +22,7 @@ from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from .. import __version__
+from .. import __version__, auth
 from ..config import Config
 from ..doc import scan_document
 from ..limits import MAX_CONCURRENCY, MAX_IN_FLIGHT, default_concurrency
@@ -77,7 +77,7 @@ app = FastAPI(
     description=(
         "Mỗi lần xử lý trả về một **phán quyết** (`pass`/`warn`/`fail`) kèm mã lý do "
         "và hướng xử lý, không chỉ trả ảnh.\n\n"
-        "⚠️ Service **không có xác thực** — chỉ chạy trong mạng nội bộ."
+        "Xác thực: `Authorization: Bearer <key>` — xem `QC_SCANNER_API_KEYS`."
     ),
 )
 
@@ -151,6 +151,64 @@ async def limit_upload_size(request: Request, call_next):
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_UPLOAD_BYTES:
         return JSONResponse({"error": "payload quá lớn"}, status_code=413)
+    return await call_next(request)
+
+
+#: Cấu hình xác thực, đọc **một lần** lúc nạp module. Đọc lại mỗi request thì một
+#: lần sửa biến môi trường hụt tay là đổi trạng thái bảo mật của service đang chạy.
+#:
+#: Cấu hình sai thì **khoá hết**, không phải mở hết: `keys` rỗng mà `enabled` bật
+#: nghĩa là không key nào khớp được. Ngã theo hướng an toàn quan trọng nhất đúng lúc
+#: ta không biết cấu hình đúng là gì. `main()` in lỗi rồi thoát; nhưng nếu ai đó chạy
+#: app này qua uvicorn/gunicorn trực tiếp — bỏ qua `main()` — thì cửa vẫn khoá.
+try:
+    AUTH = auth.load()
+    AUTH_ERROR = None
+except auth.AuthConfigError as exc:
+    AUTH = {"enabled": True, "keys": {}}
+    AUTH_ERROR = exc
+
+#: Đường không cần key. Chỉ `/healthz`, và nó phải mở: healthcheck của Docker chạy
+#: bằng `urllib` trần bên trong container, không có chỗ nào nhét key vào; bắt nó
+#: xác thực là container tự báo unhealthy rồi restart vòng vo. Đổi lại, `/healthz`
+#: không được trả về bất cứ thứ gì nhạy cảm — xem `healthz()`.
+PUBLIC_PATHS = frozenset({"/healthz"})
+
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    """Chặn request không có key — **trước** mọi middleware khác.
+
+    Thứ tự là phần quan trọng nhất ở đây, và nó ngược trực giác: Starlette gọi
+    middleware theo **chiều ngược** thứ tự đăng ký, nên cái khai báo SAU cùng chạy
+    TRƯỚC. Hàm này đứng cuối file middleware để nó bọc ngoài cùng.
+
+    Vì sao phải ngoài cùng: một request không có key mà đi qua được `limit_in_flight`
+    là nó đã chiếm một suất trong hạn mức đồng thời, và qua `limit_upload_size` là
+    32MB đã vào RAM. Người lạ trong LAN không cần key hợp lệ vẫn làm nghẽn được
+    service. Chặn ở lớp ngoài cùng thì họ chỉ tốn được của ta một dòng log.
+
+    `OPTIONS` đi thẳng: đó là preflight CORS của trình duyệt, mà preflight **không
+    mang header tuỳ biến** — chặn nó thì `fetch()` phía client hỏng trước khi kịp
+    gửi key. Preflight không đọc được dữ liệu gì.
+    """
+    if not AUTH["enabled"] or request.method == "OPTIONS":
+        return await call_next(request)
+    if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    client = auth.client_for(request.headers.get("authorization", ""), AUTH["keys"])
+    if client is None:
+        return JSONResponse(
+            {"error": ScanError("UNAUTHORIZED").to_dict()},
+            status_code=401,
+            # RFC 6750: 401 phải nói bằng cách nào thì xác thực được.
+            headers={"WWW-Authenticate": 'Bearer realm="qc-scanner"'},
+        )
+
+    # Tên client, KHÔNG PHẢI key. Log là thứ được chép đi khắp nơi — đưa key vào đó
+    # là biến mọi bản sao log thành một bản sao bí mật.
+    request.state.client = client
     return await call_next(request)
 
 
@@ -289,6 +347,11 @@ async def healthz():
         # biết còn chỗ hay sắp bị đẩy lùi.
         "max_in_flight": MAX_IN_FLIGHT,
         "in_flight": _in_flight,
+        # Chỉ bật/tắt, KHÔNG bao giờ số lượng key hay tên client: đây là đường duy
+        # nhất không cần xác thực, nên mọi thứ nó trả về đều là công khai. Người
+        # vận hành cần đúng một bit ở đây — "cửa có khoá không" — và đó cũng là bit
+        # dễ tưởng nhầm nhất sau một lần deploy.
+        "auth": "on" if AUTH["enabled"] else "off",
     }
 
 
@@ -344,6 +407,23 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
+    if AUTH_ERROR is not None:
+        print(f"✗ {AUTH_ERROR}", file=sys.stderr, flush=True)
+        return 2
+
+    # Chạy mở là lựa chọn hợp lệ, nhưng phải là lựa chọn CÓ Ý THỨC. Dòng này in ra
+    # mỗi lần khởi động để không ai vô tình sống nhiều tháng trong trạng thái đó —
+    # đúng kiểu hỏng mà `/healthz` báo `ok` suốt.
+    if not AUTH["enabled"]:
+        print(
+            "⚠️  CẢNH BÁO BẢO MẬT: xác thực đang TẮT (QC_SCANNER_AUTH=off).\n"
+            "    Bất kỳ ai gọi tới được cổng này đều gửi/nhận được dữ liệu, mà ảnh\n"
+            "    vào là giấy tờ tuỳ thân. Chỉ chấp nhận được nếu cổng bị chặn ở\n"
+            "    firewall và LAN là mạng tin được.",
+            file=sys.stderr,
+            flush=True,
+        )
+
     # Nạp model TRƯỚC khi mở cổng: request đầu tiên không phải gánh thời gian
     # tải/nạp model, vốn đủ lâu để timeout ở tầng proxy. Đây cũng là lý do
     # `/healthz` trả lời được nghĩa là model đã sẵn sàng.
@@ -356,7 +436,8 @@ def main(argv=None):
         providers = active_providers(cfg.rembg_model, cfg.onnx_providers)
         print(
             f"qc-scanner {__version__} · model={cfg.rembg_model} · "
-            f"providers={providers} · max_concurrency={MAX_CONCURRENCY}",
+            f"providers={providers} · max_concurrency={MAX_CONCURRENCY} · "
+            f"auth={'on' if AUTH['enabled'] else 'OFF'}",
             flush=True,
         )
         _enforce_gpu(cfg, providers)
@@ -367,6 +448,7 @@ def main(argv=None):
     # phần nặng (onnxruntime) vốn đã dùng nhiều luồng. Cần thông lượng cao hơn thì
     # chạy nhiều container sau một bộ cân bằng tải, đo trước rồi hãy làm.
     uvicorn.run(app, host=args.addr, port=args.port, log_level="info")
+    return 0
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ setup(
             "qc-scanner-eval=qc_scanner.eval:main",
             "qc-scanner-smartdoc=qc_scanner.smartdoc:main",
             "qc-scanner-fetch-models=qc_scanner.docaligner:main",
+            "qc-scanner-apikey=qc_scanner.auth:main",
         ],
     },
 )
