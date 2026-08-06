@@ -13,8 +13,10 @@ Mô hình vẫn là Apache-2.0 (DocsaidLab/DocAligner). File `.onnx` phải tự
 trỏ `QC_SCANNER_DOCALIGNER_MODEL` vào — **không** tải tự động, đúng lý do trên.
 """
 
+import hashlib
 import os
 import pathlib
+import shutil
 import threading
 import urllib.request
 
@@ -27,9 +29,23 @@ import numpy as np
 #: không ra Internet ([EX-12]), và một phụ thuộc tải-lúc-chạy sẽ hỏng ở đúng nơi
 #: khó gỡ nhất: máy khách, lần chạy đầu, sau khi đã bàn giao. Cùng lý do rembg
 #: được nướng sẵn vào image.
+#: SHA-256 ghim vào đây, không phải để chống kẻ tấn công mà để chống **thất bại im
+#: lặng**: Google Drive khi bị giới hạn lượt tải trả về một trang HTML kèm HTTP
+#: **200**. Không kiểm thì trang HTML đó được ghi thành file `.onnx`, `docker build`
+#: báo thành công, và lỗi chỉ lộ ra trên máy khách dưới dạng một thông báo parse
+#: ONNX khó hiểu — với một image đã bàn giao. Đổi lại, ghim băm cũng khoá luôn việc
+#: tác giả thay file trên Drive mà ta không hay.
 MODELS = {
-    "heatmap": ("fastvit_sa24_heatmap.onnx", "14vUH77v6yGg7zFctUgcT6BzV5Iisg4Dl"),
-    "point": ("lcnet050_point.onnx", "1J7cRuupeEIudYrH_CCSV9WvFfu9JM_qU"),
+    "heatmap": (
+        "fastvit_sa24_heatmap.onnx",
+        "14vUH77v6yGg7zFctUgcT6BzV5Iisg4Dl",
+        "7f9f5a8935b2eb22b3ee0245d34996063f54562df390d34714af2d76928695bc",
+    ),
+    "point": (
+        "lcnet050_point.onnx",
+        "1J7cRuupeEIudYrH_CCSV9WvFfu9JM_qU",
+        "32d186080ce16442674d4c0eaaaaac878eea289b56a8d1284f05fff1ff42e220",
+    ),
 }
 
 #: Nơi chứa mô hình. Đặt tên theo lối `U2NET_HOME` của rembg cho nhất quán.
@@ -50,24 +66,63 @@ def resolve_model(head, configured=""):
     if configured:
         path = pathlib.Path(configured).expanduser()
         return path if path.exists() else None
-    name, _ = MODELS[head]
+    name = MODELS[head][0]
     path = model_home() / name
     return path if path.exists() else None
 
 
+def digest(path) -> str:
+    sha = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            sha.update(block)
+    return sha.hexdigest()
+
+
 def fetch(head, dest=None):
-    """Tải mô hình về. Gọi lúc **build image** hoặc lúc dựng máy dev, không lúc chạy."""
-    name, file_id = MODELS[head]
+    """Tải mô hình về. Gọi lúc **build image** hoặc lúc dựng máy dev, không lúc chạy.
+
+    Tải vào file tạm rồi mới đổi tên: một lần tải đứt giữa chừng không được phép
+    để lại thứ trông như đã tải xong. Kiểm SHA-256 trước khi đổi tên — xem `MODELS`
+    về lý do (Drive trả HTML kèm HTTP 200 khi bị giới hạn lượt tải).
+    """
+    name, file_id, expected = MODELS[head]
     target = pathlib.Path(dest or model_home()) / name
     target.parent.mkdir(parents=True, exist_ok=True)
+
     if target.exists():
-        return target
+        if digest(target) == expected:
+            return target
+        # File có sẵn nhưng sai băm: hỏng, tải dở, hoặc bản khác. Tải lại thay vì
+        # dùng bừa — "đã có file" không phải là "đã có model".
+        target.unlink()
+
     url = (
         "https://drive.usercontent.google.com/download"
         f"?id={file_id}&export=download&confirm=t"
     )
-    with urllib.request.urlopen(url) as response, open(target, "wb") as fh:
-        fh.write(response.read())
+    staging = target.with_suffix(target.suffix + ".part")
+    with urllib.request.urlopen(url) as response, open(staging, "wb") as fh:
+        shutil.copyfileobj(response, fh)
+
+    actual = digest(staging)
+    if actual != expected:
+        size = staging.stat().st_size
+        head_bytes = staging.read_bytes()[:200]
+        staging.unlink()
+        hint = ""
+        if b"<html" in head_bytes.lower():
+            hint = (
+                " — nội dung trả về là HTML, gần như chắc chắn Google Drive đang "
+                "giới hạn lượt tải. Thử lại sau, hoặc tải tay rồi trỏ "
+                f"{HOME_ENV} vào thư mục chứa file."
+            )
+        raise RuntimeError(
+            f"tải {name} về nhưng SHA-256 không khớp "
+            f"(nhận {actual[:16]}…, {size} byte; cần {expected[:16]}…){hint}"
+        )
+
+    staging.rename(target)
     return target
 
 #: Cả hai kiến trúc đều chạy ở đúng 256×256. Đây là **hằng số của mô hình**, không
