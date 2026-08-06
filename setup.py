@@ -43,6 +43,8 @@ setup(
             "qc-scanner-batch=qc_scanner.cmd.batch:main",
             "qc-scanner-server=qc_scanner.cmd.server:main",
             "qc-scanner-bench=qc_scanner.bench:main",
+            "qc-scanner-eval=qc_scanner.eval:main",
+            "qc-scanner-smartdoc=qc_scanner.smartdoc:main",
         ],
     },
 )
