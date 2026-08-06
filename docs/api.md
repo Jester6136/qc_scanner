@@ -79,8 +79,8 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
     {
       "code": "CLIPPED_EDGE",         // mã ỔN ĐỊNH VĨNH VIỄN — khoá để đối chiếu
       "severity": "warn",             // "warn" | "fail"
-      "message": "Có góc tài liệu nằm sát/ngoài mép ảnh.",
-      "hint": "Một phần tài liệu nằm ngoài khung hình. Lùi máy ra...",
+      "message": "Có góc tài liệu nằm sát hoặc ngoài mép ảnh.",
+      "hint": "Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép.",
       "audience": "capturer",         // hint ở trên viết cho ai
       "hints": {                      // CẢ HAI tầng, để tự hiển thị lại theo vai
         "capturer": "...",

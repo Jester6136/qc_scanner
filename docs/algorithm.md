@@ -270,55 +270,55 @@ là mã vô dụng.
 
 | Mã | Sev | Điều kiện phát hiện | Hướng xử lý (hint) | Ai |
 |---|---|---|---|---|
-| `DECODE_FAILED` | fail | `imdecode` trả None | File không phải ảnh hợp lệ (hoặc đã hỏng). Kiểm tra định dạng: JPG/PNG. | system |
-| `FILE_EMPTY` | fail | `len(data) == 0` | Không nhận được dữ liệu. Kiểm tra lại bước tải/upload. | system |
-| `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh — báo bên phát triển. | system |
-| `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Qua HTTP là `503` kèm `Retry-After`. | system |
-| `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi phía máy chủ, **không phải lỗi ảnh** — cho chạy lại, đừng loại ảnh. Qua HTTP là `503` kèm `Retry-After`. | system |
-| `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình — phải nướng vào lúc **build** (`qc-scanner-fetch-models`), máy khách không có đường tải lúc chạy. Ảnh không có lỗi gì. | system |
-| `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc được. Chụp lại ở độ phân giải cao hơn, hoặc lại gần tài liệu hơn. | capturer |
+| `DECODE_FAILED` | fail | `imdecode` trả None | File hỏng hoặc sai định dạng, không mở ra được. Xin lại bản gốc. | system |
+| `FILE_EMPTY` | fail | `len(data) == 0` | Không có gì để soi. Báo bên gửi kiểm tra bước tải lên. | system |
+| `MISSING_FILE` | fail | request HTTP không có trường form `file` | Lỗi tích hợp, không phải lỗi ảnh: request thiếu trường `file`. Báo bên phát triển. | system |
+| `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Cho chạy lại. Gặp thường xuyên thì giảm request song song, hoặc thêm container. | system |
+| `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi tài nguyên máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. Cho chạy lại, đừng loại ảnh. | system |
+| `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** (`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image. | system |
+| `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc. Lại gần hơn rồi chụp lại. | capturer |
 
 ### Đầu vào PDF (N-08)
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `PDF_DECODE_FAILED` | fail | pdfium không mở được file | PDF hỏng, hoặc **có mật khẩu**. Xin lại bản gốc / bản đã gỡ mật khẩu. | system |
-| `PDF_NO_PAGES` | fail | mở được nhưng 0 trang | PDF rỗng — báo bên gửi kiểm tra bước xuất file. | system |
-| `PDF_TOO_MANY_PAGES` | fail | số trang > `pdf_max_pages` (50) | Tách file, hoặc nâng `QC_SCANNER_PDF_MAX_PAGES`. **Không trang nào được xử lý** — cắt bớt trong im lặng sẽ khiến bên gọi tưởng đã soi hết. | operator |
-| `PDF_MULTIPAGE` | fail | PDF > 1 trang đưa vào `scan_qc()` | Lỗi tích hợp: dùng `scan_document()`. Qua HTTP thì phản hồi nhiều trang đã là mặc định. | system |
+| `PDF_DECODE_FAILED` | fail | pdfium không mở được file | PDF hỏng hoặc có mật khẩu, không mở ra được. Xin lại bản đã gỡ mật khẩu. | system |
+| `PDF_NO_PAGES` | fail | mở được nhưng 0 trang | PDF rỗng, không có gì để soi. Báo bên gửi kiểm tra bước xuất file. | system |
+| `PDF_TOO_MANY_PAGES` | fail | số trang > `pdf_max_pages` (50) | Vượt trần `pdf_max_pages` nên **không trang nào** được xử lý — cắt bớt trong im lặng sẽ khiến bên gọi tưởng đã soi hết. Tách file, hoặc nâng `QC_SCANNER_PDF_MAX_PAGES`. | operator |
+| `PDF_MULTIPAGE` | fail | PDF > 1 trang đưa vào `scan_qc()` | Lỗi tích hợp: `scan_qc()` trả đúng một kết quả nên không chứa nổi PDF nhiều trang. Dùng `scan_document()`; qua HTTP thì đã là mặc định. | system |
 
 ### Tách chủ thể
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Không tách được tờ giấy khỏi nền. Đặt tài liệu lên **nền tối, tương phản** (bàn sẫm màu) rồi chụp lại. | capturer |
-| ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Tờ giấy chiếm gần hết khung, có thể đã bị cắt mất mép. Lùi ra để lộ viền nền quanh tài liệu. | capturer |
-| `RECOVERED_BY_MASK_FALLBACK` | warn | detector chính trả rỗng → tách nền tìm được (hay gặp với ảnh **đã cắt sẵn**) | Máy phải dùng phương án dự phòng để tìm tờ giấy — soi trước khi dùng. | operator |
-| `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Đã nắn được bằng phương án dự phòng — độ tin cậy thấp hơn, nên soi mắt thường trước khi dùng. | operator |
-| `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận — kết quả kém chắc chắn, nên soi mắt thường. | operator |
+| `SUBJECT_NOT_FOUND` | fail | `alpha_coverage < 0.05` (và fallback §6 cũng thua) | Máy không thấy tờ giấy. Đặt lên nền tối rồi chụp lại. | capturer |
+| ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Giấy chiếm gần hết khung, có thể mất mép. Lùi máy ra rồi chụp lại. | capturer |
+| `RECOVERED_BY_MASK_FALLBACK` | warn | detector chính trả rỗng → tách nền tìm được (hay gặp với ảnh **đã cắt sẵn**) | Detector chính trả rỗng, tứ giác này do tách nền tìm ra. Hay gặp với ảnh **đã cắt sẵn**. Soi trước khi dùng. | operator |
+| `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Nắn bằng phương án dự phòng nên kém tin cậy hơn. Soi trước khi dùng. | operator |
+| `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận nên kết quả kém chắc. Soi trước khi dùng. | operator |
 
 ### Hình học biên
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Không thấy đủ 4 góc tờ giấy. Mở phẳng tài liệu, đừng để tay/vật che góc, chụp lại toàn bộ tờ. | capturer |
-| `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu chiếm quá ít khung hình. Lại gần hơn hoặc zoom vào tài liệu. | capturer |
-| `NOT_CONVEX` | fail | `not is_convex` | Biên phát hiện bị méo (có thể do nếp gấp/bóng đổ). Vuốt phẳng tài liệu và chụp lại. | capturer |
-| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Một phần CHỮ nằm ngoài khung hình, không phải chỉ mất viền trắng. Lùi máy ra, chụp lại sao cho thấy trọn tài liệu kèm chút nền quanh mép. | capturer |
-| `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Không tìm được biên tờ giấy, ảnh ra gần như ảnh vào. Đặt tài liệu lên nền tối, tương phản và chụp lại sao cho thấy trọn 4 mép. | capturer |
-| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung hình. Lùi máy ra để thấy trọn 4 mép. | capturer |
-| `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Góc chụp quá nghiêng — chữ sẽ bị kéo giãn sau khi nắn. Chụp vuông góc từ trên xuống. | capturer |
-| `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Thấy nhiều hơn một tờ trong ảnh; chỉ tờ lớn nhất được xử lý. Chụp **từng tờ một**. | capturer |
-| `FALLBACK_ORIGINAL` | fail | trả ảnh gốc không nắn | Không nắn được, ảnh trả về là ảnh gốc chưa xử lý. Không đưa thẳng vào OCR. | operator |
+| `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Máy không thấy đủ 4 góc. Mở phẳng tờ giấy, đừng che góc, chụp lại cả tờ. | capturer |
+| `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu quá nhỏ trong khung. Lại gần hoặc zoom vào rồi chụp lại. | capturer |
+| `NOT_CONVEX` | fail | `not is_convex` | Biên bị méo, thường do nếp gấp. Vuốt phẳng tài liệu rồi chụp lại. | capturer |
+| `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Mất **chữ** chứ không chỉ mất viền. Lùi máy ra, chụp lại cả tờ kèm chút nền. | capturer |
+| `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Máy không tìm được biên tờ giấy. Đặt lên nền tối rồi chụp lại cả 4 mép. | capturer |
+| `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép. | capturer |
+| `EXTREME_SKEW` | warn | `skew_ratio > 1.8` | Chụp quá nghiêng nên chữ bị kéo giãn. Chụp vuông góc từ trên xuống. | capturer |
+| `MULTIPLE_DOCUMENTS` | warn | `contour_candidates ≥ 2` | Ảnh có nhiều tờ, máy chỉ lấy tờ lớn nhất. Chụp từng tờ một. | capturer |
+| `FALLBACK_ORIGINAL` | fail | trả ảnh gốc không nắn | Ảnh trả về là ảnh gốc chưa xử lý. Đừng đưa thẳng vào OCR. | operator |
 
 ### Chất lượng ảnh (Giai đoạn 2)
 
 | Mã | Sev | Điều kiện | Hướng xử lý | Ai |
 |---|---|---|---|---|
-| `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ/rung, OCR sẽ đọc sai. Giữ máy vững, chạm để lấy nét rồi chụp lại. | capturer |
-| `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt lóa/phản quang che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy tránh phản chiếu. | capturer |
-| `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp nơi sáng hơn hoặc bật đèn. | capturer |
-| `TEXT_NOT_LEVEL` | fail | `|text_skew_deg| > 8` — đo **sau** khi nắn | Ảnh nắn ra bị xiên, chữ chạy chéo. Thường do tờ giấy bị gấp/quặp góc làm máy nhận nhầm mép. Vuốt phẳng cả 4 góc rồi chụp lại. | capturer |
+| `BLURRY` | fail | `blur_score < 25` (đã chốt bằng số đo) | Ảnh mờ hoặc rung. Giữ máy vững, chạm lấy nét rồi chụp lại. | capturer |
+| `GLARE` | warn | vùng bão hòa sáng > X% | Có vệt loá che chữ. Đổi hướng đèn hoặc nghiêng nhẹ máy. | capturer |
+| `TOO_DARK` | warn | độ sáng trung vị thấp | Ảnh thiếu sáng. Chụp ở nơi sáng hơn. | capturer |
+| `TEXT_NOT_LEVEL` | fail | `|text_skew_deg| > 8` — đo **sau** khi nắn | Ảnh nắn ra bị xiên, thường do gấp góc giấy. Vuốt phẳng cả 4 góc rồi chụp lại. | capturer |
 
 ### Hai ngưỡng đã chốt bằng số đo — và vì sao khác thiết kế ban đầu
 
