@@ -24,3 +24,10 @@ __pycache__/
 tmp
 tmp_*
 tmp-*
+
+# API key và mọi bí mật khác. `docker compose` đọc `.env` ở thư mục dự án để nội
+# suy biến, nên đây là chỗ tự nhiên để đặt QC_SCANNER_API_KEYS trên máy server —
+# và cũng vì thế nó là chỗ tự nhiên để vô tình commit một mật khẩu.
+.env
+.env.*
+!.env.example
