@@ -71,21 +71,46 @@ def extract(video_path, truth, out_dir, stride=10, prefix=""):
     return records
 
 
+def _ground_truth_for(video, dataset_dir):
+    """Tìm XML nhãn của **đúng** video này. Hai bố cục, và một cái bẫy.
+
+    Bản test để nhãn ngay cạnh video; bản mẫu để ở `<nền>_gt/` nằm dưới một nhánh
+    khác hẳn (`input_sample/` và `input_sample_groundtruth/`), nên không tìm được
+    bằng cách dò thư mục anh em — phải quét từ gốc bộ dữ liệu.
+
+    Bẫy: tên video **trùng nhau giữa các nền** — `datasheet001.avi` có mặt ở cả
+    background01..05. Bản đầu của hàm này gom nhãn vào một `dict` khoá theo mỗi
+    tên file, nên 5 nền đè lên nhau còn 1, và cả 912 ảnh rút ra đều đeo nhãn của
+    **một** nền duy nhất.
+
+    Kiểu hỏng đó không kêu một tiếng: vẫn đủ ảnh, vẫn đủ nhãn, IoU vẫn ra số đọc
+    được — chỉ là số đó đo sai vật. Vì thế tra nhãn phải đi từ *đường dẫn* của
+    video, không đi từ tên nó.
+    """
+    beside = video.with_suffix(".gt.xml")
+    if beside.exists():
+        return beside
+    wanted = f"{video.stem}.gt.xml"
+    for candidate in pathlib.Path(dataset_dir).rglob(wanted):
+        if candidate.parent.name == f"{video.parent.name}_gt":
+            return candidate
+    return None
+
+
 def build(dataset_dir, out_dir, stride=10):
     dataset_dir = pathlib.Path(dataset_dir)
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    truths = {p.name.replace(".gt.xml", ""): p for p in dataset_dir.rglob("*.gt.xml")}
     records = []
     for video in sorted(dataset_dir.rglob("*.avi")):
-        xml_path = truths.get(video.stem)
+        xml_path = _ground_truth_for(video, dataset_dir)
         if xml_path is None:
             continue
-        # Nền là biến khó nhất của bộ này (background00..04, từ trơn tới lộn xộn),
+        # Nền là biến khó nhất của bộ này (background01..05, từ trơn tới lộn xộn),
         # nên nó phải nằm trong tên file — gộp hết vào một rổ thì lúc kết quả xấu
         # sẽ không biết xấu ở nền nào.
-        prefix = f"{xml_path.parent.name.replace('_gt', '')}-"
+        prefix = f"{video.parent.name}-"
         records += extract(video, read_ground_truth(xml_path), out_dir, stride, prefix)
 
     labels_path = out_dir / "labels.jsonl"

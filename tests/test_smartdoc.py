@@ -92,3 +92,33 @@ def test_build_writes_labels_next_to_the_frames(tmp_path, gt_file):
     assert labels.exists()
     written = sorted(p.name for p in out.glob("*.png"))
     assert written == ["background00-datasheet001-0001.png"]
+
+
+def test_videos_of_the_same_name_in_different_backgrounds_keep_their_own_labels(
+    tmp_path, gt_file
+):
+    """`datasheet001.avi` có mặt ở cả 5 nền — tra nhãn theo TÊN là dán nhãn nhầm.
+
+    Bản đầu gom nhãn vào một `dict` khoá theo tên file, nên 5 nền đè lên nhau còn
+    một. Chạy thật ra 912 ảnh đeo nhãn của cùng một nền, và nó **không kêu**: đủ
+    ảnh, đủ nhãn, IoU vẫn ra số đọc được — chỉ là đo sai vật. Đúng loại lỗi làm
+    hỏng một phép so sánh mà vẫn trông như đã đo cẩn thận.
+    """
+    shifted = gt_file.read_text(encoding="utf-8").replace('x="11.0"', 'x="500.0"')
+    for background, text in (
+        ("background01", gt_file.read_text(encoding="utf-8")),
+        ("background02", shifted),
+    ):
+        folder = tmp_path / "testDataset" / background
+        folder.mkdir(parents=True)
+        (folder / "datasheet001.gt.xml").write_text(text, encoding="utf-8")
+    gt_file.unlink()
+
+    from qc_scanner.smartdoc import _ground_truth_for
+
+    root = tmp_path / "testDataset"
+    first = _ground_truth_for(root / "background01" / "datasheet001.avi", root)
+    second = _ground_truth_for(root / "background02" / "datasheet001.avi", root)
+
+    assert read_ground_truth(first)[1][0] == [11.0, 20.0]
+    assert read_ground_truth(second)[1][0] == [500.0, 20.0]
