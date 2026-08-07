@@ -354,22 +354,41 @@ def _pdf_pages(data):
     return pdfium.PdfDocument(data)
 
 
-def test_pdf_output_keeps_every_pixel(one_page):
-    """Ghép PDF bằng JPEG là lặng lẽ lấy lại đúng thứ đầu-ra-PNG đã cố tránh: nhiễu
-    nén quanh nét chữ nhỏ làm OCR đọc sai. Mặc định phải là không mất dữ liệu."""
+def test_lossless_mode_still_keeps_every_pixel(one_page):
+    """`pdf_out_jpeg_quality=0` phải thật sự là không mất dữ liệu.
+
+    Đây không còn là mặc định (xem bài dung lượng bên dưới), nhưng nó vẫn là đường
+    thoát cho ai cần bit-chính-xác, nên vẫn phải đúng nguyên nghĩa.
+    """
     import numpy as np
 
     from qc_scanner.pdf import build_pdf
 
+    cfg = Config(pdf_out_jpeg_quality=0)
     result = scan_document(one_page).pages[0]
-    data = build_pdf([result.image], Config())
+    data = build_pdf([result.image], cfg)
 
     assert data.startswith(b"%PDF-")
-    rendered = list(page_images(data, Config()))
+    rendered = list(page_images(data, cfg))
     assert rendered[0].source == "embedded"  # đi lại đúng đường không resample
 
     original = cv2.imdecode(np.frombuffer(result.image, np.uint8), cv2.IMREAD_COLOR)
     assert np.array_equal(rendered[0].image, original)
+
+
+def test_default_output_is_visually_indistinguishable_from_lossless(one_page):
+    """Mặc định q100 có mất dữ liệu, nhưng phải mất ở mức không ai đo được bằng mắt
+    hay bằng OCR. Chốt bằng PSNR chứ không bằng "trông cũng được"."""
+    import numpy as np
+
+    from qc_scanner.pdf import build_pdf
+
+    png = scan_document(one_page).pages[0].image
+    original = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR)
+    rendered = list(page_images(build_pdf([png], Config()), Config()))[0].image
+
+    assert rendered.shape == original.shape, "số điểm ảnh phải nguyên vẹn"
+    assert cv2.PSNR(original, rendered) > 45.0
 
 
 def test_pdf_output_stays_in_the_same_size_class_as_the_png(one_page):
@@ -383,19 +402,48 @@ def test_pdf_output_stays_in_the_same_size_class_as_the_png(one_page):
 
     Nên bài này chốt thứ thật sự cần đúng — PDF không phình sang một hạng khác — chứ
     không chốt một bất đẳng thức tình cờ đúng ở một mẫu. Tính lossless đã có
-    `test_pdf_output_keeps_every_pixel` giữ.
+    `test_lossless_mode_still_keeps_every_pixel` giữ.
     """
     from qc_scanner.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
-    assert len(build_pdf([png], Config())) < len(png) * 1.25
+    assert len(build_pdf([png], Config(pdf_out_jpeg_quality=0))) < len(png) * 1.25
+
+
+def test_a_pdf_in_does_not_come_back_many_times_larger(one_page):
+    """Bài này ra đời từ một ca thật lọt tới tay khách: PDF vào 6.66 MB, ra **27.48 MB**.
+
+    Không phép kiểm nào canh dung lượng đầu ra, nên nó trôi thẳng qua CI. Nguyên nhân
+    là chuyển mã **lossy → lossless**: ảnh nhúng trong PDF scan vốn là JPEG (nén ~15–20
+    lần trên nội dung ảnh chụp) còn Flate của PDF chỉ được ~2–3 lần. Giữ nguyên vẹn một
+    ảnh vốn đã là JPEG không bảo toàn thông tin nào — nó chỉ bảo toàn y nguyên các vết
+    nhiễu JPEG sẵn có, với giá gấp mấy lần dung lượng.
+
+    Mốc so sánh là **bản lossless của chính ảnh này**, không phải dung lượng file vào.
+    Đó là chỗ bản đầu tiên của bài này sai: file vào được fixture nén ở q95 tuỳ ý, nên
+    so với nó là so với một con số không mang ý nghĩa gì — đổi fixture sang q80 là bài
+    test đổi kết luận mà chẳng có gì trong sản phẩm thay đổi.
+
+    So với lossless thì phát biểu mới đúng thứ cần giữ: **mặc định phải thật sự nén**.
+    Đặt lại `pdf_out_jpeg_quality = 0` là bài này đỏ ngay, và đó chính là hồi quy cần
+    chặn. Ngưỡng một nửa rất rộng so với thực tế đo được — 0.44 ở trang này, 0.36 trên
+    file thật của khách — vì bài canh hạng độ lớn chứ không canh một tỉ lệ cụ thể.
+    """
+    from qc_scanner.pdf import build_pdf
+
+    pages = [p.image for p in scan_document(one_page).pages]
+    lossless = build_pdf(pages, Config(pdf_out_jpeg_quality=0))
+    default = build_pdf(pages, Config())
+    assert len(default) < len(lossless) / 2, (
+        f"lossless {len(lossless) / 1e6:.2f} MB → mặc định {len(default) / 1e6:.2f} MB"
+    )
 
 
 def test_jpeg_knob_shrinks_the_file_when_asked(one_page):
     from qc_scanner.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
-    lossless = build_pdf([png], Config())
+    lossless = build_pdf([png], Config(pdf_out_jpeg_quality=0))
     lossy = build_pdf([png], Config(pdf_out_jpeg_quality=92))
     assert len(lossy) < len(lossless) / 3
 

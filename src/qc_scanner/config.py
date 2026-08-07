@@ -383,15 +383,37 @@ class Config:
     và đó mới là thứ OCR dùng. Nó chỉ đổi con số "trang này to bằng chừng nào giấy".
     """
 
-    pdf_out_jpeg_quality: int = 0
-    """0 = ghép PDF **không mất dữ liệu** (mặc định). 1–100 = nén JPEG ở mức đó.
+    pdf_out_jpeg_quality: int = 100
+    """Mức JPEG khi ghép PDF ra. `0` = không mất dữ liệu (Flate).
 
-    Mặc định lossless vì cùng lý do đầu ra là PNG chứ không phải JPEG: file đi tiếp vào
-    OCR/VLM và nhiễu nén quanh nét chữ nhỏ làm giảm độ chính xác bóc dữ liệu.
+    Từng mặc định `0`, và ghi chú cũ ở đây biện hộ cho lựa chọn đó bằng một phép đo
+    **sai vì không đại diện** — một trang 1053×1852 nội dung thưa, cho ra "PDF lossless
+    988 KB, nhỏ hơn cả PNG 1276 KB, gần như không có gì để đánh đổi". Trên trang ảnh
+    chụp thật thì ngược hẳn: lossless còn lớn hơn tổng PNG trung gian.
 
-    Và ở đây gần như không có gì để đánh đổi — đo trên một trang 1053×1852: PNG gốc
-    1276 KB, **PDF lossless 988 KB** (nhỏ hơn PNG), JPEG q92 166 KB. Chỉ bật khi dung
-    lượng thật sự thành vấn đề, ví dụ trả PDF hàng chục trang qua đường mạng chậm.
+    Đo trên PDF thật của khách (2 trang, ảnh nhúng là ảnh chụp điện thoại 3024×4032):
+
+    | mức | dung lượng | so với file vào | PSNR |
+    |---|---|---|---|
+    | PDF vào | 6.66 MB | — | — |
+    | lossless | **27.48 MB** | ×4.1 | ∞ |
+    | **q100 (mặc định)** | **9.84 MB** | ×1.5 | 55.2 dB |
+    | q95 | 4.95 MB | ×0.7 | 47.6 dB |
+    | q92 | 3.74 MB | ×0.6 | 45.7 dB |
+
+    Nguyên nhân phình là **chuyển mã lossy → lossless**: ảnh nhúng vốn là JPEG (nén
+    ~15–20 lần trên nội dung ảnh chụp), còn Flate của PDF chỉ được ~2–3 lần. File vào
+    nhỏ không phải vì ít điểm ảnh mà vì nó đã vứt bỏ thông tin từ lúc bấm máy.
+
+    Và đó cũng là lý do lập luận "giữ lossless cho OCR" **không đứng vững ở đây**: giữ
+    một ảnh vốn đã là JPEG ở dạng lossless không bảo toàn thông tin nào, nó chỉ bảo
+    toàn nguyên vẹn các vết nhiễu JPEG sẵn có — với giá gấp 3 lần dung lượng.
+
+    Vì sao q100 chứ không phải q95 (nhỏ thêm một nửa nữa): đây là mức nén duy nhất
+    còn giữ được biên độ an toàn cho bước OCR/VLM phía sau, thứ **chưa hề đo được**
+    ([EX-19] chưa chốt engine). Khi nào đo được tỉ lệ lỗi ký tự theo mức nén thì hạ
+    tiếp; trước đó thì hạ là đoán. Lập luận lossless đã hỏng một lần vì đo sai, không
+    nên thay nó bằng một phỏng đoán khác.
     """
 
     pdf_page_image_coverage: float = 0.9
