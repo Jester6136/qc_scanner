@@ -320,6 +320,67 @@ def paper_mask(image, corners, min_ratio=0.6, percentile=90.0, block_ratio=0.05)
     return local >= paper_level * min_ratio
 
 
+def content_outside_quad(work, corners, mask, erode_ratio=0.06):
+    """QC-22: tứ giác có **cắt lẹm vào chính tài liệu** không?
+
+    Toàn bộ bộ kiểm cắt xén còn lại dựng trên giả định *nội dung mất là do khung hình
+    cắt* — `ink_at_image_border` chỉ soi những cạnh mà tứ giác áp vào mép ảnh. Ca này
+    khác hẳn: tứ giác nằm gọn giữa khung (`touches_border = 0`) và **chính nó** chém
+    chéo qua tờ giấy. Mọi phép kiểm đều trả 0.0 và ảnh đi ra `pass`.
+
+    Trả `(tỉ lệ mảng bỏ rơi, tỉ lệ cấu trúc)`. Cần **cả hai** mới kết luận, vì một
+    mình tỉ lệ mảng lẫn hai chuyện ngược nhau: *tứ giác quá nhỏ* (cắt lẹm thật) và
+    *mặt nạ quá lớn* (rembg trùm cả mặt bàn).
+
+    Cách đo, và vì sao từng bước:
+
+    1. Lấy phần mặt nạ **nằm ngoài** tứ giác. Mặt nạ vốn đã được tính cho
+       `alpha_coverage`, nên chỗ này không thêm lần chạy mô hình nào.
+    2. **Co mạnh** rồi lấy vùng liên thông lớn nhất. Đây là bước quyết định: mặt nạ
+       luôn rộng hơn tứ giác một viền mỏng, và viền đó *bao quanh* nên diện tích cộng
+       lại rất đáng kể — ảnh cắt đúng vẫn cho 0.074 khi co nhẹ. Vết cắt thật thì dồn
+       về **một phía** và đặc. Co 6% cạnh ngắn: viền tan hết (0.074 → 0.000, 0.031 →
+       0.013) còn vết cắt gần như nguyên (0.250 → 0.195).
+    3. So **mật độ biên Canny** trong mảng đó với mật độ trong lòng tứ giác. Mặt bàn
+       bị trùm nhầm thì trơn; nửa tài liệu bị cắt thì đầy chữ, dấu, hoa văn.
+
+    Vì sao là mật độ biên chứ không phải mật độ **mực**: `ink_mask` tìm nét *tối trên
+    nền sáng*, và ca thật đầu tiên gặp được lại là **bìa đỏ sổ đỏ chữ nhũ vàng** —
+    sáng trên tối. Cả `ink_mask` lẫn `paper_mask` (đo theo độ sáng) đều trả 0.000 ở
+    đó, tức thước đo im lặng bỏ sót đúng ca cần bắt. Mật độ biên không giả định chiều
+    tương phản nên không có điểm mù ấy.
+
+    Đo trên 32 ảnh thật (3 ca cắt lẹm có thật, 29 ca còn lại): với ngưỡng 0.10 cho cả
+    hai, **32/32 đúng, 0 báo động giả**. Biên rộng ở cả hai chiều — mảng: 0.150–0.200
+    (cắt) so với ≤ 0.028 (viền); cấu trúc: 0.512–1.127 (cắt) so với 0.000 (mặt bàn).
+    """
+    if mask is None:
+        return 0.0, 0.0
+    height, width = work.shape[:2]
+    inside = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillConvexPoly(inside, np.round(order_corners(corners)).astype(np.int32), 255)
+
+    paper = mask > 0
+    total = int(np.count_nonzero(paper))
+    if total == 0:
+        return 0.0, 0.0
+
+    block = max(3, int(round(min(height, width) * erode_ratio))) | 1
+    dropped = cv2.erode(
+        (paper & (inside == 0)).astype(np.uint8), np.ones((block, block), np.uint8)
+    )
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(dropped, 8)
+    if count < 2:
+        return 0.0, 0.0
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    blob = labels == largest
+
+    edges = cv2.Canny(cv2.GaussianBlur(_gray(work), (5, 5), 0), 50, 150) > 0
+    reference = edges[inside > 0].mean() if np.any(inside) else 0.0
+    structure = float(edges[blob].mean() / max(reference, 1e-6))
+    return float(np.count_nonzero(blob) / total), structure
+
+
 def ink_at_image_border(
     image, corners, band_ratio=0.01, margin_px=2, paper_min_ratio=0.6, paper_percentile=90.0
 ):

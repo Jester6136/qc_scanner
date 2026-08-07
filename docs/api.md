@@ -439,7 +439,7 @@ phục. Có test chặn.
 
 ## 7. Danh mục mã lý do {#ma-ly-do}
 
-**30 mã**, kèm điều kiện phát hiện và hướng xử lý: [algorithm.md §7](algorithm.md#ma-ly-do).
+**31 mã**, kèm điều kiện phát hiện và hướng xử lý: [algorithm.md §7](algorithm.md#ma-ly-do).
 Danh mục đó được test giữ cho khớp với code — mã nào chạy được thì chắc chắn có dòng trong đó.
 
 Nhóm theo hành động của phía gọi:
@@ -449,7 +449,7 @@ Nhóm theo hành động của phía gọi:
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
 | Xác thực | `UNAUTHORIZED` | Sửa key phía gọi. **Đừng retry** cùng key đó, và đừng đánh dấu ảnh là hỏng |
 | Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` `MODEL_MISSING` | **Retry** — ảnh không có vấn đề gì (`MODEL_MISSING` phải sửa image trước) |
-| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
+| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `CONTENT_OUTSIDE_CROP` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
 | Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_MASK_FALLBACK` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 | **Đã ngừng phát** | `SUBJECT_FILLS_FRAME` | Không xuất hiện nữa từ QC-15. Mã vẫn được giữ vì `code` là ổn định vĩnh viễn và log cũ còn tham chiếu — đừng viết nhánh xử lý mới cho nó |
 

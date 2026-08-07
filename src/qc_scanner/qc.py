@@ -243,6 +243,15 @@ REASONS: dict[str, ReasonSpec] = {
             "capturer",
         ),
         _spec(
+            "CONTENT_OUTSIDE_CROP",
+            "fail",
+            "Đường cắt chém vào tài liệu — đã mất một mảng nội dung.",
+            "Máy cắt trượt, bỏ rơi một phần tờ giấy. Chụp lại cả tờ, để lộ đủ bốn góc.",
+            "Biên tài liệu bị dựng sai nên ảnh ra thiếu hẳn một mảng. Phần đó **vẫn còn** "
+            "nguyên trong ảnh gốc — cắt tay lại từ ảnh gốc là lấy đủ.",
+            "capturer",
+        ),
+        _spec(
             "NO_CROP_DETECTED",
             "fail",
             "Không cắt được gì — ảnh ra gần như ảnh vào.",
@@ -433,6 +442,20 @@ class Metrics:
 
     `0.0` khi tứ giác nằm trọn trong ảnh — khi đó biên cắt là mép tờ giấy, không
     phải chỗ nội dung bị mất.
+    """
+
+    abandoned_ratio: Optional[float] = None
+    """QC-22: phần tài liệu bị tứ giác bỏ lại bên ngoài, sau khi co (`content_outside_quad`).
+
+    Khác `border_ink_ratio` ở chỗ nó nói về **đường cắt của chính ta**, không nói về mép
+    tấm ảnh — nên nó là phép kiểm duy nhất còn hiệu lực khi tứ giác nằm gọn giữa khung.
+    """
+
+    abandoned_structure: Optional[float] = None
+    """QC-22: mật độ biên trong mảng bị bỏ rơi, chia cho mật độ trong lòng tứ giác.
+
+    Thấp = mảng đó trơn, gần như chắc chắn là nền bị mặt nạ trùm nhầm chứ không phải
+    tài liệu bị cắt. Đọc kèm `abandoned_ratio`, một mình nó không có nghĩa.
     """
 
     est_dpi: Optional[float] = None

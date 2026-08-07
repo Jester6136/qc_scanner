@@ -33,9 +33,10 @@ flowchart TD
     subgraph GH["Giai đoạn 2 — Đo trên ảnh GỐC"]
         D["Kiểm hình học của tứ giác<br/>geometric plausibility"]
         E["Kiểm nội dung bị khung cắt<br/>content clipping"]
+        E2["Kiểm đường cắt chém vào tài liệu<br/>quad-vs-mask agreement"]
     end
 
-    D --> E --> F
+    D --> E --> E2 --> F
 
     subgraph GN["Giai đoạn 3 — Nắn phẳng"]
         F["Perspective rectification<br/>homography 4 điểm"]
@@ -338,7 +339,62 @@ giới cắt ngang dải mà không đụng tới chiều vuông góc với khun
 **(d) Gộp bằng MAX, không bằng trung bình.** Mất một dòng ở **một** cạnh đã đủ hỏng bản
 ghi. Trung bình sẽ pha loãng nó với ba cạnh sạch.
 
-### 3.3. Phát hiện nhiều tài liệu trong khung
+### 3.3. Phát hiện đường cắt của chính ta chém vào tài liệu
+
+Mục 3.2 giải bài *"khung hình có cắt mất chữ không"*. Còn một bài khác hẳn mà nó
+**không chạm tới**: tứ giác nằm gọn giữa khung rồi **tự nó** chém chéo qua tờ giấy.
+
+Đây là điểm mù có cấu trúc, đáng nêu vì nó là bài học thiết kế chung: mọi phép kiểm ở
+mục 3.2 chỉ soi những cạnh mà tứ giác **áp vào mép ảnh**. Khi tứ giác không chạm mép
+nào, chúng trả về 0 — và con số 0 đó **không có nghĩa "không mất gì"**, nó có nghĩa
+"phép kiểm không hề chạy". Hai điều đó trông giống hệt nhau ở đầu ra.
+
+**Ý tưởng giải:** so tứ giác với **mặt nạ phân vùng** đã có từ giai đoạn 1. Nếu một
+mảng lớn của mặt nạ nằm ngoài tứ giác, đường cắt đã bỏ rơi một phần tài liệu.
+
+```mermaid
+flowchart TD
+    A["Mặt nạ phân vùng<br/>NGOÀI tứ giác"] --> B["Morphological erosion<br/>MẠNH — 6% cạnh ngắn"]
+    B --> C["Vùng liên thông<br/>lớn nhất"]
+    C --> D["Điều kiện 1<br/>diện tích ≥ 10% mặt nạ"]
+    C --> E["Điều kiện 2<br/>mật độ biên ≥ 10% của trong tứ giác"]
+    D --> F{"CẢ HAI?"}
+    E --> F
+    F -- "có" --> G["Đã cắt lẹm → loại"]
+    F -- "không" --> H["Bỏ qua"]
+```
+
+Ba quyết định trong đó, mỗi cái sinh ra từ một lần đo thất bại:
+
+**(a) Vì sao phải co mạnh.** Mặt nạ luôn rộng hơn tứ giác một **viền mỏng bao quanh**,
+và vì nó bao quanh nên diện tích cộng lại rất đáng kể — ảnh cắt hoàn toàn đúng vẫn cho
+0.074. Vết cắt thật thì **dồn về một phía** và đặc. Phép co phân biệt đúng hai hình
+dạng đó: ở mức 6% cạnh ngắn, viền tan hết (0.074 → 0.000) còn vết cắt gần như nguyên
+(0.250 → 0.195). Đây **không phải** bước khử nhiễu mà là điều kiện phân biệt chính.
+
+**(b) Vì sao diện tích một mình không đủ.** Tỉ lệ mảng bỏ rơi lẫn **hai chuyện ngược
+nhau**: *tứ giác quá nhỏ* (cắt lẹm thật) và *mặt nạ quá lớn* (phân vùng trùm cả mặt
+bàn). Trong dữ liệu thực đo, một ảnh cắt **hoàn toàn đúng** nhưng mặt nạ trùm mặt bàn
+cho tỉ lệ **cao hơn cả ba ca cắt lẹm thật** — tức nếu chỉ đo diện tích thì báo động
+giả đứng đầu bảng. Cần một điều kiện thứ hai, độc lập.
+
+**(c) Vì sao đo mật độ biên chứ không đo mực.** Điều kiện thứ hai hỏi "mảng đó có
+**cấu trúc như tài liệu** không" — mặt bàn thì trơn, nửa tài liệu bị cắt thì đầy chữ,
+dấu, hoa văn. Cách tự nhiên là dùng lại mặt nạ mực ở mục 3.2, và **nó hỏng**: mặt nạ
+mực tìm nét **tối trên nền sáng**, còn ca thật đầu tiên gặp phải là **bìa sổ đỏ nền
+đỏ sẫm, chữ nhũ vàng** — sáng trên tối. Cả mặt nạ mực lẫn cổng giấy (đều dựa trên độ
+sáng) đều trả 0 ở đó, tức thước đo **im lặng bỏ sót đúng ca cần bắt**.
+
+Mật độ biên (Canny) không giả định chiều tương phản nên không có điểm mù ấy. Đây là
+một nguyên tắc đáng mang sang chỗ khác: **thước đo giả định càng ít về dữ liệu thì
+càng khó bị một loại tài liệu mới làm cho câm lặng.**
+
+Một phương án nữa đã thử và loại: hỏi "cạnh tứ giác có **tựa vào biên thật** trong ảnh
+không" — tứ giác đúng thì cạnh nằm trên mép giấy, đường cắt lẹm thì chạy giữa lòng tài
+liệu nơi không có biên vật lý nào đỡ. Nghe rất thuyết phục, nhưng đo ra **ngược hoàn
+toàn**: nó chấm ảnh cắt đúng 0.000 và các ca cắt lẹm thật 0.405–0.515.
+
+### 3.4. Phát hiện nhiều tài liệu trong khung
 
 Đếm số **vùng liên thông** (connected component) đủ lớn trong mặt nạ phân vùng, không
 đếm số ứng viên mà thuật toán định vị chính trả về.
@@ -615,8 +671,10 @@ Nêu trước thì đó là sự cẩn trọng; để bên kia tìm ra thì đó
 2. **Loá và thiếu sáng là cờ phẳng.** Không xét vị trí vùng hỏng so với vùng có chữ.
 3. **Độ nét không có thang tuyệt đối.** Phụ thuộc mật độ nội dung của trang.
 4. **DPI giả định khổ A4.** Sai với thẻ, hộ chiếu, hoá đơn nhiệt.
-5. **Không phát hiện được "đường cắt chém vào chữ".** Đã thử ba cách hình thức hoá và
-   cả ba đều thất bại — tín hiệu đo được luôn bị **bóng mép giấy** lấn át. Hiện dựa
-   gián tiếp vào phép đo mực-ở-mép-ảnh.
+5. **Phép kiểm đường-cắt-chém-vào-tài-liệu (mục 3.3) dựa vào mặt nạ phân vùng**, nên
+   nó thừa hưởng luôn điểm yếu của mặt nạ. Trên nền bàn bừa bộn — đúng chỗ phân vùng
+   sụp đổ — mảng bỏ rơi lớn có thể là vì *mặt nạ* sai chứ không phải vì tứ giác sai.
+   Điều kiện mật độ biên chặn được nền **trơn**, nhưng nền **bừa bộn** thì có cấu
+   trúc. Đã đo 32/32 đúng trên dữ liệu thực tế, nhưng **chưa đo trên bộ chuẩn**.
 6. **Không có mô hình mặt cong.** Giấy vênh nhiều thì kết quả nắn sai và không có phép
    kiểm nào bắt được trực tiếp — chỉ bắt gián tiếp qua độ nghiêng chữ.

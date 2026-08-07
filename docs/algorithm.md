@@ -81,6 +81,10 @@ scan_qc(data, config) -> ScanResult
  8. metric hình học → reasons: NOT_CONVEX · TOO_SMALL · EXTREME_SKEW · CLIPPED_EDGE
     tứ giác gần trọn khung + chạm ≥3 mép + detector THUA → NO_CROP_DETECTED (thay CLIPPED_EDGE)
     có cắt thật, mà chỗ cắt CÓ MỰC → CONTENT_CLIPPED (thay CLIPPED_EDGE)
+ 8b. QC-22: mảng tài liệu bị chính tứ giác BỎ RƠI (mask ngoài quad, co 6%, ≥10% mask)
+    VÀ mảng đó có cấu trúc như tài liệu (mật độ biên ≥10% của trong quad)
+    → CONTENT_OUTSIDE_CROP (fail). Phép kiểm duy nhất còn hiệu lực khi tứ giác nằm
+    gọn giữa khung — mọi mã cắt xén khác chỉ soi cạnh áp vào MÉP ẢNH.
     ≥2 contour trong mask → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
  9. QC-17: nới 4 cạnh ra bao trọn contour (mép giấy cong vồng ra ngoài dây cung)
@@ -150,6 +154,8 @@ Bất biến: **`verdict == "pass"` ⟺ `reasons == []`**. Không có "pass kèm
 | `is_convex` | tứ giác có lồi không | bắt `NOT_CONVEX` |
 | `touches_border` | số góc nằm sát mép ảnh (< 2px) | bắt `CLIPPED_EDGE` |
 | `border_ink_ratio` | mật độ mực sát mép ảnh, ở cạnh tứ giác bị khung cắt; `0.0` khi tứ giác nằm trọn trong ảnh | bắt `CONTENT_CLIPPED` |
+| `abandoned_ratio` | phần mask bị tứ giác bỏ lại bên ngoài, sau khi co 6% cạnh ngắn | bắt `CONTENT_OUTSIDE_CROP` |
+| `abandoned_structure` | mật độ biên trong mảng bỏ rơi / trong lòng tứ giác; thấp = nền trơn, không phải tài liệu | điều kiện thứ hai của `CONTENT_OUTSIDE_CROP` |
 | `est_dpi` | ước lượng DPI đầu ra (giả định khổ A4) | bắt `LOW_RESOLUTION` |
 | `blur_score` | variance of Laplacian trên ảnh đã nắn | bắt `BLURRY` |
 | `text_skew_deg` | góc nghiêng dòng chữ trên ảnh **đã nắn**, đo **trước** khi sửa; `None` = trang quá ít mực để đo | bắt `TEXT_NOT_LEVEL` |
@@ -305,6 +311,7 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Máy không thấy đủ 4 góc. Mở phẳng tờ giấy, đừng che góc, chụp lại cả tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu quá nhỏ trong khung. Lại gần hoặc zoom vào rồi chụp lại. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên bị méo, thường do nếp gấp. Vuốt phẳng tài liệu rồi chụp lại. | capturer |
+| `CONTENT_OUTSIDE_CROP` | fail | `abandoned_ratio ≥ 0.10` **và** `abandoned_structure ≥ 0.10` | Máy cắt trượt, bỏ rơi một phần tờ giấy. Chụp lại cả tờ, để lộ đủ bốn góc. | capturer |
 | `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Mất **chữ** chứ không chỉ mất viền. Lùi máy ra, chụp lại cả tờ kèm chút nền. | capturer |
 | `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Máy không tìm được biên tờ giấy. Đặt lên nền tối rồi chụp lại cả 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép. | capturer |
@@ -465,7 +472,7 @@ Ta không tự nghĩ ra bộ chỉ số này — kiểm lại thì nó gần tr�
 |---|---|---|
 | mờ | `defect_blurry` | `blur_score`, ngưỡng 25 |
 | cháy sáng | `defect_glare` | `glare_ratio` + `median_brightness` |
-| cắt mất nội dung | `defect_document_cutoff` / `defect_text_cutoff` | `CLIPPED_EDGE` / `CONTENT_CLIPPED` |
+| cắt mất nội dung | `defect_document_cutoff` / `defect_text_cutoff` | `CLIPPED_EDGE` / `CONTENT_CLIPPED` / `CONTENT_OUTSIDE_CROP` |
 | chữ quá nhỏ | `defect_text_too_small` | `LOW_RESOLUTION` (xem [QC-24](features_issues.md#qc-text-height)) |
 | nhiều tài liệu trong một ảnh | *(không có)* | `MULTIPLE_DOCUMENTS` |
 | skew dòng chữ | *(không công bố)* | `text_skew_deg`, ngưỡng **8°** |

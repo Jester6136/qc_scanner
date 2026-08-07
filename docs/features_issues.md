@@ -16,7 +16,7 @@
 ## Tình trạng
 
 **Đang mở**: [OPS-3](#ops-docker-unverified) (P0) · [PKG-6](#pkg-model-licence) (P0) ·
-[PKG-5](#pkg-license) (P1) · [QC-22](#qc-crop-cuts-text) (P1) · [QC-23](#qc-glare-severity) (P1) ·
+[PKG-5](#pkg-license) (P1) · [QC-23](#qc-glare-severity) (P1) ·
 [QC-18b](#qc-fold-residual) (P1) · [QUAL-5](#qual-ocr-truth) (P1) · [SPD-8](#spd-onnx-threads) (P1) ·
 [QUAL-3](#qual-sweep) · [QUAL-4](#qual-knife-edge) · [QC-24](#qc-text-height) (P2).
 
@@ -95,31 +95,51 @@ giấy phép từng model vào tài liệu bàn giao. Gắn với [PKG-5](#pkg-l
 
 ---
 
-### 🖼️ QC-22 · P1 · Chữ bị chính đường cắt của ta chém thì KHÔNG ai bắt {#qc-crop-cuts-text}
+### ✅ QC-22 · Chữ bị chính đường cắt của ta chém — ĐÃ BỊT {#qc-crop-cuts-text}
 
-`border_ink_ratio` chỉ soi dải sát **mép tấm ảnh** — nó trả lời "máy ảnh có cắt mất gì không".
-Tứ giác nằm gọn giữa ảnh mà đường cắt xén qua một dòng chữ thì nó trả `0.0`. Ca thật đo được:
-`04.59.48` chạy DocAligner cắt mất nửa dưới dòng chân trang, `border_ink_ratio = 0.0`, verdict
-`pass`. Đây là kiểu hỏng đắt nhất — **mất nội dung mà cho qua**.
+Mọi phép kiểm cắt xén khác đều hỏi *"khung hình có cắt mất gì không"*, nên chỉ soi những cạnh
+mà tứ giác **áp vào mép tấm ảnh**. Tứ giác nằm gọn giữa khung rồi tự nó chém qua tài liệu thì
+`border_ink_ratio = 0.000` — không phải vì không mất gì, mà vì phép kiểm **không hề chạy**.
 
-**Đã thử ba cách, cả ba thất bại, số đo kèm theo:**
+Ca đưa tới quyết định là một PDF thật của khách: bìa sổ đỏ, `touches_border = 0`, mất trọn dòng
+tiêu đề, verdict **`pass` với không một mã lý do nào**. Kiểu hỏng đắt nhất — mất nội dung mà mọi
+thứ báo xanh.
 
-| cách hỏi | kết quả |
+**Cách giải: so tứ giác với mặt nạ phân vùng.** Mặt nạ vốn đã được tính cho `alpha_coverage`,
+nên phép kiểm không thêm lần chạy mô hình nào. Hai điều kiện, phải có **cả hai**:
+
+1. `abandoned_ratio ≥ 0.10` — phần mặt nạ bị tứ giác bỏ lại ngoài, sau khi **co 6% cạnh ngắn**.
+2. `abandoned_structure ≥ 0.10` — mật độ biên trong mảng đó, so với trong lòng tứ giác.
+
+**Ba thước đã thử và thất bại**, ghi lại để không ai đi lại:
+
+| cách hỏi | vì sao hỏng |
 |---|---|
-| "ngoài đường cắt có giấy và có mực không" | ảnh cắt **đúng** vẫn lên 0.3–1.0 |
+| "ngoài đường cắt có giấy và có mực không" | ảnh cắt **đúng** vẫn lên 0.3–1.0 — đếm phải **bóng mép giấy** |
 | "có nét mực nào vắt qua đường cắt không" | ca hỏng đã biết chỉ **0.012**, ảnh tốt lên **0.43** |
-| thêm "nét phải thò ra xa đường cắt" | lỏng → không tách; chặt → **mọi ảnh đều 0.000** |
+| "cạnh tứ giác có tựa vào biên Canny không" | chấm ảnh **đúng** 0.000 còn ca cắt thật 0.405–0.515 — ngược hoàn toàn |
 
-Soi bằng mắt cái đang bị đếm: đó là **bóng mép tờ giấy** — vệt tối mảnh chạy *dọc theo* đường
-cắt, có ở mọi ảnh kể cả ảnh cắt hoàn hảo, và nó vắt qua biên y hệt chữ bị chém.
+**Hai bẫy mà thiết kế cuối phải né**, cả hai đều lộ ra khi đo:
 
-**Hướng còn lại**, đo trên ảnh **đầu ra** thay vì ảnh gốc: "rìa ảnh giao ra có còn lề trắng
-không". Đo được ngay (rembg trung vị 0.185, DocAligner 0.100) và nó **bắt đúng** ca hỏng. Nhưng
-nó cũng gắn cờ **CCCD**, vốn thiết kế tràn mép nên không bao giờ có lề trắng — mà CCCD là loại
-giấy tờ chính của khách. Chặn ở đó là loại oan cả kho.
+* *Mảng lớn ≠ cắt lẹm.* Ảnh `abc1b13` cắt **hoàn toàn đúng** nhưng rembg trùm cả mặt bàn, cho
+  `abandoned_ratio = 0.241` — **cao hơn cả ba ca cắt lẹm thật**. Chỉ đo diện tích thì nó là báo
+  động giả đứng đầu bảng. Thước cấu trúc là thứ duy nhất tách được (0.000 so với 0.512–1.127).
+* *Mực không phải lúc nào cũng tối.* Ca thật đầu tiên là **bìa đỏ sổ đỏ, chữ nhũ vàng** — sáng
+  trên tối. Cả `ink_mask` lẫn `paper_mask` (đều đo theo độ sáng) trả 0.000 ở đó và bỏ lọt đúng
+  ca cần bắt. Vì thế phép đo cuối đếm **mật độ biên**, không đếm mực.
 
-**Chưa quyết**: cần tách "thẻ tràn mép" khỏi "giấy bị cắt lẹm". Đề xuất rẻ nhất là dùng
-`text_skew_deg` (đã có) để nhận tài liệu dạng văn bản nhiều chữ rồi chỉ áp luật ở đó.
+Bước **co 6%** là điều kiện phân biệt chính, không phải khử nhiễu: mặt nạ luôn rộng hơn tứ giác
+một viền mỏng *bao quanh*, cộng lại ra diện tích đáng kể (ảnh cắt đúng vẫn cho 0.074 khi co 2%).
+Vết cắt thật dồn về **một phía** và đặc nên chịu được co mạnh: 0.250 → 0.195, trong khi viền tan
+hết 0.074 → 0.000.
+
+**Đo trên 32 ảnh thật** (3 ca cắt lẹm, 29 ca còn lại): **32/32 đúng, 0 báo động giả**. Biên rộng
+ở cả hai chiều. Verdict toàn kho đổi: pass 19→18, warn 6→5, fail 7→9.
+
+**Còn nợ:** chưa đo trên bộ chuẩn SmartDoc (dữ liệu không còn trên đĩa). Hướng hỏng chưa loại
+trừ được là nền bàn bừa bộn, nơi mặt nạ rembg tự nó sụp đổ và trùm cả mặt bàn — khi ấy mảng bỏ
+rơi lớn vì *rembg* sai chứ không phải vì tứ giác sai. Thước cấu trúc chặn được ca mặt bàn trơn,
+nhưng bàn **bừa bộn** thì có cấu trúc. Cần chạy `background05` trước khi coi là đóng hẳn.
 
 ---
 

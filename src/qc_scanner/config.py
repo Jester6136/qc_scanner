@@ -96,6 +96,33 @@ class Config:
     cắt xén tắt hết mà không mã lý do nào bật lên. Cùng ca đó p85 → 1%, p90 → 0%.
     """
 
+    max_abandoned_ratio: float = 0.10
+    """QC-22: tứ giác bỏ rơi bao nhiêu phần tài liệu thì coi là **cắt lẹm**.
+
+    Đo bằng `geometry.content_outside_quad`, tính trên phần mặt nạ nằm ngoài tứ giác
+    sau khi co `abandoned_erode_ratio`. Trên 32 ảnh thật: ca cắt lẹm cho 0.150–0.200,
+    ca cắt đúng cho ≤ 0.028. Ngưỡng 0.10 nằm giữa, cách xa cả hai phía.
+    """
+
+    abandoned_structure_ratio: float = 0.10
+    """QC-22: mật độ biên tối thiểu trong mảng bị bỏ rơi, so với trong lòng tứ giác.
+
+    Điều kiện thứ hai, **bắt buộc** phải có cùng `max_abandoned_ratio`. Một mình tỉ lệ
+    mảng lẫn hai chuyện ngược nhau — tứ giác quá nhỏ, và mặt nạ quá lớn. Ca thật
+    `abc1b13` cắt hoàn toàn đúng nhưng rembg trùm cả mặt bàn, cho mảng 0.241, tức
+    **cao hơn cả ba ca cắt lẹm thật**; chỉ thước cấu trúc mới hạ nó xuống (0.000, so
+    với 0.512–1.127 của các ca cắt thật).
+    """
+
+    abandoned_erode_ratio: float = 0.06
+    """QC-22: co mảng bỏ rơi bấy nhiêu phần cạnh ngắn trước khi đo.
+
+    Không phải khử nhiễu mà là **điều kiện phân biệt chính**: mặt nạ luôn rộng hơn tứ
+    giác một viền mỏng bao quanh, cộng lại ra diện tích đáng kể (ảnh cắt đúng vẫn cho
+    0.074 khi co 2%). Vết cắt thật thì dồn về một phía và đặc, nên chịu được co mạnh.
+    Ở 6%: viền tan hết (0.074 → 0.000) còn vết cắt gần như nguyên (0.250 → 0.195).
+    """
+
     max_border_ink_ratio: float = 0.08
     """Trên mức này coi như đã cắt vào **chữ**, không phải chỉ mất viền trắng (QC-12).
 

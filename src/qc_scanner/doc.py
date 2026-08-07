@@ -229,6 +229,7 @@ def scan_image(
     # nên 5 ảnh vốn `pass` bị đẩy sang `warn` (CLIPPED_EDGE), và ca hỏng thật
     # `abc1b13…` thoát `NO_CROP_DETECTED` vì góc lệch ra ngoài bị kẹp lại thành 0.
     reasons += _geometry_reasons(quad.corners, work, cfg, metrics)
+    reasons += _abandoned_reasons(quad.corners, work_unmasked, mask, cfg, metrics)
 
     # QC-17: chỉ tới đây mới nới, và chỉ để CẮT — mép giấy cong thì dây cung nối hai
     # góc nằm trong tờ giấy và cắt lẹm vào nội dung.
@@ -422,6 +423,37 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
             Reason.of("CLIPPED_EDGE", f"touches_border={metrics.touches_border}")
         )
     return reasons
+
+
+def _abandoned_reasons(corners, work, mask, cfg: Config, metrics: Metrics):
+    """QC-22: đường cắt của **chính ta** có chém vào tài liệu không.
+
+    Chỗ trống mà lỗ hổng này lọt qua: mọi phép kiểm cắt xén khác đều hỏi "khung hình
+    có cắt mất chữ không", nên chúng chỉ soi các cạnh mà tứ giác áp vào mép ảnh. Ca
+    thật gặp trên PDF của khách thì `touches_border = 0`, `border_ink_ratio = 0.000`
+    — không phải vì không mất gì, mà vì **phép kiểm không hề chạy**. Ảnh ra `pass`
+    trong khi mất trọn dòng tiêu đề của một sổ đỏ.
+
+    Đo trên ảnh **chưa bôi nền** và trên tứ giác **gốc**, trước bước nới cạnh QC-17:
+    nới rồi mới đo là tự làm mảng bỏ rơi nhỏ đi bằng chính phép nới, tức đo lại kết
+    quả của mình. Ảnh chưa bôi nền vì mật độ biên phải đọc được nội dung thật; nền
+    bôi đen cho ra biên giả ngay ranh giới mặt nạ.
+    """
+    metrics.abandoned_ratio, metrics.abandoned_structure = geo.content_outside_quad(
+        work, corners, mask, cfg.abandoned_erode_ratio
+    )
+    if (
+        metrics.abandoned_ratio >= cfg.max_abandoned_ratio
+        and metrics.abandoned_structure >= cfg.abandoned_structure_ratio
+    ):
+        return [
+            Reason.of(
+                "CONTENT_OUTSIDE_CROP",
+                f"abandoned_ratio={metrics.abandoned_ratio:.3f}, "
+                f"abandoned_structure={metrics.abandoned_structure:.3f}",
+            )
+        ]
+    return []
 
 
 def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons):
