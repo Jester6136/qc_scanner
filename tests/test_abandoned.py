@@ -118,6 +118,42 @@ def test_erosion_is_what_separates_a_rim_from_a_cut():
     assert strong > weak * 0.5, "co mạnh không được ăn mất phần lớn vết cắt"
 
 
+def test_an_amorphous_mask_is_not_trusted_as_evidence():
+    """Cổng thứ ba, và nó ra đời từ một thất bại đo được trên bộ chuẩn.
+
+    Với hai điều kiện đầu, phép kiểm loại oan **171/244 ảnh nền bàn bừa bộn** của
+    SmartDoc (`background05`) — trong khi IoU của tứ giác với nhãn ở đó là 0.988, tức
+    cắt gần như hoàn hảo. Tính chung 173/2421 = 7.15% báo động giả, **0 ca bắt đúng**.
+
+    Nguyên nhân: rembg trùm cả mặt bàn, nên mảng "bị bỏ rơi" là bút, dây, giấy khác —
+    to *và* có cấu trúc, qua được cả hai cổng đầu. Cổng cấu trúc chỉ chặn được nền
+    **trơn**; bàn **bừa bộn** thì có cấu trúc.
+
+    Điểm bất đối xứng cứu được: khi *tứ giác* sai thì mặt nạ vẫn là một tờ giấy vuông
+    vắn; khi *mặt nạ* sai thì nó vô định hình.
+    """
+    assert geo.mask_quad_fit(_mask(_document())) >= 0.85, "mặt nạ đúng một tờ giấy"
+
+    # Hình dạng của ca thật: tài liệu NHỎ giữa khung, rác rải khắp bàn quanh nó. Đốm
+    # nằm gọn trong tờ giấy thì hình chữ nhật bao không đổi và bài này xanh mà chẳng
+    # kiểm gì — phải để rác vươn ra ngoài mới tái hiện được.
+    messy = np.zeros((H, W), np.uint8)
+    cv2.rectangle(messy, (330, 480), (570, 720), 255, -1)  # tờ giấy
+    for cx, cy, r in ((90, 90, 80), (800, 120, 70), (120, 1080, 90), (810, 1100, 75)):
+        cv2.circle(messy, (cx, cy), r, 255, -1)  # bút, dây, giấy khác trên bàn
+    assert geo.mask_quad_fit(messy) < 0.85, "mặt nạ vô định hình thì không đáng tin"
+
+
+def test_the_gate_still_lets_the_real_cut_through():
+    """Ngưỡng phải nằm giữa **vùng bằng phẳng**, không sát mép nào.
+
+    Quét trên 2421 ảnh SmartDoc + 32 ảnh thật: `fit ≥ 0.83…0.88` đều cho 0 báo động
+    giả và giữ đủ 3/3 ca cắt lẹm; 0.89 bắt đầu **mất ca thật của khách**. Báo động giả
+    cao nhất đo được 0.822, ca cắt lẹm thấp nhất 0.889.
+    """
+    assert geo.mask_quad_fit(_mask(_document())) >= 0.889
+
+
 def test_no_mask_means_no_claim():
     """Không có mặt nạ thì không có căn cứ nào — phải trả 0.0, không được đoán."""
     img = _document()

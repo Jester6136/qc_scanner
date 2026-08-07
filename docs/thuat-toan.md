@@ -364,6 +364,14 @@ flowchart TD
     F -- "không" --> H["Bỏ qua"]
 ```
 
+**Điều kiện thứ ba, và là bài học đáng mang đi nhất:** hai điều kiện trên là *chưa
+đủ*, nhưng chỉ bộ chuẩn mới cho thấy điều đó. Trên dữ liệu tự thu thập, phiên bản hai
+điều kiện đạt 32/32 — rồi trên bộ chuẩn nó loại oan **70% ảnh nền bàn bừa bộn**, nơi
+mặt nạ trùm cả cái bàn nên mảng bỏ rơi vừa to vừa có cấu trúc. Cổng thứ ba hỏi một câu
+khác hẳn: *"mặt nạ có đáng tin làm chứng cứ không"* — đo bằng độ khớp của mặt nạ với
+hình chữ nhật xoay bao nó. Khi **tứ giác** sai thì mặt nạ vẫn vuông vắn; khi **mặt
+nạ** sai thì nó vô định hình.
+
 Ba quyết định trong đó, mỗi cái sinh ra từ một lần đo thất bại:
 
 **(a) Vì sao phải co mạnh.** Mặt nạ luôn rộng hơn tứ giác một **viền mỏng bao quanh**,
@@ -671,10 +679,9 @@ Nêu trước thì đó là sự cẩn trọng; để bên kia tìm ra thì đó
 2. **Loá và thiếu sáng là cờ phẳng.** Không xét vị trí vùng hỏng so với vùng có chữ.
 3. **Độ nét không có thang tuyệt đối.** Phụ thuộc mật độ nội dung của trang.
 4. **DPI giả định khổ A4.** Sai với thẻ, hộ chiếu, hoá đơn nhiệt.
-5. **Phép kiểm đường-cắt-chém-vào-tài-liệu (mục 3.3) dựa vào mặt nạ phân vùng**, nên
-   nó thừa hưởng luôn điểm yếu của mặt nạ. Trên nền bàn bừa bộn — đúng chỗ phân vùng
-   sụp đổ — mảng bỏ rơi lớn có thể là vì *mặt nạ* sai chứ không phải vì tứ giác sai.
-   Điều kiện mật độ biên chặn được nền **trơn**, nhưng nền **bừa bộn** thì có cấu
-   trúc. Đã đo 32/32 đúng trên dữ liệu thực tế, nhưng **chưa đo trên bộ chuẩn**.
+5. **Phép kiểm ở mục 3.3 chỉ có ba ca dương tính để hiệu chuẩn.** Nó đã qua bộ chuẩn
+   2421 ảnh với 0 báo động giả, nhưng phía ngược lại — có bao nhiêu kiểu cắt lẹm mà
+   nó **bỏ sót** — thì chưa đo được, vì không bộ dữ liệu công khai nào gán nhãn
+   "tứ giác bị cắt lẹm". Ba ca đều tự tìm thấy trong dữ liệu khách.
 6. **Không có mô hình mặt cong.** Giấy vênh nhiều thì kết quả nắn sai và không có phép
    kiểm nào bắt được trực tiếp — chỉ bắt gián tiếp qua độ nghiêng chữ.

@@ -320,6 +320,37 @@ def paper_mask(image, corners, min_ratio=0.6, percentile=90.0, block_ratio=0.05)
     return local >= paper_level * min_ratio
 
 
+def mask_quad_fit(mask):
+    """Mặt nạ có **hình dạng một tờ giấy** không? IoU của nó với chính hình chữ nhật
+    xoay nhỏ nhất bao nó.
+
+    Đây là cổng an toàn cho `content_outside_quad`, và nó ra đời từ một thất bại đo
+    được: phép kiểm cắt lẹm ban đầu chỉ dựa vào "mặt nạ nằm ngoài tứ giác", và trên
+    bộ chuẩn SmartDoc nó loại oan **171/244 ảnh nền bàn bừa bộn** — trong khi IoU của
+    tứ giác với nhãn ở đó là 0.988, tức cắt gần như hoàn hảo. Nguyên nhân: rembg trùm
+    cả mặt bàn, nên mảng "bị bỏ rơi" là bút, dây, giấy khác — vừa to vừa đầy cấu trúc
+    nên qua được cả hai điều kiện cũ.
+
+    Điểm bất đối xứng cứu được tình thế: khi **tứ giác** sai, mặt nạ vẫn là một tờ giấy
+    vuông vắn; khi **mặt nạ** sai, nó vô định hình và không hình chữ nhật nào khớp nổi.
+    Đo trên 2421 ảnh SmartDoc + 32 ảnh thật: báo động giả cao nhất 0.822, ca cắt lẹm
+    thật thấp nhất 0.889.
+    """
+    if mask is None:
+        return 0.0
+    contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = contours[0] if len(contours) == 2 else contours[1]
+    if not contours:
+        return 0.0
+    box = cv2.boxPoints(cv2.minAreaRect(max(contours, key=cv2.contourArea)))
+    fitted = np.zeros(mask.shape, dtype=np.uint8)
+    cv2.fillConvexPoly(fitted, np.round(box).astype(np.int32), 255)
+
+    actual, rectangle = mask > 0, fitted > 0
+    union = int(np.count_nonzero(actual | rectangle))
+    return float(np.count_nonzero(actual & rectangle) / union) if union else 0.0
+
+
 def content_outside_quad(work, corners, mask, erode_ratio=0.06):
     """QC-22: tứ giác có **cắt lẹm vào chính tài liệu** không?
 
@@ -350,9 +381,14 @@ def content_outside_quad(work, corners, mask, erode_ratio=0.06):
     đó, tức thước đo im lặng bỏ sót đúng ca cần bắt. Mật độ biên không giả định chiều
     tương phản nên không có điểm mù ấy.
 
+    Hai điều kiện này **chưa đủ**, và chỗ thiếu chỉ lộ ra khi đo trên bộ chuẩn: nền
+    bàn bừa bộn làm mặt nạ trùm cả cái bàn, nên mảng bỏ rơi vừa to vừa có cấu trúc.
+    Cổng thứ ba `mask_quad_fit` chặn đúng ca đó — xem hàm trên. Ba điều kiện đều do
+    phía gọi ghép lại, hàm này chỉ trả số đo.
+
     Đo trên 32 ảnh thật (3 ca cắt lẹm có thật, 29 ca còn lại): với ngưỡng 0.10 cho cả
-    hai, **32/32 đúng, 0 báo động giả**. Biên rộng ở cả hai chiều — mảng: 0.150–0.200
-    (cắt) so với ≤ 0.028 (viền); cấu trúc: 0.512–1.127 (cắt) so với 0.000 (mặt bàn).
+    hai, **32/32 đúng**. Biên rộng ở cả hai chiều — mảng: 0.150–0.200 (cắt) so với
+    ≤ 0.028 (viền); cấu trúc: 0.512–1.127 (cắt) so với 0.000 (mặt bàn trơn).
     """
     if mask is None:
         return 0.0, 0.0

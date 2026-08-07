@@ -434,6 +434,11 @@ def _abandoned_reasons(corners, work, mask, cfg: Config, metrics: Metrics):
     — không phải vì không mất gì, mà vì **phép kiểm không hề chạy**. Ảnh ra `pass`
     trong khi mất trọn dòng tiêu đề của một sổ đỏ.
 
+    Ba cổng, phải thoả **cả ba**. Cổng thứ ba (`mask_quad_fit`) hỏi một câu khác hẳn
+    hai cổng đầu: *"mặt nạ có đáng tin làm chứng cứ không"*. Không có nó, phép kiểm
+    loại oan 171/244 ảnh nền bàn bừa bộn của SmartDoc — mặt nạ trùm cả cái bàn nên
+    mảng "bị bỏ rơi" là bút và dây, to và có cấu trúc, qua được cả hai cổng đầu.
+
     Đo trên ảnh **chưa bôi nền** và trên tứ giác **gốc**, trước bước nới cạnh QC-17:
     nới rồi mới đo là tự làm mảng bỏ rơi nhỏ đi bằng chính phép nới, tức đo lại kết
     quả của mình. Ảnh chưa bôi nền vì mật độ biên phải đọc được nội dung thật; nền
@@ -442,15 +447,18 @@ def _abandoned_reasons(corners, work, mask, cfg: Config, metrics: Metrics):
     metrics.abandoned_ratio, metrics.abandoned_structure = geo.content_outside_quad(
         work, corners, mask, cfg.abandoned_erode_ratio
     )
+    metrics.mask_quad_fit = geo.mask_quad_fit(mask)
     if (
         metrics.abandoned_ratio >= cfg.max_abandoned_ratio
         and metrics.abandoned_structure >= cfg.abandoned_structure_ratio
+        and metrics.mask_quad_fit >= cfg.min_mask_quad_fit
     ):
         return [
             Reason.of(
                 "CONTENT_OUTSIDE_CROP",
                 f"abandoned_ratio={metrics.abandoned_ratio:.3f}, "
-                f"abandoned_structure={metrics.abandoned_structure:.3f}",
+                f"abandoned_structure={metrics.abandoned_structure:.3f}, "
+                f"mask_quad_fit={metrics.mask_quad_fit:.3f}",
             )
         ]
     return []

@@ -458,6 +458,13 @@ class Metrics:
     tài liệu bị cắt. Đọc kèm `abandoned_ratio`, một mình nó không có nghĩa.
     """
 
+    mask_quad_fit: Optional[float] = None
+    """QC-22: mặt nạ giống hình chữ nhật đến mức nào (IoU với minAreaRect của chính nó).
+
+    Thấp = mặt nạ vô định hình, tức rembg đang trùm cả nền chứ không chỉ tờ giấy. Khi
+    đó **không** được dùng nó làm chứng cứ để kết luận tứ giác cắt lẹm.
+    """
+
     est_dpi: Optional[float] = None
     """DPI ước lượng của ảnh đã nắn, giả định khổ A4."""
 

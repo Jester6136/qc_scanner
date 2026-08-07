@@ -133,13 +133,37 @@ một viền mỏng *bao quanh*, cộng lại ra diện tích đáng kể (ảnh
 Vết cắt thật dồn về **một phía** và đặc nên chịu được co mạnh: 0.250 → 0.195, trong khi viền tan
 hết 0.074 → 0.000.
 
-**Đo trên 32 ảnh thật** (3 ca cắt lẹm, 29 ca còn lại): **32/32 đúng, 0 báo động giả**. Biên rộng
-ở cả hai chiều. Verdict toàn kho đổi: pass 19→18, warn 6→5, fail 7→9.
+**Cổng thứ ba là bài học đắt nhất của mục này.** Bản đầu chỉ có hai cổng trên, đo được **32/32
+đúng trên 32 ảnh thật** và đã được push. Con số đó **đúng nhưng vô nghĩa**: 29 ca âm tính trong
+tập ấy đều chụp trên nền tương đối sạch, nên tập đó không hề chứa hướng hỏng thật sự.
 
-**Còn nợ:** chưa đo trên bộ chuẩn SmartDoc (dữ liệu không còn trên đĩa). Hướng hỏng chưa loại
-trừ được là nền bàn bừa bộn, nơi mặt nạ rembg tự nó sụp đổ và trùm cả mặt bàn — khi ấy mảng bỏ
-rơi lớn vì *rembg* sai chứ không phải vì tứ giác sai. Thước cấu trúc chặn được ca mặt bàn trơn,
-nhưng bàn **bừa bộn** thì có cấu trúc. Cần chạy `background05` trước khi coi là đóng hẳn.
+Chạy trên SmartDoc (2421 ảnh, 5 nền) thì lộ ra ngay:
+
+| nền | ảnh | IoU tb | báo động giả (2 cổng) | (3 cổng) |
+|---|---|---|---|---|
+| background01–04 | 2177 | 0.985–0.988 | 2 | 0 |
+| **background05** (bàn bừa bộn) | 244 | **0.988** | **171 (70%)** | **0** |
+| TỔNG | 2421 | | 173 = **7.15%**, bắt đúng **0** | **0** |
+
+Tứ giác ở `background05` gần như hoàn hảo (IoU 0.988) mà vẫn bị loại: rembg trùm cả mặt bàn, nên
+mảng "bị bỏ rơi" là bút, dây, giấy khác — to *và* có cấu trúc, qua được cả hai cổng đầu. Cổng cấu
+trúc chỉ chặn được nền **trơn**; bàn **bừa bộn** thì có cấu trúc.
+
+Cứu được nhờ một điểm bất đối xứng: khi *tứ giác* sai thì mặt nạ vẫn là tờ giấy vuông vắn; khi
+*mặt nạ* sai thì nó vô định hình. Quét ngưỡng trên **toàn bộ** 2421 + 32 ảnh:
+
+| `fit ≥` | báo động giả | giữ ca cắt lẹm |
+|---|---|---|
+| 0.00 | 173 (7.15%) | 3/3 |
+| 0.80 | 8 (0.33%) | 3/3 |
+| **0.83–0.88** | **0** | **3/3** |
+| 0.89 | 0 | 2/3 ← mất ca thật của khách |
+
+Chọn 0.85 vì nằm giữa **vùng bằng phẳng**: báo động giả cao nhất 0.822, ca cắt lẹm thấp nhất
+0.889. Chọn ngưỡng trên vài mẫu chính là sai lầm đã gây ra vòng này.
+
+**Kết quả cuối:** SmartDoc 2421 ảnh → **0 báo động giả**; 32 ảnh thật → bắt đúng 3/3 ca cắt lẹm,
+verdict toàn kho pass 19→18, warn 6→5, fail 7→9.
 
 ---
 

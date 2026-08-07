@@ -114,6 +114,31 @@ class Config:
     với 0.512–1.127 của các ca cắt thật).
     """
 
+    min_mask_quad_fit: float = 0.85
+    """QC-22: mặt nạ phải giống một tờ giấy đến mức nào thì mới được dùng làm chứng cứ.
+
+    Cổng thứ ba, và là cổng **quan trọng nhất** — nó ra đời từ một thất bại đo được
+    trên bộ chuẩn. Với hai điều kiện đầu, phép kiểm loại oan **171/244 ảnh nền bàn bừa
+    bộn** của SmartDoc (`background05`), trong khi IoU của tứ giác với nhãn ở đó là
+    0.988. Tính chung 173/2421 = **7.15% báo động giả, 0 ca bắt đúng**.
+
+    Nguyên nhân: rembg trùm cả mặt bàn, nên mảng "bị bỏ rơi" là bút, dây, giấy khác —
+    to và có cấu trúc, qua được cả hai cổng cũ. Điểm bất đối xứng cứu được: khi *tứ
+    giác* sai thì mặt nạ vẫn vuông vắn; khi *mặt nạ* sai thì nó vô định hình.
+
+    Quét ngưỡng trên 2421 ảnh SmartDoc + 32 ảnh thật:
+
+    | `fit ≥` | báo động giả | giữ được ca cắt lẹm |
+    |---|---|---|
+    | 0.00 | 173 (7.15%) | 3/3 |
+    | 0.80 | 8 (0.33%) | 3/3 |
+    | **0.83–0.88** | **0** | **3/3** |
+    | 0.89 | 0 | 2/3 ← mất ca thật của khách |
+
+    Chọn 0.85 vì nó nằm giữa **vùng bằng phẳng**, không sát mép nào: báo động giả cao
+    nhất đo được là 0.822, ca cắt lẹm thấp nhất là 0.889.
+    """
+
     abandoned_erode_ratio: float = 0.06
     """QC-22: co mảng bỏ rơi bấy nhiêu phần cạnh ngắn trước khi đo.
 
