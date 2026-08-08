@@ -376,6 +376,40 @@ class Config:
     """
 
     # --- Đầu vào PDF (N-08) ---
+    pre_cropped_min_area: float = 0.0
+    """`pre_cropped` chỉ có hiệu lực khi tứ giác phủ ít nhất bấy nhiêu khung hình.
+
+    Mặc định `0.0` = **không kiểm chứng**, vì khi phía gọi tự khai `?pre_cropped=1` thì
+    đó là tuyên bố của họ về ảnh của họ, và hợp đồng đã ghi rõ đánh đổi thuộc về họ.
+    Đường PDF thì khác — ở đó **ta đoán** — nên nó tự đặt `pdf_pre_cropped_min_area`.
+
+    Xem `pdf_pre_cropped_min_area` để biết ca thật và số đo.
+    """
+
+    pdf_pre_cropped_min_area: float = 0.90
+    """Ngưỡng kiểm chứng cho cờ `pre_cropped` mà **đường PDF tự suy ra**.
+
+    "Đã cắt sẵn" nghĩa là **không có gì để cắt**. Nếu ta vừa cắt đi một nửa khung thì
+    theo đúng định nghĩa trang đó *không* cắt sẵn — và lúc ấy dập các mã lý do về biên
+    là dập đúng thứ đang cần.
+
+    Ca thật đưa tới luật này: một PDF ảnh-chụp-điện-thoại (`132578.pdf`) có trang bìa
+    sổ đỏ bị cắt còn `quad_area_ratio = 0.506` — mất trọn tấm bìa đỏ — mà vẫn ra
+    **`pass` với danh sách lý do rỗng**, vì `pdf_pre_cropped` đã xoá `CONTENT_CLIPPED`.
+    Giả định "trang PDF chính là tờ giấy do máy scan cắt sẵn" không đúng với PDF ghép
+    từ ảnh chụp: vẫn còn nền, vẫn cần cắt, vẫn cắt sai được.
+
+    Đo trên 50 trang của 22 file sổ đỏ thật: ngưỡng **0.70–0.94** đều cho đúng **một**
+    thay đổi — chính trang hỏng trên, `pass → fail`. Từ 0.95 trở lên bắt đầu gắn cờ oan
+    những trang scan thật sự đầy khung (0.948, 0.987, 0.989). Chọn 0.90 cho nằm giữa.
+
+    Không có quad (không cắt được gì, trả ảnh gốc) thì vẫn coi là cắt sẵn: khi đó
+    đúng là **không có phép cắt nào** để mà nghi ngờ.
+
+    Chỉ áp cho cờ **tự suy ra**, không áp cho `?pre_cropped=1` do phía gọi khai — xem
+    `pre_cropped_min_area`.
+    """
+
     pdf_pre_cropped: bool = True
     """Coi mỗi trang PDF là ảnh **đã cắt sẵn** → bỏ qua các kiểm tra về biên (QC-14).
 

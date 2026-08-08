@@ -167,6 +167,43 @@ verdict toàn kho pass 19→18, warn 6→5, fail 7→9.
 
 ---
 
+### ✅ QC-25 · `pre_cropped` suy từ ĐỊNH DẠNG FILE, giấu mất crop hụt — ĐÃ SỬA {#qc-pre-cropped-guess}
+
+`pdf_pre_cropped` coi **mọi** trang PDF là "đã cắt sẵn" rồi xoá 5 mã lý do về biên
+(`CLIPPED_EDGE`, `CONTENT_CLIPPED`, `NO_CROP_DETECTED`, `SUBJECT_FILLS_FRAME`,
+`RECOVERED_BY_MASK_FALLBACK`). Giả định: *trang PDF chính là tờ giấy, máy scan cắt xong mới
+đóng thành PDF.*
+
+Giả định đó sai với **PDF ghép từ ảnh chụp điện thoại** — vẫn còn nền, vẫn cần cắt, vẫn cắt
+sai được. Ca thật của khách (`132578.pdf`): trang bìa sổ đỏ bị cắt còn `quad_area_ratio = 0.506`,
+**mất trọn tấm bìa đỏ**, ra `pass` với danh sách lý do **rỗng**. `CONTENT_CLIPPED` đã bắt được
+nó và bị xoá ngay tại đây.
+
+Điều trớ trêu: ghi chú của chính hàm `_apply_pre_cropped` đã dự báo đúng chuyện này — *"rủi ro
+còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó qc_scanner mất khả năng bắt crop hụt. Đó là
+đánh đổi thuộc về phía gọi, và vì thế nó phải **khai báo** chứ không được đoán."* Đường PDF
+đang đoán, và đoán theo định dạng file.
+
+**Cách sửa:** "đã cắt sẵn" phải có nghĩa là **không có gì để cắt**. Cắt đi một nửa khung rồi
+vẫn tự nhận là cắt sẵn thì mâu thuẫn với chính mình. Thêm điều kiện `quad_area_ratio ≥ 0.90`.
+
+Đo trên **50 trang của 22 file sổ đỏ thật**:
+
+| ngưỡng | số trang đổi phán quyết |
+|---|---|
+| 0.50 | 0 — không sửa được gì |
+| **0.70–0.94** | **1** — đúng trang hỏng, `pass → fail` |
+| 0.95 | 2 — bắt đầu gắn cờ oan trang scan đầy khung (0.948) |
+| 0.99 | 5 — gắn cờ oan cả 0.987 và 0.989 |
+
+Chọn 0.90 cho nằm giữa vùng phẳng. Sau khi sửa: mã bị dập giảm 49 → 40, `CONTENT_CLIPPED` bị
+dập 1 → **0**, và không trang nào khác đổi phán quyết.
+
+**Ghi chú:** không dựng được tứ giác (`quad_area_ratio is None`) thì vẫn dập như cũ — khi đó
+trả nguyên ảnh gốc, tức **không có phép cắt nào** để nghi ngờ.
+
+---
+
 ### 🖼️ QC-23 · P1 · `GLARE` và `TOO_DARK` là cờ phẳng, không có mức độ {#qc-glare-severity}
 
 Ảnh thật `04.58.13`: `glare_ratio = 0.843` (ngưỡng `0.02` — vượt **42 lần**),

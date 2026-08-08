@@ -154,6 +154,92 @@ def test_pre_cropped_is_recorded_in_metrics(one_page):
     assert scan_document(one_page).pages[0].metrics.pre_cropped is True
 
 
+def test_a_page_that_got_cropped_in_half_is_not_treated_as_pre_cropped():
+    """Ca thật lọt tới tay khách: PDF ghép từ **ảnh chụp điện thoại**, trang bìa sổ đỏ
+    bị cắt còn nửa khung — mất trọn tấm bìa đỏ — mà ra `pass` với lý do **rỗng**.
+
+    `pdf_pre_cropped` bật cờ "đã cắt sẵn" cho mọi trang PDF dựa trên **định dạng file**,
+    rồi cờ đó xoá `CONTENT_CLIPPED` — đúng cái lưới duy nhất đã bắt được nó. Giả định
+    "trang PDF chính là tờ giấy do máy scan cắt sẵn" không đúng với PDF ghép từ ảnh
+    chụp: vẫn còn nền, vẫn cần cắt, vẫn cắt sai được.
+
+    Luật vá: "đã cắt sẵn" phải có nghĩa là **không có gì để cắt**. Bài này chốt đúng
+    điều đó ở mức hàm thuần, không cần dựng lại ảnh sổ đỏ.
+    """
+    from qc_scanner.doc import _apply_pre_cropped
+    from qc_scanner.qc import Metrics, Reason
+
+    reasons = [Reason.of("CONTENT_CLIPPED"), Reason.of("BLURRY")]
+    cfg = Config(pre_cropped=True, pre_cropped_min_area=0.90)
+
+    full = Metrics(quad_area_ratio=0.99)  # trang scan đầy khung: không cắt gì
+    assert [r.code for r in _apply_pre_cropped(list(reasons), cfg, full)] == ["BLURRY"]
+
+    halved = Metrics(quad_area_ratio=0.506)  # đã cắt mất nửa khung
+    kept = [r.code for r in _apply_pre_cropped(list(reasons), cfg, halved)]
+    assert "CONTENT_CLIPPED" in kept, "cắt mất nửa trang thì không phải 'cắt sẵn'"
+
+
+def test_a_caller_declaring_pre_cropped_is_still_taken_at_their_word():
+    """Ranh giới quan trọng: **khai báo** khác **đoán**.
+
+    Phía gọi tự khai `?pre_cropped=1` là tuyên bố về ảnh của họ, và hợp đồng đã ghi rõ
+    đánh đổi thuộc về họ. Cổng kiểm chứng chỉ dành cho chỗ **ta tự suy ra** cờ đó từ
+    định dạng file. Bản vá đầu tiên siết cả hai và làm đỏ đúng bài test canh hợp đồng
+    này — dấu hiệu tốt rằng nó đang canh đúng thứ.
+    """
+    from qc_scanner.doc import _apply_pre_cropped
+    from qc_scanner.qc import Metrics, Reason
+
+    kept = _apply_pre_cropped(
+        [Reason.of("CONTENT_CLIPPED")],
+        Config(pre_cropped=True),  # mặc định pre_cropped_min_area = 0.0
+        Metrics(quad_area_ratio=0.506),
+    )
+    assert kept == [], "lời khai của phía gọi phải được tin, không kiểm chứng"
+
+
+def test_the_pdf_path_passes_its_verification_gate_down():
+    """Cổng chỉ có tác dụng nếu đường PDF thật sự truyền nó xuống từng trang.
+
+    Không có bài này thì `pdf_pre_cropped_min_area` có thể nằm im trong config mà
+    chẳng ai đọc, và lỗ hổng mở lại y nguyên — lặng lẽ, như lần đầu.
+    """
+    import dataclasses
+
+    from qc_scanner.doc import scan_document
+    from qc_scanner.qc import Metrics
+
+    seen = {}
+    real = scan_document.__globals__["scan_image"]
+
+    def spy(image, config=None, debug=None, metrics=None):
+        seen["gate"] = config.pre_cropped_min_area
+        return real(image, config, debug, metrics)
+
+    scan_document.__globals__["scan_image"] = spy
+    try:
+        scan_document(build_pdf([EXAMPLES / "doc-1.out.png"]))
+    finally:
+        scan_document.__globals__["scan_image"] = real
+
+    assert seen["gate"] == Config().pdf_pre_cropped_min_area
+    assert seen["gate"] > 0, "cổng bằng 0 nghĩa là không kiểm chứng gì"
+    assert dataclasses.is_dataclass(Metrics())
+
+
+def test_no_quad_at_all_is_still_treated_as_pre_cropped():
+    """Không dựng được tứ giác thì trả nguyên ảnh gốc — **không có phép cắt nào** để
+    nghi ngờ, nên vẫn dập mã biên như cũ. `None` không được coi là 0.0."""
+    from qc_scanner.doc import _apply_pre_cropped
+    from qc_scanner.qc import Metrics, Reason
+
+    kept = _apply_pre_cropped(
+        [Reason.of("CLIPPED_EDGE")], Config(pre_cropped=True), Metrics()
+    )
+    assert kept == []
+
+
 # --------------------------------------------------------------------------- #
 # Nhiều trang: không trang nào được biến mất trong im lặng
 

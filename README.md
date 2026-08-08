@@ -403,7 +403,7 @@ pip install -e .
 ```
 
 ```bash
-pytest                    # 447 bài, ~95s sau khi model đã cache
+pytest                    # 451 bài, ~95s sau khi model đã cache
 ruff check src tests
 ```
 

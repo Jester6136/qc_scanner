@@ -43,7 +43,15 @@ def scan_document(
     # Trang PDF **chính là** tờ giấy, không phải ảnh chụp tờ giấy: không có nền quanh
     # mép để dò biên, nên mọi kiểm tra về "giấy chạm mép khung" đều báo nhầm. Xem
     # `Config.pdf_pre_cropped` để biết số đo và cái giá của lựa chọn này.
-    page_cfg = dataclasses.replace(cfg, pre_cropped=True) if cfg.pdf_pre_cropped else cfg
+    # `pre_cropped_min_area` đi kèm: đây là chỗ ta **đoán** cờ đó từ định dạng file,
+    # nên nó phải chịu kiểm chứng. Cờ do phía gọi tự khai thì không — xem QC-25.
+    page_cfg = (
+        dataclasses.replace(
+            cfg, pre_cropped=True, pre_cropped_min_area=cfg.pdf_pre_cropped_min_area
+        )
+        if cfg.pdf_pre_cropped
+        else cfg
+    )
 
     pages = []
     for page in page_images(data, cfg):
@@ -611,9 +619,24 @@ def _apply_pre_cropped(reasons, cfg: Config, metrics: Metrics):
     Rủi ro còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó qc_scanner mất khả năng
     bắt crop hụt. Đó là đánh đổi thuộc về phía gọi, và vì thế nó phải **khai báo**
     chứ không được đoán.
+
+    Và rủi ro đó đã thành hiện thực, vì đường PDF **có** đoán: `pdf_pre_cropped` bật cờ
+    cho mọi trang PDF dựa trên định dạng file. Một PDF ghép từ ảnh chụp điện thoại
+    (`132578.pdf`) có trang bìa sổ đỏ bị cắt còn 0.506 khung — mất trọn tấm bìa đỏ —
+    mà ra `pass` với danh sách lý do **rỗng**, vì `CONTENT_CLIPPED` bị xoá ở ngay đây.
+
+    Nên cờ này giờ còn một điều kiện nữa: "đã cắt sẵn" phải có nghĩa là **không có gì
+    để cắt**. Cắt đi một nửa khung rồi vẫn tự nhận là cắt sẵn thì mâu thuẫn với chính
+    mình. Xem `Config.pre_cropped_min_area` về ngưỡng và số đo trên 50 trang thật.
+
+    `quad_area_ratio is None` là ca không dựng được tứ giác nào: trả nguyên ảnh gốc,
+    tức **không có phép cắt nào** để nghi ngờ, nên vẫn dập như cũ.
     """
     metrics.pre_cropped = bool(cfg.pre_cropped)
     if not cfg.pre_cropped:
+        return reasons
+    area = metrics.quad_area_ratio
+    if area is not None and area < cfg.pre_cropped_min_area:
         return reasons
     return [r for r in reasons if r.code not in BORDER_REASONS]
 

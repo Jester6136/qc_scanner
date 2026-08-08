@@ -88,7 +88,7 @@ HTTP service, đầu vào/đầu ra PDF, chặn tải hai tầng. Đã build và
 | | |
 |---|---|
 | Hợp đồng đầu ra | `ScanResult{image, verdict, reasons[], metrics}`; **31 mã lý do**, mã nào cũng có `hint` + `audience`; bất biến `pass ⟺ reasons == []` ép ở mức code |
-| Bộ đo | **447 test** + CI (lint · test 3.9/3.12 · build wheel). Bài quan trọng nhất: *không false pass* trên 9 ảnh hỏng dựng bằng OpenCV |
+| Bộ đo | **451 test** + CI (lint · test 3.9/3.12 · build wheel). Bài quan trọng nhất: *không false pass* trên 9 ảnh hỏng dựng bằng OpenCV |
 | Đã chạy trên ảnh thật | 8 ảnh mẫu + 30 ảnh khách (CCCD, sổ đỏ, hoá đơn, A4) → 13 pass · 13 warn · 12 fail |
 | Tốc độ | ~0.58s/ảnh; **8.4 ảnh/s** một tiến trình trên máy 64 nhân |
 
