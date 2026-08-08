@@ -213,7 +213,32 @@ thông tin. Verdict: **`warn`**.
 Loá 3% và loá 84% cho ra cùng một phán quyết. Nguyên tắc đã chốt với khách là *không đạt thì
 phải nhè ra*, nên mức trên phải là `fail`.
 
-**Việc**: thêm ngưỡng thứ hai cho `GLARE` và `TOO_DARK`, chốt bằng đo trên 30 ảnh thật.
+**Đo thêm (50 trang sổ đỏ thật của khách) — và nó lật ngược cả hướng sửa ở trên:**
+
+`GLARE` phát trên **44/50 trang**, kéo theo 42/50 trang ra `warn`. Toàn bộ đều là bản scan
+sạch, không trang nào loá.
+
+| ảnh | `glare_ratio` | thực tế |
+|---|---|---|
+| `10225-C-I 612206` tr1 | **0.945** | scan sạch, **không loá** |
+| `04.58.13` | **0.843** | loá thật, mất nội dung |
+
+Bản scan sạch chấm **cao hơn** ảnh loá thật — thứ tự bị đảo, nên **không ngưỡng nào tách được**.
+Đây không phải lỗi chỉnh ngưỡng mà là **phép đo sai bản chất**: `glare_ratio` đếm tỉ lệ pixel
+≥ 250, mà nền giấy trắng trong bản scan vốn đã ~255. Càng scan đẹp, điểm càng cao. Thêm một
+ngưỡng thứ hai như đề xuất cũ sẽ **không** giải quyết được gì.
+
+Hệ quả nặng hơn con số: một cờ bật trên 88% hồ sơ làm mức `warn` mất hết ý nghĩa, và người vận
+hành sẽ học cách bỏ qua nó — kể cả khi gặp ảnh loá thật.
+
+**Quyết định của khách (2026-08-08): GIỮ NGUYÊN**, chấp nhận `warn` là nhiễu. Không tắt `GLARE`,
+không thay phép đo lúc này.
+
+**Việc còn lại, khi nào ưu tiên trở lại**: thay phép đo, không phải thêm ngưỡng. Cần phân biệt
+"nền giấy trắng" với "vùng cháy sáng mất chữ" — hiện chỉ có **2 ảnh loá thật** để hiệu chuẩn,
+quá mỏng (thiết kế thước trên vài mẫu chính là nguyên nhân của QC-22 và QC-25). Nguồn dữ liệu
+đúng là **SmartDoc-QA**: cùng trang chụp ở nhiều mức thiếu sáng/loá, **kèm kết quả OCR**, nên
+hiệu chuẩn được theo tỉ lệ lỗi ký tự thật thay vì theo mắt — xem [QUAL-5](#qual-ocr-truth).
 
 ---
 
