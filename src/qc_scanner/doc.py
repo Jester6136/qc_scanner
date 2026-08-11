@@ -15,7 +15,7 @@ from imutils import perspective
 
 from . import geometry as geo
 from .config import DEFAULT, Config
-from .detect import DETECTORS, RembgContourDetector, get_detector
+from .detect import DETECTORS, QuadCandidate, RembgContourDetector, get_detector
 from .pdf import is_pdf, page_images
 from .qc import DocumentResult, Metrics, Reason, ScanError, ScanResult
 from .rembg_session import segment_mask
@@ -134,6 +134,8 @@ def scan_image(
     )
     _debug(debug, "mask", mask)
 
+    _border_stats(work_unmasked, cfg, metrics)
+
     detector = get_detector(cfg.detector)
     detector_input = work if detector.uses_mask else work_unmasked
     candidates = detector.all_candidates(detector_input, mask, cfg)
@@ -199,6 +201,22 @@ def scan_image(
     # Đo trên 45 ảnh: mã này phát 4 lần, cả 4 lần đều đi kèm NO_CROP_DETECTED hoặc
     # CONTENT_CLIPPED. Nó chưa bao giờ tự mình quyết verdict.
     # `alpha_coverage` vẫn nằm nguyên trong metrics cho ai cần tra ngược.
+
+    # `pre_cropped_full_frame`: cả hai detector đều xây để tìm "tờ giấy trong ảnh có
+    # nền" — vô nghĩa khi ảnh CHÍNH LÀ tờ giấy (đã khai `pre_cropped`) và nội dung
+    # thật chỉ chiếm một mảng nhỏ giữa trang gần như trắng trơn (photocopy dán giữa
+    # A4). Khi đó không contour/cạnh nào đủ lớn để qua ngưỡng, nhưng "không thấy tứ
+    # giác" ở đây không có nghĩa "ảnh hỏng" — nó có nghĩa "cả trang là tài liệu, không
+    # có gì để cắt". Mặc định tắt: chỉ đổi phán quyết khi ai đó chủ động bật.
+    if quad is None and cfg.pre_cropped and cfg.pre_cropped_full_frame:
+        h, w = work.shape[:2]
+        quad = QuadCandidate(
+            corners=np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32),
+            confidence=0.0,
+            detector="full_frame",
+        )
+        metrics.fallback_used = "full_frame"
+        reasons.append(Reason.of("FULL_FRAME_ASSUMED"))
 
     if quad is None:
         if metrics.alpha_coverage < cfg.min_alpha_coverage:
@@ -367,6 +385,26 @@ def _passes_filters(corners, work, cfg: Config):
         geo.is_convex(corners)
         and area_ratio >= cfg.min_quad_area_ratio
         and geo.skew_ratio(corners) <= cfg.max_skew_ratio
+    )
+
+
+def _border_stats(work_unmasked, cfg: Config, metrics: Metrics):
+    """Đo độ sáng/đồng nhất của dải viền ngoài — tín hiệu tham khảo, xem `Metrics`.
+
+    Chạy trên `work_unmasked` (chưa qua rembg) vì mục đích là đọc nền THẬT quanh
+    tài liệu, không phải nền đã bị mặt nạ bôi đen.
+    """
+    h, w = work_unmasked.shape[:2]
+    b = max(2, int(round(min(h, w) * cfg.full_bleed_border_ratio)))
+    gray = cv2.cvtColor(work_unmasked, cv2.COLOR_BGR2GRAY)
+    border = np.concatenate(
+        [gray[:b, :].ravel(), gray[-b:, :].ravel(), gray[:, :b].ravel(), gray[:, -b:].ravel()]
+    )
+    metrics.border_mean = float(border.mean())
+    metrics.border_std = float(border.std())
+    metrics.likely_full_bleed_scan = (
+        metrics.border_mean >= cfg.full_bleed_border_mean_min
+        and metrics.border_std <= cfg.full_bleed_border_std_max
     )
 
 

@@ -305,6 +305,7 @@ là mã vô dụng.
 | ~~`SUBJECT_FILLS_FRAME`~~ | *ngừng phát (QC-15)* | `alpha_coverage > 0.95` | Giấy chiếm gần hết khung, có thể mất mép. Lùi máy ra rồi chụp lại. | capturer |
 | `RECOVERED_BY_MASK_FALLBACK` | warn | detector chính trả rỗng → tách nền tìm được (hay gặp với ảnh **đã cắt sẵn**) | Detector chính trả rỗng, tứ giác này do tách nền tìm ra. Hay gặp với ảnh **đã cắt sẵn**. Soi trước khi dùng. | operator |
 | `RECOVERED_BY_EDGE_FALLBACK` | warn | dùng đường lui §6 | Nắn bằng phương án dự phòng nên kém tin cậy hơn. Soi trước khi dùng. | operator |
+| `FULL_FRAME_ASSUMED` | warn | `pre_cropped` bật, không detector nào dựng được tứ giác, và `pre_cropped_full_frame` bật | Không tách được biên tài liệu. Vì ảnh khai `pre_cropped` nên máy coi cả khung là tài liệu thay vì trả `FALLBACK_ORIGINAL`. Soi trước khi dùng. | operator |
 | `DETECTOR_DISAGREEMENT` | warn | `cross_check_detectors` bật và IoU giữa hai detector < 0.85 (S-6) | Hai phương pháp dò biên không đồng thuận nên kết quả kém chắc. Soi trước khi dùng. | operator |
 
 ### Hình học biên

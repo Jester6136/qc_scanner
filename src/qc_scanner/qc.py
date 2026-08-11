@@ -198,6 +198,17 @@ REASONS: dict[str, ReasonSpec] = {
             "**đã cắt sẵn**. Soi trước khi dùng.",
             "operator",
         ),
+        _spec(
+            "FULL_FRAME_ASSUMED",
+            "warn",
+            "Không dựng được tứ giác; vì ảnh khai đã cắt sẵn nên coi cả khung là tài liệu.",
+            "Ảnh vẫn dùng được. Chụp/scan thấy tương phản với nền thì lần sau máy dò "
+            "chắc hơn.",
+            "Không tách được biên tài liệu (thường do nội dung chỉ chiếm một phần nhỏ "
+            "giữa trang gần như trắng trơn). Vì ảnh khai `pre_cropped` nên máy coi cả "
+            "khung là tài liệu thay vì trả ảnh gốc — soi trước khi dùng.",
+            "operator",
+        ),
         # --- Hình học biên ---
         _spec(
             "QUAD_NOT_FOUND",
@@ -473,6 +484,27 @@ class Metrics:
 
     glare_ratio: Optional[float] = None
     median_brightness: Optional[float] = None
+
+    border_mean: Optional[float] = None
+    """Độ sáng trung bình của dải viền ngoài (~2% mép) ảnh đầu vào, trước khi tách.
+
+    Tín hiệu tham khảo cho "ảnh vào có phải scan phẳng kín trang không" — chưa dùng
+    để quyết phán quyết. Giấy trắng chạy sát mép (scan phẳng) cho viền sáng đều; ảnh
+    chụp còn nền (bàn, sàn, tay) cho viền tối/lởm chởm hơn. Đo trên mẫu 3 file scan
+    lỗi (233–242) so với `132578.pdf` — ca ảnh chụp đã biết sai khi coi là pre-cropped
+    (58–85) — tách biệt rõ, nhưng cỡ mẫu còn nhỏ nên chưa đủ để tự động hoá.
+    """
+
+    border_std: Optional[float] = None
+    """Độ lệch chuẩn cùng dải viền với `border_mean` — đo độ **đồng nhất**, không phải
+    độ sáng. Viền scan phẳng đồng đều (7–13 trên mẫu); viền ảnh chụp lởm chởm vì lộ
+    nền thật (36–55 trên mẫu). Xem `border_mean`."""
+
+    likely_full_bleed_scan: Optional[bool] = None
+    """Suy từ `border_mean`/`border_std` vượt ngưỡng cấu hình
+    (`full_bleed_border_mean_min`, `full_bleed_border_std_max`) — gợi ý trang này là
+    scan phẳng kín khổ (không có nền quanh giấy), khác với "ảnh chụp đã được cắt sát".
+    **Chỉ mang tính tham khảo**, không tự đổi `pre_cropped`/`pre_cropped_full_frame`."""
 
     text_skew_deg: Optional[float] = None
     """Góc nghiêng dòng chữ trên ảnh **đã nắn**; `None` = không đủ mực để đo (QC-18).

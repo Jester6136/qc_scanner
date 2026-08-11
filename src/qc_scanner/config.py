@@ -386,6 +386,44 @@ class Config:
     Xem `pdf_pre_cropped_min_area` để biết ca thật và số đo.
     """
 
+    full_bleed_border_ratio: float = 0.02
+    """Bề dày dải viền (tỉ lệ theo cạnh ngắn) dùng để đo `border_mean`/`border_std`."""
+
+    full_bleed_border_mean_min: float = 200.0
+    """Ngưỡng gợi ý `likely_full_bleed_scan`: viền sáng trung bình ít nhất bấy nhiêu.
+
+    Đo trên mẫu nhỏ (3 trang scan lỗi vs. 2 trang `132578.pdf` — ca ảnh chụp): scan
+    233–242, ảnh chụp 58–85. Ngưỡng đặt ở giữa hai dải với biên an toàn rộng, nhưng
+    cỡ mẫu quá nhỏ để coi là đã kiểm chứng — xem `Metrics.likely_full_bleed_scan`.
+    """
+
+    full_bleed_border_std_max: float = 20.0
+    """Ngưỡng gợi ý `likely_full_bleed_scan`: viền phải đồng nhất, lệch chuẩn dưới mức
+    này. Đo trên cùng mẫu ở `full_bleed_border_mean_min`: scan 7–13, ảnh chụp 36–55.
+    """
+
+    pre_cropped_full_frame: bool = False
+    """Khi `pre_cropped` bật mà không dựng được tứ giác nào: dùng **cả khung ảnh**
+    làm tứ giác thay vì trả `QUAD_NOT_FOUND`/`FALLBACK_ORIGINAL`.
+
+    Ca sinh ra cờ này: trang PDF scan phẳng cả tờ (không có nền quanh mép để dò —
+    `pre_cropped` đúng theo đúng nghĩa) nhưng nội dung thật chỉ là một mảng nhỏ giữa
+    trang trắng gần như trơn (ví dụ bản photocopy CCCD dán giữa tờ A4). rembg chỉ tách
+    được mảng nhỏ đó, không contour nào đủ lớn để qua `candidate_area_ratio`; edge-hough
+    cũng thua vì cạnh thật duy nhất (viền mảng nhỏ) không đủ dài. Cả hai detector đều
+    được xây để tìm "tờ giấy trong ảnh có nền", vô nghĩa khi ảnh **là** tờ giấy.
+
+    Bật cờ này thì các kiểm tra hình học biên coi như đã qua (`quad_area_ratio = 1.0`,
+    `touches_border = 4`) và ảnh vẫn được chạy tiếp qua các kiểm tra chất lượng
+    (`GLARE`, `BLURRY`, `TOO_DARK`, skew) thay vì bỏ cuộc — kèm mã cảnh báo
+    `FULL_FRAME_ASSUMED` để phía vận hành biết đây là suy đoán, không phải tứ giác đo
+    được.
+
+    Mặc định **tắt**: chỉ có ý nghĩa khi `pre_cropped` cũng bật, và tắt giữ nguyên hành
+    vi cũ (fail) cho tới khi ai đó chủ động bật — tránh âm thầm đổi phán quyết của
+    luồng đang chạy.
+    """
+
     pdf_pre_cropped_min_area: float = 0.90
     """Ngưỡng kiểm chứng cho cờ `pre_cropped` mà **đường PDF tự suy ra**.
 

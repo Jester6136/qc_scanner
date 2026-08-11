@@ -42,6 +42,12 @@ EXIT_INPUT_ERROR = 3
     help="Ảnh vào đã cắt sát từ trước → bỏ qua các kiểm tra về biên (QC-14).",
 )
 @click.option(
+    "--pre-cropped-full-frame",
+    is_flag=True,
+    help="Với --pre-cropped: không dựng được tứ giác thì coi cả khung là tài liệu "
+    "thay vì trả FALLBACK_ORIGINAL.",
+)
+@click.option(
     "--audience",
     type=click.Choice(["capturer", "operator"]),
     help="Ai đọc hint: người chụp (chụp lại được) hay người soi hàng chờ. "
@@ -63,7 +69,7 @@ EXIT_INPUT_ERROR = 3
 )
 def main(
     input, output, report, quiet, debug_dir, detector, model, pre_cropped,
-    audience, cross_check, page, out_format,
+    pre_cropped_full_frame, audience, cross_check, page, out_format,
 ):
     """Nắn phẳng tài liệu và chấm điểm chất lượng.
 
@@ -83,6 +89,8 @@ def main(
         overrides["rembg_model"] = model
     if pre_cropped:
         overrides["pre_cropped"] = True
+    if pre_cropped_full_frame:
+        overrides["pre_cropped_full_frame"] = True
     if audience:
         overrides["hint_audience"] = audience
     if cross_check:
