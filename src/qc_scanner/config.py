@@ -402,7 +402,7 @@ class Config:
     này. Đo trên cùng mẫu ở `full_bleed_border_mean_min`: scan 7–13, ảnh chụp 36–55.
     """
 
-    pre_cropped_full_frame: bool = False
+    pre_cropped_full_frame: bool = True
     """Khi `pre_cropped` bật mà không dựng được tứ giác nào: dùng **cả khung ảnh**
     làm tứ giác thay vì trả `QUAD_NOT_FOUND`/`FALLBACK_ORIGINAL`.
 
@@ -419,9 +419,15 @@ class Config:
     `FULL_FRAME_ASSUMED` để phía vận hành biết đây là suy đoán, không phải tứ giác đo
     được.
 
-    Mặc định **tắt**: chỉ có ý nghĩa khi `pre_cropped` cũng bật, và tắt giữ nguyên hành
-    vi cũ (fail) cho tới khi ai đó chủ động bật — tránh âm thầm đổi phán quyết của
-    luồng đang chạy.
+    **Mặc định BẬT tạm thời** (đổi sau khi đo trên 42 trang mẫu trong `tmp*`: 4 trang
+    đổi fail → warn, đúng 0 trang trong đó là `SUBJECT_NOT_FOUND`) — nhưng mẫu đó nhỏ
+    và không đại diện cho kho thật. Rủi ro còn treo: nhánh này gộp chung
+    `QUAD_NOT_FOUND` với `SUBJECT_NOT_FOUND` (`alpha_coverage < min_alpha_coverage`,
+    tức ảnh gần như trắng/hỏng thật) — nếu kho có ảnh hỏng thật đang được
+    `SUBJECT_NOT_FOUND` bắt đúng thì bật cờ này sẽ biến nó thành `warn` oan. Cần đo
+    trên bộ lớn hơn (ít nhất vài trăm trang từ kho thật) trước khi coi đây là quyết
+    định lâu dài; nếu quan sát production ra rủi ro thật, tắt bằng
+    `QC_SCANNER_PRE_CROPPED_FULL_FRAME=0`.
     """
 
     pdf_pre_cropped_min_area: float = 0.90
