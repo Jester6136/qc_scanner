@@ -3,7 +3,7 @@
 #
 # ⚠️ CHƯA CHẠY THỬ LẦN NÀO. Máy phát triển là macOS, không có CUDA. File này viết
 # theo tài liệu onnxruntime; lần đầu chạy trên máy server phải kiểm bằng
-#     curl -s http://localhost:5000/healthz
+#     curl -s http://localhost:5051/healthz
 # và nhìn `providers`. Thấy `CUDAExecutionProvider` thì GPU đang chạy thật; chỉ thấy
 # `CPUExecutionProvider` nghĩa là nó đã lặng lẽ tụt về CPU — build sai, không phải chạy chậm.
 #
@@ -81,7 +81,7 @@ sys.exit(0 if found else 1)"
 ENV U2NET_HOME=/opt/u2net
 RUN python -c "from classify_scanned.rembg_session import warmup; warmup()"
 
-EXPOSE 5000
+EXPOSE 5051
 ENV QC_SCANNER_WORK_HEIGHT=500
 ENV QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider
 
@@ -90,4 +90,4 @@ ENV QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider
 # kia. Con số 4 là ước đoán, chưa đo; chỉnh lại sau khi đo trên máy thật.
 ENV QC_SCANNER_MAX_CONCURRENCY=4
 
-CMD ["classify-scanned-server", "-a", "0.0.0.0", "-p", "5000"]
+CMD ["classify-scanned-server", "-a", "0.0.0.0", "-p", "5051"]

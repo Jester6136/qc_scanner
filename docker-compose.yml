@@ -29,15 +29,15 @@ services:
       # được người nghe lén trong LAN. Muốn kín thật thì đặt reverse proxy có TLS.
       # Máy A có IP public hoặc bị NAT port-forward thì vẫn phải chặn ở firewall.
       #
-      # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5051:5000".
+      # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5051:5051".
       #
-      # ⚠️ Trên macOS, cổng 5000 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind
+      # ⚠️ Trên macOS, cổng 5051 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind
       # được và container vẫn `healthy` (healthcheck chạy BÊN TRONG container), nhưng
       # gọi từ ngoài vào sẽ nhận `403 Forbidden` kèm header `Server: AirTunes/...`.
       # Cách nhận ra: `curl -sI http://localhost:5051/healthz | grep Server`.
       # Cách chữa: đặt cổng khác, ví dụ `QC_SCANNER_PORT=8000 docker compose up -d`
       # (hoặc tắt AirPlay Receiver trong System Settings → General → AirDrop & Handoff).
-      - "${QC_SCANNER_PORT:-5051}:5000"
+      - "${QC_SCANNER_PORT:-5051}:5051"
 
     environment:
       # ── BẮT BUỘC: không có key thì server KHÔNG khởi động ──────────────────
@@ -90,7 +90,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz')"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5051/healthz')"
       # start_period rộng tay: tiến trình nạp model vào RAM trước khi mở cổng.
       start_period: 60s
       interval: 30s
