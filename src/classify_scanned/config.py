@@ -6,7 +6,7 @@ chiều luôn nới chiều kia.
 
 Override bằng biến môi trường `QC_SCANNER_<TÊN_TRƯỜNG>`, ví dụ::
 
-    QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 qc-scanner in.jpg out.png
+    QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 classify-scanned in.jpg out.png
 """
 
 import os
@@ -42,7 +42,7 @@ class Config:
     (xem QC-16). Tức **một false fail**.
 
     Nên mặc định **tắt**: 43ms không đáng đổi lấy một ảnh tốt bị loại. Bật khi đã chạy
-    `qc-scanner-batch` trên ảnh thật của mình và đối chiếu verdict trước/sau.
+    `classify-scanned-batch` trên ảnh thật của mình và đối chiếu verdict trước/sau.
 
     Ghi chú riêng: ca `04.56.41` mong manh vì **ngưỡng**, không phải vì cờ này — nó đã
     lật hai lần trong cùng một đợt làm việc. Xem QUAL-4.
@@ -160,6 +160,18 @@ class Config:
 
     Ngưỡng đặt ở 0.08, giữa 0.041 và 0.150. Không đặt sát 0 vì nhóm "mất viền" không
     về đúng 0 được: vệt tối ở mép giấy luôn còn sót lại chút ít sau khi co mask.
+    """
+
+    content_clip_downgrade_confidence: float = 0.90
+    """Khi `border_ink_ratio` cao nhưng `detector_confidence >= ngưỡng này`, downgrade
+    CONTENT_CLIPPED từ fail → warn thay vì fail. Dùng để relaxed QC khi phục vụ
+    **phân loại kho tồn** thay vì chụp realtime (mode archival).
+
+    Logic: nếu detector tự tin cao (>= 0.90), tứ giác likely đúng, nên chạm mép là
+    do người chụp lấy khung sát, không phải vì dò biên sai. Ngưỡng đặt bằng
+    `no_crop_min_confidence` vì chúng dùng lý luận tương tự.
+
+    Tắt bằng `0` để disable — luôn phát CONTENT_CLIPPED (fail) nếu `border_ink_ratio` cao.
     """
 
     no_crop_area_ratio: float = 0.90
@@ -361,8 +373,13 @@ class Config:
     [FADGI]: https://www.digitizationguidelines.gov/guidelines/FADGI%20Technical%20Guidelines%20for%20Digitizing%20Cultural%20Heritage%20Materials_3rd%20Edition_05092023.pdf
     """
 
-    # --- Bối cảnh đầu vào (QC-14) ---
+    # --- Bối cảnh đầu vào ---
+    source_mode: str = "auto"
+    """`auto`, `photo` hoặc `scan`. Auto dựa vào tín hiệu ảnh, không dựa vào đuôi file."""
+
     pre_cropped: bool = False
+    allow_fullframe: bool = True
+    """Giữ nguyên ảnh khi nhận diện là full-frame; chỉ kiểm tra chất lượng."""
     """Ảnh vào **đã được cắt sát từ trước** (bản scan, hoặc đã qua công cụ crop khác).
 
     Khi bật, các mã về biên (`CLIPPED_EDGE`, `CONTENT_CLIPPED`, `NO_CROP_DETECTED`,
@@ -396,6 +413,9 @@ class Config:
     233–242, ảnh chụp 58–85. Ngưỡng đặt ở giữa hai dải với biên an toàn rộng, nhưng
     cỡ mẫu quá nhỏ để coi là đã kiểm chứng — xem `Metrics.likely_full_bleed_scan`.
     """
+
+    full_bleed_border_mean_scan: float = 220.0
+    """Bright full-page borders can still be scans when text makes them uneven."""
 
     full_bleed_border_std_max: float = 20.0
     """Ngưỡng gợi ý `likely_full_bleed_scan`: viền phải đồng nhất, lệch chuẩn dưới mức
@@ -560,7 +580,7 @@ class Config:
     [EX-3] chốt có **cả hai** luồng: realtime cho ảnh chụp mới, batch cho kho ảnh cũ.
     Với ảnh kho thì "chụp lại trên nền tối" là lời khuyên vô dụng — không ai chụp lại
     được nữa. Mặc định `capturer` vì luồng realtime là luồng có người đang đứng chờ;
-    `qc-scanner-batch` tự đổi sang `operator`.
+    `classify-scanned-batch` tự đổi sang `operator`.
     """
 
     # --- Detector ---

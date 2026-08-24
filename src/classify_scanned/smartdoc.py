@@ -1,6 +1,6 @@
-"""Đổi bộ SmartDoc 2015 Challenge 1 thành tập vàng chạy được với `qc-scanner-eval`.
+"""Đổi bộ SmartDoc 2015 Challenge 1 thành tập vàng chạy được với `classify-scanned-eval`.
 
-    qc-scanner-smartdoc tmp_smartdoc/sampleDataset --out tmp_smartdoc/goldens
+    classify-scanned-smartdoc tmp_smartdoc/sampleDataset --out tmp_smartdoc/goldens
 
 Vì sao cần: mọi ngưỡng trong `config.py` tới giờ chốt trên 38 ảnh của **một**
 khách hàng, do chính tôi dán nhãn. Số đo trên tập mình tự chấm thì chứng minh
@@ -13,7 +13,7 @@ thành ảnh rời vì nhãn vàng của bộ eval gắn theo *tấm ảnh*, kh�
 
 ⚠️ Số chấm ra ở đây **không so thẳng được** với bảng xếp hạng SmartDoc: thước đo
 chính thức của họ là Jaccard tính trong hệ toạ độ **tài liệu** (nắn cả dự đoán
-lẫn nhãn về khổ giấy rồi mới chồng), còn `qc_scanner.eval` tính IoU trong hệ toạ
+lẫn nhãn về khổ giấy rồi mới chồng), còn `classify_scanned.eval` tính IoU trong hệ toạ
 độ **ảnh**. Cùng tên "diện tích chồng nhau", khác mẫu số. Dùng nó để so hai
 detector với nhau — mục đích thật sự ở đây — thì hợp lệ; dùng để khoe ngang
 SOTA thì không.

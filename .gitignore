@@ -31,3 +31,6 @@ tmp-*
 .env
 .env.*
 !.env.example
+
+# Real customer inputs must never enter git or Docker images.
+inputs

@@ -12,7 +12,7 @@
 # `docker compose --profile gpu up` không *thay* bản CPU mà *thêm* bản GPU vào —
 # hai container cùng đòi cổng 5000 và cái thứ hai chết với
 # `Bind for 0.0.0.0:5000 failed: port is already allocated`.
-# Đè lên **cùng một service** thì không thể chạy nhầm cả hai: chỉ có một `qc-scanner`.
+# Đè lên **cùng một service** thì không thể chạy nhầm cả hai: chỉ có một `classify-scanned`.
 #
 # Yêu cầu phía host: driver NVIDIA + NVIDIA Container Toolkit. Kiểm TRƯỚC khi build
 # (5 giây, thay vì phát hiện sau 15 phút):
@@ -24,10 +24,10 @@
 # CPU trong im lặng: không lỗi, không cảnh báo, chỉ chậm gấp mấy chục lần.
 
 services:
-  qc-scanner:
+  classify-scanned:
     build:
       dockerfile: Dockerfile.gpu
-    image: qc-scanner:gpu
+    image: classify-scanned:gpu
 
     environment:
       # Khai báo tường minh thay vì để onnxruntime tự dò: muốn biết chắc mình đang

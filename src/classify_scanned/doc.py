@@ -19,10 +19,20 @@ from .detect import DETECTORS, QuadCandidate, RembgContourDetector, get_detector
 from .pdf import is_pdf, page_images
 from .qc import DocumentResult, Metrics, Reason, ScanError, ScanResult
 from .rembg_session import segment_mask
+from .scoring import aggregate_scores, image_quality, page_scores
 
 # Giữ lại cho mã cũ import trực tiếp; nguồn sự thật nay là Config.
 APPROX_POLY_DP_ACCURACY_RATIO = DEFAULT.approx_poly_epsilon_ratio
 IMG_RESIZE_H = float(DEFAULT.work_height)
+
+
+def _score_result(result: ScanResult, original: np.ndarray) -> ScanResult:
+    processed = None
+    if result.image:
+        processed = cv2.imdecode(np.frombuffer(result.image, np.uint8), cv2.IMREAD_COLOR)
+    reasons = [reason.to_dict() for reason in result.reasons]
+    result.scores = page_scores(original, processed, result.metrics.to_dict(), reasons, corners=result.corners)
+    return result
 
 
 def scan_document(
@@ -45,12 +55,17 @@ def scan_document(
     # `Config.pdf_pre_cropped` để biết số đo và cái giá của lựa chọn này.
     # `pre_cropped_min_area` đi kèm: đây là chỗ ta **đoán** cờ đó từ định dạng file,
     # nên nó phải chịu kiểm chứng. Cờ do phía gọi tự khai thì không — xem QC-25.
-    page_cfg = (
-        dataclasses.replace(
-            cfg, pre_cropped=True, pre_cropped_min_area=cfg.pdf_pre_cropped_min_area
-        )
-        if cfg.pdf_pre_cropped
-        else cfg
+    page_cfg = dataclasses.replace(
+        cfg,
+        allow_fullframe=cfg.pdf_pre_cropped,
+        **(
+            {
+                "pre_cropped": True,
+                "pre_cropped_min_area": cfg.pdf_pre_cropped_min_area,
+            }
+            if cfg.pdf_pre_cropped
+            else {}
+        ),
     )
 
     pages = []
@@ -58,8 +73,82 @@ def scan_document(
         result = scan_image(page.image, page_cfg, debug)
         result.metrics.page = page.number
         result.metrics.pdf_source = page.source
+
+        # A full-page embedded image is the PDF shape produced by a scanner:
+        # the page itself is already the document, so perspective-cropping it
+        # is unnecessary and can shave off a real edge. Keep the original page
+        # bitmap after QC has checked its readability. A rendered page or an
+        # embedded image below the full-page coverage gate remains on the normal
+        # crop path because it may be a phone photo wrapped in a PDF.
+        preserve_pdf_page = (
+            cfg.pdf_pre_cropped
+            and (
+                # A sole embedded full-page bitmap is already the scanned page.
+                # Keep it intact even when contours falsely find multiple docs.
+                page.source == "embedded"
+                or result.metrics.likely_full_bleed_scan
+                or (
+                    page.source.startswith("render@")
+                    and result.metrics.mask_quad_fit is not None
+                    and result.metrics.mask_quad_fit >= 0.90
+                    and result.metrics.touches_border >= 2
+                    and result.metrics.quad_area_ratio is not None
+                    and result.metrics.quad_area_ratio >= 0.75
+                )
+            )
+        )
+        if preserve_pdf_page:
+            result.metrics.fallback_used = "full_frame"
+            kept = [r for r in result.reasons if r.code not in BORDER_REASONS]
+            result = ScanResult.of(
+                _encode_png(page.image),
+                kept,
+                result.metrics,
+                corners=result.corners,
+                audience=cfg.hint_audience,
+            )
+            result = _score_result(result, page.image)
         pages.append(result)
     return DocumentResult(pages=pages, source="pdf")
+
+
+def score_pdf(data: bytes, config: Optional[Config] = None) -> dict:
+    """Score a PDF without document detection, masking, warping, or cropping.
+
+    This path is for large offline comparison jobs where the PDF page itself is
+    the scan. ``page_images`` still prefers extracting an embedded bitmap and
+    only renders when the PDF cannot expose one safely.
+    """
+    cfg = config or Config.from_env()
+    if not data:
+        raise ScanError("FILE_EMPTY")
+    if not is_pdf(data):
+        raise ScanError("PDF_DECODE_FAILED", "score_pdf chỉ nhận dữ liệu PDF")
+
+    pages = []
+    for page in page_images(data, cfg):
+        pages.append({"page": page.number, "source": page.source, "scores": {
+            "original": image_quality(page.image),
+        }})
+    aggregate = aggregate_scores([page["scores"] for page in pages])
+    aggregate["score"] = aggregate.get("original", {}).get("score")
+    return {
+        "source": "pdf",
+        "verdict": _score_verdict(aggregate.get("score")),
+        "page_count": len(pages),
+        "scores": aggregate,
+        "pages": pages,
+    }
+
+
+def _score_verdict(score):
+    if score is None:
+        return "fail"
+    if score >= 70:
+        return "pass"
+    if score >= 45:
+        return "warn"
+    return "fail"
 
 
 def scan_qc(data: bytes, config: Optional[Config] = None, debug=None) -> ScanResult:
@@ -156,6 +245,19 @@ def scan_image(
 
     quad = _pick(detector, candidates, work, mask, cfg)
 
+    # DocAligner can be confident about the wrong inner rectangle. This is
+    # especially common on the red cover of a GCN: the model follows a strong
+    # inner boundary and leaves a large, text-bearing part of the paper out.
+    # Use the rembg mask as a safety check before committing to the crop.
+    if detector.name == "docaligner" and quad is not None and mask is not None:
+        recovered = _recover_safer_mask_candidate(
+            quad, mask_candidates, work_unmasked, mask, cfg
+        )
+        if recovered is not None:
+            quad = recovered
+            metrics.fallback_used = "mask_contour"
+            reasons.append(Reason.of("RECOVERED_BY_MASK_FALLBACK"))
+
     # Đường lui: rembg không tách được chủ thể → thử dò cạnh trước khi bỏ cuộc.
     #
     # QC-16 — điều kiện kích hoạt trước đây gồm cả `alpha_coverage > 0.95`, và nó
@@ -218,6 +320,32 @@ def scan_image(
         metrics.fallback_used = "full_frame"
         reasons.append(Reason.of("FULL_FRAME_ASSUMED"))
 
+    # A very weak direct-regression result touching the frame is not enough
+    # evidence to crop. Preserve the complete input instead of risking a
+    # destructive crop (the GCN red-cover case is the motivating example).
+    # This is intentionally limited to DocAligner: rembg-contour has a mask
+    # that can serve as a second boundary signal.
+    if quad is not None and _uncertain_border_quad(quad, work, cfg, mask):
+        h, w = orig.shape[:2]
+        full_corners = np.array(
+            [[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32
+        )
+        metrics.quad_area_ratio = 1.0
+        metrics.skew_ratio = 1.0
+        metrics.is_convex = True
+        metrics.touches_border = 4
+        metrics.corners_outside_px = 0.0
+        metrics.fallback_used = "full_frame"
+        reasons.append(Reason.of("FULL_FRAME_ASSUMED"))
+        reasons += _quality_reasons(orig, cfg, metrics)
+        return _score_result(ScanResult.of(
+            _encode_png(orig),
+            reasons,
+            metrics,
+            corners=full_corners.tolist(),
+            audience=cfg.hint_audience,
+        ), orig)
+
     if quad is None:
         if metrics.alpha_coverage < cfg.min_alpha_coverage:
             reasons.append(
@@ -230,17 +358,19 @@ def scan_image(
             reasons.append(Reason.of("QUAD_NOT_FOUND"))
         reasons.append(Reason.of("FALLBACK_ORIGINAL"))
         metrics.fallback_used = "original"
-        return ScanResult.of(
+        return _score_result(ScanResult.of(
             _encode_png(orig),
             _apply_pre_cropped(reasons, cfg, metrics),
             metrics,
             audience=cfg.hint_audience,
-        )
+        ), orig)
 
     metrics.detector = quad.detector
     metrics.detector_confidence = quad.confidence
 
-    if cfg.cross_check_detectors:
+    if cfg.cross_check_detectors or (
+        quad is not None and quad.confidence < cfg.no_crop_min_confidence
+    ):
         reasons += _cross_check(quad, work, mask, cfg, metrics)
 
     if len(mask_candidates) >= 2:
@@ -255,6 +385,72 @@ def scan_image(
     # nên 5 ảnh vốn `pass` bị đẩy sang `warn` (CLIPPED_EDGE), và ca hỏng thật
     # `abc1b13…` thoát `NO_CROP_DETECTED` vì góc lệch ra ngoài bị kẹp lại thành 0.
     reasons += _geometry_reasons(quad.corners, work, cfg, metrics)
+
+    # Measure edge content before scoring loss, but only as a supporting signal.
+    if (
+        _is_likely_fullframe(metrics)
+        or metrics.likely_full_bleed_scan
+        or _partial_frame_suspect(metrics)
+        or (metrics.alpha_coverage is not None and metrics.alpha_coverage < 0.80)
+    ):
+        full_corners = np.array(
+            [[0, 0], [orig.shape[1], 0], [orig.shape[1], orig.shape[0]], [0, orig.shape[0]]],
+            dtype=np.float32,
+        )
+        metrics.border_ink_ratio = geo.ink_at_image_border(
+            orig,
+            full_corners,
+            band_ratio=cfg.content_clip_band_ratio,
+            margin_px=cfg.border_margin_px,
+            paper_min_ratio=cfg.border_paper_min_ratio,
+            paper_percentile=cfg.border_paper_percentile,
+        )
+
+    frame_mode = _classify_frame_mode(metrics, cfg)
+    metrics.frame_mode = frame_mode
+    metrics.content_loss_score, metrics.content_loss_evidence = _content_loss_score(metrics, cfg)
+    if not cfg.allow_fullframe and frame_mode == "full_frame":
+        reasons.append(Reason.of("NO_CROP_DETECTED"))
+    if cfg.allow_fullframe and frame_mode == "full_frame":
+        metrics.fallback_used = "full_frame"
+        metrics.pre_cropped = cfg.pre_cropped
+        drop_reasons = BORDER_REASONS
+        if frame_mode == "full_frame":
+            drop_reasons = BORDER_REASONS | {"MULTIPLE_DOCUMENTS"}
+        reasons = [r for r in reasons if r.code not in drop_reasons]
+
+        # Full-frame skips crop geometry, not evidence that the page was cut off.
+        # A dense dark-content band at the physical image edge is strong evidence
+        # that a GCN page continues outside the photo. Require meaningful mask
+        # coverage as well so a tiny/empty foreground does not false-fail here.
+        full_corners = np.array(
+            [[0, 0], [orig.shape[1], 0], [orig.shape[1], orig.shape[0]], [0, orig.shape[0]]],
+            dtype=np.float32,
+        )
+        metrics.border_ink_ratio = geo.ink_at_image_border(
+            orig,
+            full_corners,
+            band_ratio=cfg.content_clip_band_ratio,
+            margin_px=cfg.border_margin_px,
+            paper_min_ratio=cfg.border_paper_min_ratio,
+            paper_percentile=cfg.border_paper_percentile,
+        )
+        # A full-frame page may legitimately have text right on the physical
+        # edge. Border ink is only supporting evidence; the centralized score
+        # requires independent evidence before declaring content loss.
+        if metrics.content_loss_score is not None and metrics.content_loss_score >= 0.50:
+            reasons.append(
+                Reason.of("CONTENT_CLIPPED", f"border_ink_ratio={metrics.border_ink_ratio:.3f}")
+            )
+        reasons += _quality_reasons(orig, cfg, metrics)
+        return _score_result(ScanResult.of(
+            _encode_png(orig),
+            reasons,
+            metrics,
+            corners=[[0, 0], [orig.shape[1], 0], [orig.shape[1], orig.shape[0]], [0, orig.shape[0]]],
+            audience=cfg.hint_audience,
+        ), orig)
+
     reasons += _abandoned_reasons(quad.corners, work_unmasked, mask, cfg, metrics)
 
     # QC-17: chỉ tới đây mới nới, và chỉ để CẮT — mép giấy cong thì dây cung nối hai
@@ -289,13 +485,13 @@ def scan_image(
     # ảnh vẫn mất nội dung, nhưng nay trông hợp lệ.
     warped = _deskew(warped, cfg, metrics)
 
-    return ScanResult.of(
+    return _score_result(ScanResult.of(
         _encode_png(warped),
         reasons,
         metrics,
         corners=(corners * ratio).tolist(),
         audience=cfg.hint_audience,
-    )
+    ), orig)
 
 
 def scan(data: bytes) -> bytes:
@@ -379,6 +575,40 @@ def _pick(detector, candidates, work, mask, cfg):
     return best_candidate(candidates, reference, cfg)
 
 
+def _cuts_through_mask(corners, work, mask, cfg):
+    """Return whether a quad leaves structured document pixels outside it."""
+    abandoned, structure = geo.content_outside_quad(
+        work, corners, mask, cfg.abandoned_erode_ratio
+    )
+    return (
+        abandoned >= cfg.max_abandoned_ratio
+        and structure >= cfg.abandoned_structure_ratio
+        and geo.mask_quad_fit(mask) >= cfg.min_mask_quad_fit
+    )
+
+
+def _recover_safer_mask_candidate(primary, alternatives, work, mask, cfg):
+    """Replace a bad direct-regression quad with a safe mask contour, if any."""
+    if not _cuts_through_mask(primary.corners, work, mask, cfg):
+        return None
+    safe = [
+        candidate
+        for candidate in alternatives
+        if _passes_filters(candidate.corners, work, cfg)
+        and not _cuts_through_mask(candidate.corners, work, mask, cfg)
+        and geo.quad_area(candidate.corners) >= geo.quad_area(primary.corners) * 0.90
+    ]
+    if not safe:
+        return None
+    return max(
+        safe,
+        key=lambda candidate: (
+            geo.quad_area(candidate.corners),
+            candidate.confidence,
+        ),
+    )
+
+
 def _passes_filters(corners, work, cfg: Config):
     area_ratio = geo.quad_area(corners) / float(work.shape[0] * work.shape[1])
     return (
@@ -402,9 +632,71 @@ def _border_stats(work_unmasked, cfg: Config, metrics: Metrics):
     )
     metrics.border_mean = float(border.mean())
     metrics.border_std = float(border.std())
-    metrics.likely_full_bleed_scan = (
-        metrics.border_mean >= cfg.full_bleed_border_mean_min
-        and metrics.border_std <= cfg.full_bleed_border_std_max
+    bright_border = metrics.border_mean >= cfg.full_bleed_border_mean_min
+    uniform_border = metrics.border_std <= cfg.full_bleed_border_std_max
+    bright_scan_border = metrics.border_mean >= cfg.full_bleed_border_mean_scan
+    metrics.likely_full_bleed_scan = bright_border and (uniform_border or bright_scan_border)
+
+
+def _partial_frame_suspect(metrics: Metrics) -> bool:
+    return (
+        (metrics.quad_area_ratio or 0) < 0.60
+        and metrics.detector_confidence is not None
+        and metrics.detector_confidence < 0.75
+    ) or (
+        (metrics.contour_candidates or 0) >= 2
+        and (metrics.quad_area_ratio or 0) < 0.70
+    )
+
+
+def _classify_frame_mode(metrics: Metrics, cfg: Config) -> str:
+    """Classify crop safety without assuming that every PDF is a scan."""
+    if cfg.source_mode == "scan":
+        return "full_frame"
+    if cfg.source_mode == "photo":
+        return "document"
+    detector_failed = (
+        metrics.alpha_coverage is not None
+        and metrics.alpha_coverage < cfg.min_alpha_coverage
+        and (metrics.contour_candidates or 0) == 0
+    )
+    if _partial_frame_suspect(metrics) or detector_failed:
+        return "uncertain"
+    if _is_likely_fullframe(metrics) or metrics.likely_full_bleed_scan:
+        return "full_frame"
+    return "document"
+
+
+def _content_loss_score(metrics: Metrics, cfg: Config):
+    """Combine independent loss signals; border ink alone never fails."""
+    score = 0.0
+    evidence = []
+    if _partial_frame_suspect(metrics):
+        score += 0.60
+        evidence.append("partial_geometry")
+    if (
+        metrics.alpha_coverage is not None
+        and metrics.alpha_coverage < 0.80
+        and not metrics.likely_full_bleed_scan
+    ):
+        score += 0.30
+        evidence.append("weak_foreground_coverage")
+    if (
+        metrics.border_ink_ratio is not None
+        and metrics.border_ink_ratio > max(0.10, cfg.max_border_ink_ratio * 1.25)
+        and metrics.alpha_coverage is not None
+        and metrics.alpha_coverage >= 0.50
+    ):
+        score += 0.25
+        evidence.append("ink_at_edge")
+    return min(score, 1.0), evidence
+
+
+def _is_likely_fullframe(metrics: Metrics) -> bool:
+    """Auto-detect fullframe images: quad covers ~entire frame + touches all edges."""
+    return (
+        (metrics.quad_area_ratio or 0) > 0.85
+        and (metrics.touches_border or 0) >= 4
     )
 
 
@@ -437,9 +729,10 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
     # ảnh) là **người chụp lấy khung sát**, không phải lỗi — nội dung còn nguyên, chỉ
     # là chẳng có gì để cắt.
     struggled = (
-        metrics.detector_confidence is not None
-        and metrics.detector_confidence < cfg.no_crop_min_confidence
-    ) or metrics.corners_outside_px > cfg.border_margin_px
+        metrics.detector_confidence is None
+        or metrics.detector_confidence < cfg.no_crop_min_confidence
+        or metrics.corners_outside_px > cfg.border_margin_px
+    )
     # QC-20: điều kiện diện tích một mình để lọt ca tệ nhất gặp được. Ảnh
     # `2aOboQpF50…` cho `conf 0.6` (detector không dựng nổi 4 đỉnh, phải ép
     # `minAreaRect`) và góc lọt **32.6px ra ngoài khung ảnh** — tứ giác đó bao cả cái
@@ -454,6 +747,9 @@ def _geometry_reasons(corners, work, cfg: Config, metrics: Metrics):
     # Đo trên 38 ảnh thật: `conf < 0.9` xuất hiện đúng 5 lần, **cả 5 đều hỏng thật**;
     # và không ảnh nào có `conf >= 0.9` mà lại có góc lọt ra ngoài. Đường mới này thêm
     # đúng 1 ảnh — chính ảnh trên — và 0 báo động giả.
+    #
+    # Fullframe detection: ảnh chụp fullframe (không cắt sát từ trước) → skip checks
+    # về edge validation, chỉ kiểm tra quality metrics (blur, glare, v.v.).
     if _no_crop_detected(metrics, cfg, struggled):
         reasons.append(
             Reason.of(
@@ -546,9 +842,27 @@ def _content_reasons(orig, corners_full, cfg: Config, metrics: Metrics, reasons)
         return reasons
 
     kept = [r for r in reasons if r.code != "CLIPPED_EDGE"]
-    kept.append(
-        Reason.of("CONTENT_CLIPPED", f"border_ink_ratio={metrics.border_ink_ratio:.3f}")
-    )
+
+    # Downgrade CONTENT_CLIPPED từ fail → warn khi detector tự tin cao
+    # (dùng cho mode archival: phân loại kho thay vì chụp realtime)
+    detail = f"border_ink_ratio={metrics.border_ink_ratio:.3f}"
+    reason = Reason.of("CONTENT_CLIPPED", detail)
+
+    if (
+        cfg.content_clip_downgrade_confidence > 0
+        and metrics.detector_confidence is not None
+        and metrics.detector_confidence >= cfg.content_clip_downgrade_confidence
+        # A mask fallback was selected specifically because the primary
+        # detector was unsafe; its high contour confidence must not downgrade
+        # evidence that the fallback crop cuts into text.
+        and metrics.fallback_used != "mask_contour"
+    ):
+        # Downgrade: CONTENT_CLIPPED từ fail → warn
+        # Dùng dataclasses.replace() để tạo instance mới với severity khác
+        from dataclasses import replace
+        reason = replace(reason, severity="warn")
+
+    kept.append(reason)
     return kept
 
 
@@ -582,6 +896,38 @@ def _quality_reasons(warped, cfg: Config, metrics: Metrics):
             Reason.of("TEXT_NOT_LEVEL", f"text_skew_deg={metrics.text_skew_deg:.1f}")
         )
     return reasons
+
+
+def _uncertain_border_quad(quad, work, cfg, mask=None):
+    touches = geo.touches_border(quad.corners, work.shape, cfg.border_margin_px) >= 1
+    if not touches:
+        return False
+
+    detector = DETECTORS.get(quad.detector)
+    floor = getattr(detector, "low_confidence", None) if detector else None
+    if floor is not None and quad.confidence < floor:
+        return True
+
+    # rembg min-area-rectangle fallback is deliberately low confidence (0.6).
+    # On a red cover it can describe an inner/background boundary, while the real
+    # page continues to the frame. If its mask fit is also weak, preserving pixels
+    # is safer than committing a destructive crop.
+    return (
+        quad.detector == "rembg-contour"
+        and quad.confidence <= 0.6
+        and mask is not None
+        and geo.mask_quad_fit(mask) < cfg.min_mask_quad_fit
+        and _red_cover_like(work)
+    )
+
+
+def _red_cover_like(image):
+    """True for a strongly saturated red cover, not a white scan page."""
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    red = (((hsv[:, :, 0] <= 12) | (hsv[:, :, 0] >= 170))
+           & (hsv[:, :, 1] >= 80)
+           & (hsv[:, :, 2] >= 50))
+    return float(np.count_nonzero(red)) / red.size >= 0.25
 
 
 def _no_crop_detected(metrics: Metrics, cfg: Config, struggled: bool) -> bool:
@@ -654,7 +1000,7 @@ def _apply_pre_cropped(reasons, cfg: Config, metrics: Metrics):
     không. Sự thật "đã bỏ qua kiểm tra biên" đi vào `metrics.pre_cropped`, nơi dành
     cho dữ kiện không đòi hành động.
 
-    Rủi ro còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó qc_scanner mất khả năng
+    Rủi ro còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó classify_scanned mất khả năng
     bắt crop hụt. Đó là đánh đổi thuộc về phía gọi, và vì thế nó phải **khai báo**
     chứ không được đoán.
 

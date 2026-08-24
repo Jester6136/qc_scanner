@@ -1,4 +1,4 @@
-# qc_scanner — Tổng quan dự án & Roadmap
+# classify_scanned — Tổng quan dự án & Roadmap
 
 > Thay cho "project-insight". Đây là **điểm vào** cho người mới: dự án là gì, đang ở đâu,
 > đi về đâu. Chi tiết kỹ thuật ở `algorithm.md`; việc cần làm ở `features_issues.md`;
@@ -9,14 +9,14 @@
 
 ## 1. Dự án là gì
 
-**qc_scanner** nhận ảnh chụp một tờ tài liệu (điện thoại, chụp nghiêng, nền lộn xộn) → **tìm biên
+**classify_scanned** nhận ảnh chụp một tờ tài liệu (điện thoại, chụp nghiêng, nền lộn xộn) → **tìm biên
 tờ giấy** → **nắn phối cảnh** → trả ảnh PNG phẳng, cắt gọn đúng khổ giấy. Đây là **tiền xử lý**
 cho các bước phía sau (OCR / VLM extract), không phải sản phẩm cuối: ảnh nắn phẳng → chữ nét hơn
 → mô hình bóc dữ liệu chính xác hơn.
 
-### 🎯 Mục tiêu định hướng: qc_scanner là một **cổng QC**, không phải một hàm crop
+### 🎯 Mục tiêu định hướng: classify_scanned là một **cổng QC**, không phải một hàm crop
 
-Hiện tại qc_scanner chỉ trả **ảnh** — thành công hay thất bại đều là một ảnh, người gọi không biết
+Hiện tại classify_scanned chỉ trả **ảnh** — thành công hay thất bại đều là một ảnh, người gọi không biết
 gì. Đó là điểm phải thay đổi. Định hướng sản phẩm:
 
 > **Mỗi lần xử lý phải trả về một *phán quyết chất lượng*: đạt / đạt-có-cảnh-báo / không đạt.
@@ -37,7 +37,7 @@ Hợp đồng đầu ra QC đầy đủ: [algorithm.md §2](algorithm.md#hop-don
 danh mục mã lý do: [algorithm.md §7](algorithm.md#ma-ly-do).
 
 - Nguồn gốc: lõi bắt nguồn từ OSS `danielgatis/docscan` (MIT); dự án đã **đổi tên thành
-  `qc_scanner`** (2026-08) để phản ánh định hướng QC. **Chưa publish** dưới tên mới.
+  `classify_scanned`** (2026-08) để phản ánh định hướng QC. **Chưa publish** dưới tên mới.
 - Quy mô code: **1639 dòng Python**, 9 file (ban đầu 164 dòng / 3 file). Phần lớn phần tăng thêm
   là lõi QC, bộ eval và chú thích lý do — thuật toán nắn ảnh vẫn nhỏ như cũ.
 - Kỹ thuật: **KHÔNG có model riêng của dự án**. `rembg` (U²-Net qua onnxruntime) tách nền,
@@ -48,9 +48,9 @@ danh mục mã lý do: [algorithm.md §7](algorithm.md#ma-ly-do).
 Bốn mặt tiền chung **một** hàm lõi `scan_qc()`:
 
 ```
-CLI    (qc-scanner)        ─┐
-Batch  (qc-scanner-batch)  ─┤
-Server (qc-scanner-server) ─┼──►  qc_scanner.doc.scan_qc()  ──►  ScanResult
+CLI    (classify-scanned)        ─┐
+Batch  (classify-scanned-batch)  ─┤
+Server (classify-scanned-server) ─┼──►  classify_scanned.doc.scan_qc()  ──►  ScanResult
 Library (import scan_qc)   ─┘                │
                                              ├── Detector (rembg-contour | edge-hough)
                                              ├── geometry: metric hình học + chất lượng
@@ -104,7 +104,7 @@ Bàn giao là **Docker image kèm HTTP service** ([EX-13](need_exchange.md)), n�
 
 ## 5. Bắc Nam của bài toán
 
-Với qc_scanner, "tốt" = **tỉ lệ phán quyết đúng trên ảnh thật của khách**, đo bằng hai con số tách bạch:
+Với classify_scanned, "tốt" = **tỉ lệ phán quyết đúng trên ảnh thật của khách**, đo bằng hai con số tách bạch:
 
 - **Tỉ lệ nắn đúng** (crop rate) — trong số ảnh đạt, bao nhiêu % nắn đúng biên thật (IoU ≥ 0.9).
 - **Độ chính xác của phán quyết** — quan trọng ngang, đây là phần QC:

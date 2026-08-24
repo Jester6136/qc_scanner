@@ -21,12 +21,12 @@ RUN pip install --no-cache-dir .
 # đã cắt sẵn chỉ có rembg tìm ra được). Thiếu một cái là mất nguyên một nhánh.
 ENV U2NET_HOME=/opt/u2net
 ENV DOCALIGNER_HOME=/opt/docaligner
-RUN python -c "from qc_scanner.rembg_session import warmup; warmup()" \
- && qc-scanner-fetch-models --head heatmap
+RUN python -c "from classify_scanned.rembg_session import warmup; warmup()" \
+ && classify-scanned-fetch-models --head heatmap
 
 EXPOSE 5000
 ENV QC_SCANNER_WORK_HEIGHT=500
 
 # Bind 0.0.0.0 là đúng bên trong container (network namespace riêng); việc phơi
 # ra ngoài hay không do -p của docker run quyết định. Server KHÔNG có xác thực.
-CMD ["qc-scanner-server", "-a", "0.0.0.0", "-p", "5000"]
+CMD ["classify-scanned-server", "-a", "0.0.0.0", "-p", "5000"]

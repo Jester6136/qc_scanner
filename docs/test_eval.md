@@ -1,11 +1,11 @@
-# Test & Eval — qc_scanner
+# Test & Eval — classify_scanned
 
 > Ghi chú **cách smoke test + eval**. Nguyên tắc house-style: **PURE** (thuần, không hạ tầng)
-> chạy được mọi nơi; qc_scanner may mắn là **PURE toàn bộ** — không DB, không hàng đợi, không
+> chạy được mọi nơi; classify_scanned may mắn là **PURE toàn bộ** — không DB, không hàng đợi, không
 > service ngoài. Rào cản duy nhất là cài được dependency và tải được model rembg lần đầu.
 >
 > **451 bài** trong `tests/`, chạy bằng `pytest`, kèm CI. §5 (eval trên tập vàng) là phần
-> **chưa chạy được** — công cụ đã sẵn (`python -m qc_scanner.eval`), chỉ thiếu ảnh có nhãn của
+> **chưa chạy được** — công cụ đã sẵn (`python -m classify_scanned.eval`), chỉ thiếu ảnh có nhãn của
 > khách ([EX-2](need_exchange.md)).
 
 ---
@@ -13,9 +13,9 @@
 ## 0. Chuẩn bị môi trường
 
 ```bash
-conda create -n qc_scanner python=3.12 && conda activate qc_scanner
+conda create -n classify_scanned python=3.12 && conda activate classify_scanned
 pip install -r requirements-dev.txt
-pip install -e .                 # để có lệnh `qc-scanner` / `qc-scanner-batch` / `-server`
+pip install -e .                 # để có lệnh `classify-scanned` / `classify-scanned-batch` / `-server`
 ```
 
 Chạy toàn bộ bộ test (~25s sau khi model đã cache):
@@ -54,18 +54,18 @@ Ba mặt tiền phải cho **cùng một kết quả** trên cùng ảnh. ✅ Na
 ```bash
 # 1. Library
 python3 -c "
-from qc_scanner.doc import scan
+from classify_scanned.doc import scan
 open('/tmp/out-lib.png','wb').write(scan(open('examples/doc-1.jpg','rb').read()))
 "
 
 # 2. CLI — file vào, file ra
-qc-scanner examples/doc-1.jpg /tmp/out-cli.png
+classify-scanned examples/doc-1.jpg /tmp/out-cli.png
 
 # 3. CLI — pipe
-cat examples/doc-1.jpg | qc-scanner > /tmp/out-pipe.png
+cat examples/doc-1.jpg | classify-scanned > /tmp/out-pipe.png
 
 # 4. Server
-qc-scanner-server -p 5000 &
+classify-scanned-server -p 5000 &
 curl -s -F "file=@examples/doc-1.jpg" http://127.0.0.1:5000/ -o /tmp/out-srv.png
 
 # So sánh: BỐN file này phải giống hệt nhau
@@ -80,7 +80,7 @@ md5 /tmp/out-lib.png /tmp/out-cli.png /tmp/out-pipe.png /tmp/out-srv.png
 ```bash
 for f in examples/doc-*.jpg examples/doc-*.png; do
   case "$f" in *.out.png) continue;; esac
-  qc-scanner "$f" "/tmp/$(basename "${f%.*}").mine.png"
+  classify-scanned "$f" "/tmp/$(basename "${f%.*}").mine.png"
 done
 open /tmp/*.mine.png       # macOS — so với examples/doc-N.out.png
 ```
@@ -93,8 +93,8 @@ không · chữ có bị kéo giãn bất thường không.
 ```bash
 echo -n "" > /tmp/empty.png                 # file rỗng
 head -c 100 /dev/urandom > /tmp/junk.png    # không phải ảnh
-qc-scanner /tmp/empty.png /tmp/o1.png; echo "exit=$?"
-qc-scanner /tmp/junk.png  /tmp/o2.png; echo "exit=$?"
+classify-scanned /tmp/empty.png /tmp/o1.png; echo "exit=$?"
+classify-scanned /tmp/junk.png  /tmp/o2.png; echo "exit=$?"
 curl -s -F "file=@/tmp/junk.png" http://127.0.0.1:5000/ -i | head -5
 ```
 
@@ -236,7 +236,7 @@ print(f"rembg   {t1-t0:.3f}s\ndecode  {t2-t1:.3f}s")
 PY
 
 # tổng đầu-cuối, 8 ảnh
-time bash -c 'for f in examples/doc-*.jpg; do qc-scanner "$f" /dev/null; done'
+time bash -c 'for f in examples/doc-*.jpg; do classify-scanned "$f" /dev/null; done'
 ```
 
 Kết luận rút ra:
@@ -252,7 +252,7 @@ sau khi tái dùng session (N-06). Giả thuyết "rembg > 90%" được xác nh
 hiện nay là dùng thẳng bộ eval, nó đã báo `seconds_median`:
 
 ```bash
-python -m qc_scanner.eval tmp --csv /tmp/run.csv
+python -m classify_scanned.eval tmp --csv /tmp/run.csv
 ```
 
 ---
@@ -263,17 +263,17 @@ python -m qc_scanner.eval tmp --csv /tmp/run.csv
 xem [need_exchange.md EX-1/EX-2](need_exchange.md).
 
 ⚠️ **Đây là phần duy nhất của tài liệu này chưa chạy được**, và không phải vì thiếu công cụ.
-`python -m qc_scanner.eval` đã tính đủ ba con số + ma trận nhầm lẫn khi có `--labels`. Thứ
+`python -m classify_scanned.eval` đã tính đủ ba con số + ma trận nhầm lẫn khi có `--labels`. Thứ
 thiếu là **ảnh có nhãn**. 9 ảnh thật trong `tmp/` mới là mẫu đầu tiên, chưa gán nhãn, nên hiện
 chỉ dùng để **so hai cấu hình với nhau** (`--baseline`), chưa chấm được đúng/sai.
 
 ```bash
 # so hai cấu hình khi chưa có nhãn
-python -m qc_scanner.eval tmp --csv /tmp/a.csv
-python -m qc_scanner.eval tmp --model isnet-general-use --csv /tmp/b.csv --baseline /tmp/a.csv
+python -m classify_scanned.eval tmp --csv /tmp/a.csv
+python -m classify_scanned.eval tmp --model isnet-general-use --csv /tmp/b.csv --baseline /tmp/a.csv
 
 # ba con số nghiệm thu — khi đã có nhãn
-python -m qc_scanner.eval anh-khach --labels golden.jsonl --csv /tmp/eval.csv
+python -m classify_scanned.eval anh-khach --labels golden.jsonl --csv /tmp/eval.csv
 ```
 
 ### Cách gán nhãn
@@ -320,4 +320,4 @@ người dùng làm theo hint sai sẽ chụp lại vẫn sai. Đây là phần 
 - [ ] **Với thay đổi thuật toán: số đo trước/sau trên tập vàng — §5. CHƯA LÀM ĐƯỢC (thiếu EX-2).**
 - [x] Với nâng dependency: chạy §2 và ghi version cũ/mới trong commit.
 - [x] `pip install dist/*.whl` trên môi trường sạch chạy được cả ba lệnh — CI cài lại wheel
-      vừa build vào venv riêng rồi gọi thử `qc-scanner` / `-batch` / `-server`.
+      vừa build vào venv riêng rồi gọi thử `classify-scanned` / `-batch` / `-server`.

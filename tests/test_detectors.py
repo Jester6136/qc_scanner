@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 
 import synthetic as S
-from qc_scanner import geometry as geo
-from qc_scanner.config import Config
-from qc_scanner.detect import DETECTORS, QuadCandidate, best_candidate, get_detector
-from qc_scanner.doc import scan_qc
+from classify_scanned import geometry as geo
+from classify_scanned.config import Config
+from classify_scanned.detect import DETECTORS, QuadCandidate, best_candidate, get_detector
+from classify_scanned.doc import scan_qc
 
 
 def test_unknown_detector_fails_loudly():
@@ -86,7 +86,7 @@ def test_iou_of_identical_quads_is_one():
 
 def test_work_size_never_upscales():
     """QUAL-2: phóng to ảnh nhỏ là bịa thông tin."""
-    from qc_scanner.doc import _to_work_size
+    from classify_scanned.doc import _to_work_size
 
     small = np.zeros((200, 300, 4), np.uint8)
     assert _to_work_size(small, Config(work_height=500)).shape[0] == 200

@@ -1,4 +1,4 @@
-"""qc_scanner — cổng QC cho ảnh chụp tài liệu.
+"""classify_scanned — cổng QC cho ảnh chụp tài liệu.
 
 Không crop được thì nói rõ nguyên nhân và hướng xử lý, thay vì im lặng trả ảnh
 gốc. Dùng `scan_qc()` để nhận phán quyết; `scan()` là API cũ chỉ trả ảnh.

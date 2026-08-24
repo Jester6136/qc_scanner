@@ -9,7 +9,7 @@ from ..doc import scan_document
 from ..pdf import build_pdf
 from ..qc import ScanError
 
-#: Exit code theo verdict — script gọi qc-scanner phân biệt được bằng `$?`.
+#: Exit code theo verdict — script gọi classify-scanned phân biệt được bằng `$?`.
 EXIT_CODES = {"pass": 0, "warn": 1, "fail": 2}
 EXIT_INPUT_ERROR = 3
 

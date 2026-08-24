@@ -1,4 +1,4 @@
-"""Bộ đo chất lượng — chạy qc_scanner trên một thư mục ảnh và báo cáo bằng số.
+"""Bộ đo chất lượng — chạy classify_scanned trên một thư mục ảnh và báo cáo bằng số.
 
 Hai chế độ, tuỳ có nhãn hay không:
 
@@ -40,7 +40,7 @@ from .qc import Metrics, ScanError
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
-#: Đuôi file `qc-scanner-batch` nhận. Tách khỏi `IMAGE_SUFFIXES` vì bộ eval
+#: Đuôi file `classify-scanned-batch` nhận. Tách khỏi `IMAGE_SUFFIXES` vì bộ eval
 #: (`iter_images`) vẫn chỉ chạy trên ảnh rời — nhãn vàng gắn theo tấm ảnh, không
 #: theo trang PDF.
 DOCUMENT_SUFFIXES = IMAGE_SUFFIXES | {".pdf"}
@@ -208,7 +208,7 @@ def write_csv(rows, path):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Đo chất lượng qc_scanner trên một thư mục ảnh.")
+    ap = argparse.ArgumentParser(description="Đo chất lượng classify_scanned trên một thư mục ảnh.")
     ap.add_argument("directory", help="Thư mục chứa ảnh cần đo.")
     ap.add_argument("--labels", help="File JSONL nhãn vàng (tuỳ chọn).")
     ap.add_argument("--csv", help="Ghi metric từng ảnh ra CSV.")

@@ -1,7 +1,7 @@
 # Đường GPU NVIDIA (SPD-4). Dùng THAY CHO requirements.txt, không dùng thêm.
 #
 #     pip install -r requirements-gpu.txt
-#     QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider qc-scanner-server
+#     QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider classify-scanned-server
 #
 # ⚠️ CHƯA CHẠY THỬ. Máy phát triển là macOS, không có CUDA — file này viết theo tài
 # liệu onnxruntime chứ không có bằng chứng thực nghiệm nào. Lần đầu chạy trên máy
@@ -18,7 +18,7 @@ click>=8.1,<9
 fastapi>=0.115,<1
 imutils>=0.5.4,<0.6
 numpy>=1.26,<3
-onnx>=1.15,<2            # chỉ cho `qc-scanner-bench`: vá trục batch để đo dynamic batching
+onnx>=1.15,<2            # chỉ cho `classify-scanned-bench`: vá trục batch để đo dynamic batching
 # >=1.19 chứ không phải >=1.17: wheel onnxruntime-gpu 1.17/1.18 trên PyPI dựng cho
 # CUDA 11.8, từ 1.19 mới là CUDA 12 — khớp base image 12.4 + cuDNN 9. Lấy nhầm bản
 # CUDA 11 thì nó KHÔNG báo lỗi, chỉ lặng lẽ chạy CPU.

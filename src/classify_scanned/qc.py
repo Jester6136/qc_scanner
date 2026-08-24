@@ -93,7 +93,7 @@ REASONS: dict[str, ReasonSpec] = {
             "Thiếu file mô hình — máy chủ chưa cài đặt xong.",
             "Lỗi máy chủ, không phải do ảnh. Báo người quản trị.",
             "Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** "
-            "(`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image.",
+            "(`classify-scanned-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image.",
             "system",
         ),
         _spec(
@@ -192,21 +192,19 @@ REASONS: dict[str, ReasonSpec] = {
         _spec(
             "RECOVERED_BY_MASK_FALLBACK",
             "warn",
-            "Detector chính không thấy tài liệu; tách nền tìm được.",
+            "Detector chính không đáng tin; tách nền tìm được vùng tài liệu an toàn hơn.",
             "Ảnh vẫn dùng được. Chụp thấy trọn 4 mép thì lần sau chắc hơn.",
-            "Detector chính trả rỗng, tứ giác này do tách nền tìm ra. Hay gặp với ảnh "
-            "**đã cắt sẵn**. Soi trước khi dùng.",
+            "Detector chính dựng biên không đáng tin, tứ giác này được thay bằng kết quả "
+            "tách nền. Soi trước khi dùng.",
             "operator",
         ),
         _spec(
             "FULL_FRAME_ASSUMED",
             "warn",
-            "Không dựng được tứ giác; vì ảnh khai đã cắt sẵn nên coi cả khung là tài liệu.",
-            "Ảnh vẫn dùng được. Chụp/scan thấy tương phản với nền thì lần sau máy dò "
-            "chắc hơn.",
-            "Không tách được biên tài liệu (thường do nội dung chỉ chiếm một phần nhỏ "
-            "giữa trang gần như trắng trơn). Vì ảnh khai `pre_cropped` nên máy coi cả "
-            "khung là tài liệu thay vì trả ảnh gốc — soi trước khi dùng.",
+            "Không đủ tin cậy để cắt; giữ nguyên toàn bộ ảnh.",
+            "Ảnh được giữ nguyên để tránh cắt mất nội dung. Soi ảnh gốc trước khi dùng.",
+            "Detector không đủ tin cậy để xác định biên. Hệ thống giữ nguyên toàn khung "
+            "thay vì cắt mạo hiểm; soi ảnh trước khi đưa xuống OCR.",
             "operator",
         ),
         # --- Hình học biên ---
@@ -255,7 +253,7 @@ REASONS: dict[str, ReasonSpec] = {
         ),
         _spec(
             "CONTENT_OUTSIDE_CROP",
-            "fail",
+            "warn",
             "Đường cắt chém vào tài liệu — đã mất một mảng nội dung.",
             "Máy cắt trượt, bỏ rơi một phần tờ giấy. Chụp lại cả tờ, để lộ đủ bốn góc.",
             "Biên tài liệu bị dựng sai nên ảnh ra thiếu hẳn một mảng. Phần đó **vẫn còn** "
@@ -506,6 +504,15 @@ class Metrics:
     scan phẳng kín khổ (không có nền quanh giấy), khác với "ảnh chụp đã được cắt sát".
     **Chỉ mang tính tham khảo**, không tự đổi `pre_cropped`/`pre_cropped_full_frame`."""
 
+    frame_mode: str = "document"
+    """`document` · `full_frame` · `uncertain`; quyết định crop độc lập với verdict."""
+
+    content_loss_score: Optional[float] = None
+    """Điểm nghi mất nội dung; chỉ dùng cùng các bằng chứng độc lập để quyết fail."""
+
+    content_loss_evidence: list[str] = field(default_factory=list)
+    """Các tín hiệu tạo nên `content_loss_score`, phục vụ tra cứu kho ảnh."""
+
     text_skew_deg: Optional[float] = None
     """Góc nghiêng dòng chữ trên ảnh **đã nắn**; `None` = không đủ mực để đo (QC-18).
 
@@ -569,6 +576,7 @@ class ScanResult:
     verdict: Verdict
     reasons: list[Reason] = field(default_factory=list)
     metrics: Metrics = field(default_factory=Metrics)
+    scores: dict = field(default_factory=dict)
 
     corners: Optional[list[list[float]]] = None
     """4 góc đã dùng để nắn, theo hệ toạ độ **ảnh gốc**, thứ tự TL-TR-BR-BL.
@@ -586,7 +594,7 @@ class ScanResult:
             )
 
     @classmethod
-    def of(cls, image, reasons, metrics=None, corners=None, audience=None) -> "ScanResult":
+    def of(cls, image, reasons, metrics=None, corners=None, audience=None, scores=None) -> "ScanResult":
         # Chọn tầng hint ở đúng một chỗ, ngay trước khi trả ra — chứ không bắt mọi
         # nơi dựng `Reason` phải nhớ mang bối cảnh theo.
         reasons = [r.for_audience(audience) for r in reasons]
@@ -596,6 +604,7 @@ class ScanResult:
             reasons=reasons,
             metrics=metrics or Metrics(),
             corners=corners,
+            scores=scores or {},
         )
 
     @property
@@ -607,6 +616,7 @@ class ScanResult:
             "verdict": self.verdict,
             "reasons": [r.to_dict() for r in self.reasons],
             "metrics": self.metrics.to_dict(),
+            "scores": self.scores,
         }
         if self.corners is not None:
             d["corners"] = self.corners
@@ -648,10 +658,13 @@ class DocumentResult:
         return len(self.pages)
 
     def to_dict(self, include_image: bool = False) -> dict:
+        from .scoring import aggregate_scores
+        page_scores = [page.scores for page in self.pages if page.scores]
         return {
             "source": self.source,
             "verdict": self.verdict,
             "page_count": self.page_count,
+            "scores": aggregate_scores(page_scores),
             "pages": [
                 {"page": i, **p.to_dict(include_image=include_image)}
                 for i, p in enumerate(self.pages, start=1)

@@ -58,9 +58,9 @@ jobs:
         run: |
           python -m venv /tmp/smoke
           /tmp/smoke/bin/pip install dist/*.whl
-          /tmp/smoke/bin/qc-scanner --help
-          /tmp/smoke/bin/qc-scanner-batch --help
-          /tmp/smoke/bin/qc-scanner-server --help
+          /tmp/smoke/bin/classify-scanned --help
+          /tmp/smoke/bin/classify-scanned-batch --help
+          /tmp/smoke/bin/classify-scanned-server --help
 
       - uses: actions/upload-artifact@v4
         with:

@@ -18,12 +18,12 @@ with open("requirements.txt") as f:
 # là bản nào để ghi vào log/báo cáo QC, nên version không thể sống ở setup.py.
 version = re.search(
     r'^__version__ = "([^"]+)"',
-    (here / "src" / "qc_scanner" / "__init__.py").read_text(encoding="utf-8"),
+    (here / "src" / "classify_scanned" / "__init__.py").read_text(encoding="utf-8"),
     re.MULTILINE,
 ).group(1)
 
 setup(
-    name="qc-scanner",
+    name="classify-scanned",
     version=version,
     description=(
         "Document scanner and quality gate: crop, deskew, and report why when it cannot"
@@ -39,14 +39,14 @@ setup(
     install_requires=requireds,
     entry_points={
         "console_scripts": [
-            "qc-scanner=qc_scanner.cmd.cli:main",
-            "qc-scanner-batch=qc_scanner.cmd.batch:main",
-            "qc-scanner-server=qc_scanner.cmd.server:main",
-            "qc-scanner-bench=qc_scanner.bench:main",
-            "qc-scanner-eval=qc_scanner.eval:main",
-            "qc-scanner-smartdoc=qc_scanner.smartdoc:main",
-            "qc-scanner-fetch-models=qc_scanner.docaligner:main",
-            "qc-scanner-apikey=qc_scanner.auth:main",
+            "classify-scanned=classify_scanned.cmd.cli:main",
+            "classify-scanned-batch=classify_scanned.cmd.batch:main",
+            "classify-scanned-server=classify_scanned.cmd.server:main",
+            "classify-scanned-bench=classify_scanned.bench:main",
+            "classify-scanned-eval=classify_scanned.eval:main",
+            "classify-scanned-smartdoc=classify_scanned.smartdoc:main",
+            "classify-scanned-fetch-models=classify_scanned.docaligner:main",
+            "classify-scanned-apikey=classify_scanned.auth:main",
         ],
     },
 )

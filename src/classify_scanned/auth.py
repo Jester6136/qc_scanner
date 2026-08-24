@@ -54,7 +54,7 @@ def generate_key() -> str:
 
 
 def main(argv=None):
-    """`qc-scanner-apikey` — sinh key và in ra dòng cấu hình dán được ngay."""
+    """`classify-scanned-apikey` — sinh key và in ra dòng cấu hình dán được ngay."""
     import argparse
 
     ap = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
@@ -84,7 +84,7 @@ def parse_keys(raw: str) -> dict:
         if len(value) < 16:
             raise AuthConfigError(
                 f"{ENV_KEYS}: key của {name!r} quá ngắn (<16 ký tự) — "
-                f"sinh key bằng `qc-scanner-apikey`"
+                f"sinh key bằng `classify-scanned-apikey`"
             )
         if value in keys:
             raise AuthConfigError(f"{ENV_KEYS}: key trùng nhau ở {keys[value]!r} và {name!r}")
@@ -111,7 +111,7 @@ def load(env=None) -> dict:
     if not raw:
         raise AuthConfigError(
             f"chưa đặt {ENV_KEYS} — server không khởi động.\n"
-            f"  Sinh key:  qc-scanner-apikey\n"
+            f"  Sinh key:  classify-scanned-apikey\n"
             f'  Rồi đặt:   {ENV_KEYS}="app-web:<key>"\n'
             f"  Chạy mở (KHÔNG khuyến nghị, ai trong LAN cũng gọi được): {ENV_MODE}=off"
         )

@@ -4,7 +4,7 @@
 > rõ trước khi quyết định thiết kế/nghiệm thu. Mỗi mục: **câu hỏi**, **vì sao cần**, **ảnh hưởng
 > nếu chưa rõ**, **trạng thái** (❓ chờ hỏi · 💬 đã hỏi chờ trả lời · ✅ đã chốt).
 >
-> Bối cảnh: qc_scanner đang chuyển từ "hàm crop" sang **cổng QC** — không crop được thì phải nói rõ
+> Bối cảnh: classify_scanned đang chuyển từ "hàm crop" sang **cổng QC** — không crop được thì phải nói rõ
 > nguyên nhân + hướng xử lý ([overall_roadmap.md §1](overall_roadmap.md)). Phần lớn câu hỏi dưới
 > đây tồn tại vì **QC chỉ định nghĩa được khi biết "đạt" nghĩa là gì với khách**.
 >
@@ -14,7 +14,7 @@
 >
 > **EX-2 (tập vàng có nhãn) nay là mục chặn nhiều việc nhất**: toàn bộ Giai đoạn 3 còn lại
 > (QUAL-3 quét ngưỡng, S-1 đổi model, S-3 DocAligner) đang đứng chờ đúng một thứ này. Công cụ
-> đo đã dựng xong và chạy được (`python -m qc_scanner.eval --labels`).
+> đo đã dựng xong và chạy được (`python -m classify_scanned.eval --labels`).
 
 ---
 
@@ -45,7 +45,7 @@
 
 > **✅ Chốt 2026-08-05**: **Cả hai luồng**: batch cho kho ảnh cũ (không chụp lại được) + realtime cho ảnh chụp mới (chụp lại được). Hệ quả: mỗi mã lý do cần **hai tầng hint** — một cho người chụp, một cho vận hành — chứ không phải một `audience` duy nhất như hiện nay.
 - **Hỏi**: Nguồn ảnh là gì — chụp điện thoại tại chỗ, máy scan, hay ảnh tồn kho đã chụp sẵn?
-  Đầu ra qc_scanner đi tiếp vào hệ nào (OCR/VLM nào, hay người đọc)? Có cần **PDF/đa trang** không?
+  Đầu ra classify_scanned đi tiếp vào hệ nào (OCR/VLM nào, hay người đọc)? Có cần **PDF/đa trang** không?
 - **Vì sao**: quyết định `audience` của mỗi reason code. Nếu người chụp **có mặt tại chỗ** →
   hint "chụp lại trên nền tối" là hành động được ngay, QC cực kỳ giá trị. Nếu là **ảnh tồn
   kho** → không ai chụp lại được, mọi hint phải chuyển sang vận hành (loại bỏ / xử lý tay).
@@ -79,8 +79,8 @@
 
 ### EX-6 · ✅ Ảnh không đạt thì quy trình xử lý ra sao
 
-> **✅ Chốt 2026-08-05**: Ảnh `warn` **vào hàng chờ người soi** (không tự động cho qua). Ảnh `fail`: luồng realtime thì báo người chụp chụp lại; luồng kho thì đẩy sang xử lý tay. Báo cáo CSV của `qc-scanner-batch` là đầu vào cho hàng chờ này.
-- **Hỏi**: Khi qc_scanner báo `fail` — ai nhận thông báo? Chụp lại được không? Hay chuyển sang xử
+> **✅ Chốt 2026-08-05**: Ảnh `warn` **vào hàng chờ người soi** (không tự động cho qua). Ảnh `fail`: luồng realtime thì báo người chụp chụp lại; luồng kho thì đẩy sang xử lý tay. Báo cáo CSV của `classify-scanned-batch` là đầu vào cho hàng chờ này.
+- **Hỏi**: Khi classify_scanned báo `fail` — ai nhận thông báo? Chụp lại được không? Hay chuyển sang xử
   lý tay? Có hàng đợi/người phụ trách không? Ngưỡng bao nhiêu % fail thì coi là sự cố?
 - **Vì sao**: quyết định hình thức đầu ra QC — chỉ cần exit code, hay cần **báo cáo CSV hàng
   loạt** ([N-01](features_issues.md#f-features--đề-xuất-backlog)), hay cần webhook/UI.
@@ -142,10 +142,10 @@
 
 ### EX-13 · ✅ Giấy phép & phân phối {#ex-13}
 
-> **✅ Chốt 2026-08-05**: **Docker image, và bên trong có sẵn HTTP service để hệ khác gọi vào** (`qc-scanner-server`, đã là CMD mặc định của image). Nghĩa là bàn giao một thứ duy nhất: `docker run -p 5000:5000 qc-scanner` là hệ khác gọi được ngay. Kèm theo đó, hợp đồng API (`POST /`, `?format=json`, header verdict, HTTP status theo verdict) trở thành **bề mặt bàn giao chính**, không còn là tiện ích phụ — phải có tài liệu API và test hợp đồng. Kiểm giấy phép model trước khi chốt: U²-Net (mặc định hiện tại) khác điều khoản với BiRefNet; DocAligner là Apache-2.0. Đổi model kéo theo ràng buộc giấy phép mới → kiểm trước khi đổi.
+> **✅ Chốt 2026-08-05**: **Docker image, và bên trong có sẵn HTTP service để hệ khác gọi vào** (`classify-scanned-server`, đã là CMD mặc định của image). Nghĩa là bàn giao một thứ duy nhất: `docker run -p 5000:5000 classify-scanned` là hệ khác gọi được ngay. Kèm theo đó, hợp đồng API (`POST /`, `?format=json`, header verdict, HTTP status theo verdict) trở thành **bề mặt bàn giao chính**, không còn là tiện ích phụ — phải có tài liệu API và test hợp đồng. Kiểm giấy phép model trước khi chốt: U²-Net (mặc định hiện tại) khác điều khoản với BiRefNet; DocAligner là Apache-2.0. Đổi model kéo theo ràng buộc giấy phép mới → kiểm trước khi đổi.
 - **Hỏi**: Sản phẩm giao cho khách dưới dạng nào — thư viện PyPI, Docker image, hay mã nguồn?
   Có ràng buộc giấy phép nào không?
-- **Vì sao**: qc_scanner là MIT (fork OSS), nhưng model đi kèm có giấy phép riêng — U²-Net và
+- **Vì sao**: classify_scanned là MIT (fork OSS), nhưng model đi kèm có giấy phép riêng — U²-Net và
   BiRefNet **không cùng điều khoản**; DocAligner là Apache-2.0. Đổi model
   ([S-1](features_issues.md#s-model-swap)) có thể kéo theo ràng buộc giấy phép mới, **kiểm
   trước khi chốt**.
@@ -160,7 +160,7 @@
 >
 > **Việc còn lại thuộc phía tích hợp**: hệ gọi phải biết ảnh nào đã cắt để đặt cờ. Nếu kho ảnh
 > không có thông tin đó thì phải chọn một mặc định cho cả kho — và chọn "đã cắt" nghĩa là chấp
-> nhận qc_scanner không bắt được crop hụt trên các ảnh chụp thô lẫn trong đó.
+> nhận classify_scanned không bắt được crop hụt trên các ảnh chụp thô lẫn trong đó.
 
 ### EX-15 · ❓ Một hồ sơ gồm NHIỀU ảnh — ai chịu trách nhiệm ghép và kiểm đủ? {#ex-multipage}
 
@@ -169,18 +169,18 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
 
 - **Hỏi**: Ai ghép các ảnh của cùng một hồ sơ lại, và ai kiểm "hồ sơ này đã đủ mặt chưa"?
   Hệ gọi đã có mã hồ sơ / thứ tự trang khi gửi ảnh chưa?
-- **Đề xuất trả lời**: **hệ gọi giữ việc này**, qc_scanner không đụng vào.
+- **Đề xuất trả lời**: **hệ gọi giữ việc này**, classify_scanned không đụng vào.
 - **Vì sao**:
   1. Chụp từng mặt là **cách chụp đúng**, không phải lỗi. Bắt chụp lại là vô nghĩa — chụp lại
      vẫn ra hai ảnh. Xem quyết định dưới đây.
-  2. qc_scanner **không có state**: mỗi lần gọi là một ảnh, không có khái niệm "hồ sơ". Thêm nó
+  2. classify_scanned **không có state**: mỗi lần gọi là một ảnh, không có khái niệm "hồ sơ". Thêm nó
      là thêm phiên/hàng đợi/định danh — đổi hẳn kiến trúc, phá
      [nguyên tắc §3.1](overall_roadmap.md).
   3. Muốn biết "đủ mặt chưa" phải biết **loại giấy tờ** có mấy mặt. Đó là tri thức nghiệp vụ
      của hệ gọi, không suy ra được từ một tấm ảnh.
 
 > **✅ Quyết định 2026-08-05 (bên làm đề xuất, chờ khách xác nhận)**: **KHÔNG bắt chụp lại.**
-> Giấy chứng nhận chụp hai mặt thành hai ảnh là hợp lệ; qc_scanner chấm **từng ảnh** như bình
+> Giấy chứng nhận chụp hai mặt thành hai ảnh là hợp lệ; classify_scanned chấm **từng ảnh** như bình
 > thường, mỗi mặt nhận verdict riêng. Việc kiểm "hồ sơ đủ 2 mặt chưa" là kiểm ở **mức bản ghi**,
 > nằm ở hệ gọi.
 >
@@ -223,7 +223,7 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
   đã nắn trong cùng một request. Chịu tải kiểu đó thì phải đổi sang nhận-rồi-trả-sau, tức là
   đổi cả phía tích hợp của khách. Đó là quyết định của khách, không phải chi tiết kỹ thuật.
 
-- **Trong lúc chờ**: [`qc-scanner-bench`](../src/qc_scanner/bench.py) đo thông lượng thật trên
+- **Trong lúc chờ**: [`classify-scanned-bench`](../src/classify_scanned/bench.py) đo thông lượng thật trên
   máy đích và in bảng "bấy nhiêu ảnh/s thì gánh được bấy nhiêu CCU ở mỗi nhịp gửi". Chạy nó
   trước rồi mang **bảng đó** đi hỏi khách — hỏi bằng số dễ chốt hơn hỏi bằng chữ.
 - **Chặn**: [SPD-5](features_issues.md#spd-batching) (có làm dynamic batching không) và mọi
@@ -255,13 +255,13 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
   **lẫn cả hai trong cùng một luồng** thì cần một tham số request như `pre_cropped` hiện có,
   chứ không đoán được từ pixel (đã đo ở [EX-14](#ex-precropped): hai nhóm trùng dải).
 - **Trong lúc chờ**: xin ~10 file PDF thật là nhìn ra ngay. Cột `pdf_source` trong CSV của
-  `qc-scanner-batch` cũng nói luôn mỗi trang được đọc bằng đường nào.
+  `classify-scanned-batch` cũng nói luôn mỗi trang được đọc bằng đường nào.
 
 ---
 
 ### EX-18 · ❓ Ảnh ra là **bản đọc máy** hay **bản gốc lưu trữ**? {#ex-archival}
 
-- **Hỏi gì**: ảnh qc_scanner trả về sẽ đi đâu — chỉ vào OCR/bóc dữ liệu rồi bỏ, hay được **lưu
+- **Hỏi gì**: ảnh classify_scanned trả về sẽ đi đâu — chỉ vào OCR/bóc dữ liệu rồi bỏ, hay được **lưu
   lại làm bản số hoá chính thức** của hồ sơ?
 - **Vì sao**: quyết định `QC_SCANNER_DESKEW`. Từ QC-19, ảnh ra được **xoay về ngang** theo phần
   dư đo được — 18/38 ảnh thật lệch > 0.5°, sau khi xoay còn 2. Với OCR thì rõ ràng có lợi.
@@ -283,7 +283,7 @@ là một ảnh riêng và **cả hai mặt đều có thông tin**.)*
 
 ### EX-19 · ❓ OCR hạ nguồn là engine nào? {#ex-ocr-engine}
 
-- **Hỏi gì**: ảnh qc_scanner trả về sẽ được engine nào đọc — PaddleOCR, Tesseract, VietOCR,
+- **Hỏi gì**: ảnh classify_scanned trả về sẽ được engine nào đọc — PaddleOCR, Tesseract, VietOCR,
   Google Document AI, hay một dịch vụ nội bộ?
 - **Vì sao**: đây là câu hỏi **ngang tầm quan trọng với [EX-2](#ex-2)**, và trước nay ta chưa
   hỏi. Mọi ngưỡng chất lượng (`min_blur_score`, `glare_ratio`, `min_long_side_px`,

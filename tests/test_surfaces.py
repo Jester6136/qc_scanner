@@ -21,14 +21,14 @@ CLIPPED = next(p for p in PAIRS if p.name == "doc-1")
 
 @pytest.fixture(scope="module")
 def lib_output():
-    from qc_scanner.doc import scan
+    from classify_scanned.doc import scan
 
     return scan(SAMPLE.input_bytes)
 
 
 def _cli(args, stdin=None):
     return subprocess.run(
-        [sys.executable, "-m", "qc_scanner.cmd.cli", *args],
+        [sys.executable, "-m", "classify_scanned.cmd.cli", *args],
         input=stdin,
         capture_output=True,
     )
@@ -62,7 +62,7 @@ def test_cli_pipe_matches_library(lib_output):
 
 
 def test_server_matches_library(lib_output):
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     resp = client.post("/", files=_file(SAMPLE))
@@ -76,7 +76,7 @@ def test_rembg_runs_once_per_scan(monkeypatch):
     Chặng này chiếm ~90% thời gian, nên gọi thừa một lần là chậm gấp đôi —
     và lần thứ hai chạy trên ảnh đã tách nền nên còn cho biên khác.
     """
-    import qc_scanner.doc as doc
+    import classify_scanned.doc as doc
 
     calls = []
     real = doc.segment_mask
@@ -98,7 +98,7 @@ def test_image_is_decoded_only_once(monkeypatch):
     """
     import cv2
 
-    import qc_scanner.doc as doc
+    import classify_scanned.doc as doc
 
     calls = []
     real = cv2.imdecode
@@ -113,7 +113,7 @@ def test_image_is_decoded_only_once(monkeypatch):
 
 
 def test_cli_exit_code_follows_verdict(tmp_path):
-    """Script gọi qc-scanner phân biệt được pass/warn/fail bằng `$?`."""
+    """Script gọi classify-scanned phân biệt được pass/warn/fail bằng `$?`."""
     import json
 
     out = tmp_path / "out.png"
@@ -136,7 +136,7 @@ def test_cli_report_to_file(tmp_path):
 
 
 def test_server_exposes_verdict_headers():
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     resp = client.post("/", files=_file(SAMPLE))
@@ -148,7 +148,7 @@ def test_server_exposes_verdict_headers():
 def test_server_json_format_returns_full_result():
     import base64
 
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     resp = client.post("/?format=json", files=_file(SAMPLE))
@@ -160,7 +160,7 @@ def test_server_json_format_returns_full_result():
 
 def test_server_selects_hint_tier_per_request():
     """QC-13: hệ gọi vào khai báo vai người đọc, cùng một ảnh ra hai lời khuyên."""
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     hints = {}
@@ -174,7 +174,7 @@ def test_server_selects_hint_tier_per_request():
 
 
 def test_server_rejects_unknown_audience():
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     resp = client.post("/?audience=nobody", files=_file(SAMPLE))
@@ -183,7 +183,7 @@ def test_server_rejects_unknown_audience():
 
 def test_server_accepts_pre_cropped_flag():
     """QC-14: phía gọi khai báo ảnh đã cắt sẵn thì mã về biên phải biến mất."""
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     client = _client(app)
     codes = {}
@@ -196,13 +196,13 @@ def test_server_accepts_pre_cropped_flag():
 
 def test_batch_defaults_to_the_operator_tier():
     """Chạy lô = xử lý kho ảnh; ở đó không ai chụp lại được nữa [EX-3]."""
-    from qc_scanner.cmd.batch import build_parser
+    from classify_scanned.cmd.batch import build_parser
 
     assert build_parser().parse_args(["in_dir"]).audience == "operator"
 
 
 def test_library_returns_scan_result():
-    from qc_scanner import scan_qc
+    from classify_scanned import scan_qc
 
     result = scan_qc(SAMPLE.input_bytes)
     assert result.verdict in {"pass", "warn", "fail"}
@@ -215,8 +215,8 @@ def test_batch_parallel_matches_serial(tmp_path):
     Chạy song song mà báo cáo xáo trộn thì không so được hai lần chạy với nhau, và
     CSV mất giá trị đúng ở chỗ nó có ích nhất: đối chiếu trước/sau khi đổi ngưỡng.
     """
-    from qc_scanner.cmd.batch import run
-    from qc_scanner.config import Config
+    from classify_scanned.cmd.batch import run
+    from classify_scanned.config import Config
 
     src = tmp_path / "in"
     src.mkdir()

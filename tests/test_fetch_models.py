@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from qc_scanner import docaligner as da
+from classify_scanned import docaligner as da
 
 PAYLOAD = b"fake-onnx-bytes"
 

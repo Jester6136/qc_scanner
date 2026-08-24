@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import pytest
 
-from qc_scanner.smartdoc import build, read_ground_truth
+from classify_scanned.smartdoc import build, read_ground_truth
 
 _XML = """<?xml version='1.0' encoding='utf-8'?>
 <ground_truth version="0.2">
@@ -114,7 +114,7 @@ def test_videos_of_the_same_name_in_different_backgrounds_keep_their_own_labels(
         (folder / "datasheet001.gt.xml").write_text(text, encoding="utf-8")
     gt_file.unlink()
 
-    from qc_scanner.smartdoc import _ground_truth_for
+    from classify_scanned.smartdoc import _ground_truth_for
 
     root = tmp_path / "testDataset"
     first = _ground_truth_for(root / "background01" / "datasheet001.avi", root)

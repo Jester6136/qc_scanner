@@ -1,4 +1,4 @@
-# docker compose up --build -d   →   API sẵn sàng ở http://<IP-máy-này>:5000
+# docker compose up --build -d   →   API sẵn sàng ở http://<IP-máy-này>:5051
 #
 # Máy có GPU NVIDIA → dùng file đè, xem docker-compose.gpu.yml:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
@@ -7,21 +7,21 @@
 #
 # ⚠️ Bản CPU đã build và chạy được trên máy server. Bản GPU thì CHƯA chạy thử lần nào
 # (máy phát triển là macOS). Sau khi `up`, kiểm bằng:
-#     curl -s http://localhost:5000/healthz
+#     curl -s http://localhost:5051/healthz
 # `providers` phải có `CUDAExecutionProvider`; chỉ thấy `CPUExecutionProvider` nghĩa
 # là onnxruntime đã âm thầm tụt về CPU — sai build, không phải chạy chậm.
 
 services:
-  qc-scanner:
+  classify-scanned:
     # Dạng dài (`context:`) chứ không phải `build: .` — để docker-compose.gpu.yml đè
     # `dockerfile:` lên được mà không phụ thuộc vào cách Compose chuẩn hoá chuỗi.
     build:
       context: .
-    image: qc-scanner:local
-    container_name: qc-scanner
+    image: classify-scanned:local
+    container_name: classify-scanned
 
     ports:
-      # Mở ra LAN: service dựng ở máy A, ứng dụng gọi từ máy B → http://<IP-máy-A>:5000
+      # Mở ra LAN: service dựng ở máy A, ứng dụng gọi từ máy B → http://<IP-máy-A>:5051
       #
       # Cổng này mở trên MỌI giao diện mạng của máy A. Server có xác thực API key
       # (xem QC_SCANNER_API_KEYS bên dưới), nhưng key đi qua HTTP thuần là gửi mật
@@ -29,26 +29,26 @@ services:
       # được người nghe lén trong LAN. Muốn kín thật thì đặt reverse proxy có TLS.
       # Máy A có IP public hoặc bị NAT port-forward thì vẫn phải chặn ở firewall.
       #
-      # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5000:5000".
+      # Chỉ dùng trên chính máy A thì đổi lại thành "127.0.0.1:5051:5000".
       #
       # ⚠️ Trên macOS, cổng 5000 bị **AirPlay Receiver** chiếm sẵn. Docker vẫn bind
       # được và container vẫn `healthy` (healthcheck chạy BÊN TRONG container), nhưng
       # gọi từ ngoài vào sẽ nhận `403 Forbidden` kèm header `Server: AirTunes/...`.
-      # Cách nhận ra: `curl -sI http://localhost:5000/healthz | grep Server`.
+      # Cách nhận ra: `curl -sI http://localhost:5051/healthz | grep Server`.
       # Cách chữa: đặt cổng khác, ví dụ `QC_SCANNER_PORT=8000 docker compose up -d`
       # (hoặc tắt AirPlay Receiver trong System Settings → General → AirDrop & Handoff).
-      - "${QC_SCANNER_PORT:-5000}:5000"
+      - "${QC_SCANNER_PORT:-5051}:5000"
 
     environment:
       # ── BẮT BUỘC: không có key thì server KHÔNG khởi động ──────────────────
-      # Sinh key:  docker compose run --rm qc-scanner qc-scanner-apikey app-web
+      # Sinh key:  docker compose run --rm classify-scanned classify-scanned-apikey app-web
       # Nhiều client thì nhiều key, ngăn cách bằng dấu phẩy — thu hồi được từng
       # cái, và log biết ai đang gọi:
       #     QC_SCANNER_API_KEYS: "app-web:qcs-…,batch:qcs-…"
       #
       # ⚠️ ĐỪNG ghi key thẳng vào file này rồi commit. Dùng biến của máy chạy:
       #     QC_SCANNER_API_KEYS="app-web:qcs-…" docker compose up -d
-      QC_SCANNER_API_KEYS: "${QC_SCANNER_API_KEYS:?chưa đặt API key — chạy qc-scanner-apikey để sinh}"
+      QC_SCANNER_API_KEYS: "${QC_SCANNER_API_KEYS:?chưa đặt API key — chạy classify-scanned-apikey để sinh}"
       #
       # Chạy KHÔNG xác thực (chỉ khi cổng đã bị chặn ở firewall): bỏ dòng trên và
       # đặt QC_SCANNER_AUTH=off. Phải khai báo tường minh — không có đường vô tình.
@@ -58,7 +58,7 @@ services:
       U2NET_HOME: /opt/u2net
       DOCALIGNER_HOME: /opt/docaligner
       # Mọi ngưỡng QC đều override được theo dạng QC_SCANNER_<TÊN_TRƯỜNG>;
-      # danh sách đầy đủ nằm trong src/qc_scanner/config.py.
+      # danh sách đầy đủ nằm trong src/classify_scanned/config.py.
       QC_SCANNER_WORK_HEIGHT: "500"
       # Luồng xử lý kho ảnh thì đặt "operator" để hint không bảo người ta chụp lại
       # (QC-13). Mặc định "capturer" hợp với luồng realtime.

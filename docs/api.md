@@ -1,4 +1,4 @@
-# Hợp đồng API — qc-scanner-server
+# Hợp đồng API — classify-scanned-server
 
 > Đây là **bề mặt bàn giao chính** ([EX-13](need_exchange.md)): khách nhận một Docker image,
 > bên trong chạy sẵn HTTP service này để hệ khác gọi vào.
@@ -16,7 +16,7 @@
 
 ```bash
 QC_SCANNER_API_KEYS="app-web:qcs-…" docker compose up --build -d   # cách bàn giao cho khách
-qc-scanner-server -a 0.0.0.0 -p 5000                               # chạy trực tiếp
+classify-scanned-server -a 0.0.0.0 -p 5000                               # chạy trực tiếp
 ```
 
 `docker-compose.yml` mở cổng `5000` trên mọi giao diện mạng (service ở máy A, ứng dụng gọi từ
@@ -30,7 +30,7 @@ Internet:
 | DocAligner (~83 MB) | detector chính — hồi quy thẳng 4 góc | `DOCALIGNER_HOME` |
 | rembg / U²-Net (~176 MB) | đường lui khi detector chính trả rỗng | `U2NET_HOME` |
 
-Chạy ngoài Docker thì tải một lần: `qc-scanner-fetch-models --head heatmap`. Thiếu file này thì
+Chạy ngoài Docker thì tải một lần: `classify-scanned-fetch-models --head heatmap`. Thiếu file này thì
 mọi request trả `MODEL_MISSING` — đó là lỗi **cài đặt máy chủ**, không phải lỗi ảnh.
 
 Model được nạp sẵn lúc khởi động (`--no-warmup` để tắt) nên request đầu tiên không phải gánh
@@ -53,7 +53,7 @@ curl -s http://<IP>:5000/ \
 **Sinh key** — in ra dòng cấu hình dán được ngay:
 
 ```bash
-qc-scanner-apikey app-web
+classify-scanned-apikey app-web
 # QC_SCANNER_API_KEYS="app-web:qcs-9f3a…"
 ```
 
@@ -105,6 +105,8 @@ file, không từ tên file hay `Content-Type`.
 | `format` | `json` · `pdf` | *(không có)* | `json` = phán quyết đầy đủ; `pdf` = một file PDF chứa mọi trang |
 | `audience` | `capturer` · `operator` | `capturer` | Hint viết cho ai ([QC-13](features_issues.md#qc-two-tier-hint)) |
 | `pre_cropped` | `1` · `true` · `yes` | tắt | Ảnh **đã cắt sát từ trước** → bỏ qua kiểm tra về biên ([QC-14](features_issues.md#qc-precropped)) |
+
+Chế độ nguồn được cấu hình ở server bằng `QC_SCANNER_SOURCE_MODE=auto|photo|scan`. Dùng `auto` (mặc định) khi kho không biết file là ảnh chụp hay scan; dùng `photo` để bắt buộc tìm/crop tài liệu trong ảnh; hệ thống quyết định theo bằng chứng trên từng trang, không theo đuôi file. Chỉ dùng `scan` khi nguồn xác nhận chắc chắn ảnh đã là trang scan/full-frame. PDF nhiều trang vẫn được đánh giá độc lập theo từng trang.
 
 Giới hạn kích thước upload: **32 MB** (vượt → `413`).
 
@@ -159,6 +161,12 @@ Dùng dạng này khi chỉ cần ảnh. Cần lý do đầy đủ thì dùng `?
     }
   ],
   "metrics": { "quad_area_ratio": 0.6724, "blur_score": 48.4, ... },
+  "scores": {
+    "original": { "score": 86.4, "brightness": 249.0, "contrast": 78.2, "sharpness": 42.1 },
+    "processed": { "score": 91.7, "brightness": 247.0, "contrast": 84.0, "sharpness": 48.5 },
+    "confidence": { "detector_score": 93.0, "overall_score": 93.0, "fallback_used": "none" },
+    "composite": { "composite": 82.1, "breakdown": { "blur": 70.0, "brightness": 98.0, "resolution": 100.0, "glare": 90.0, "text_skew": 100.0, "geometry": 80.0 }, "penalties": [], "weights": { "blur": 0.3, "brightness": 0.2, "resolution": 0.2, "glare": 0.15, "text_skew": 0.1, "geometry": 0.05 } }
+  },
   "corners": [[208.9, 114.7], [884.7, 73.7], [1138.7, 1908.7], [94.2, 1957.9]],
   "image": "iVBORw0KGgo..."           // PNG mã hoá base64
 }
@@ -237,6 +245,11 @@ Mỗi phần tử `pages[]` có đúng hình dạng của phản hồi `?format=
 
 **`verdict` gộp là trang tệ nhất.** Một bộ hồ sơ có 1 trang mờ không đọc được thì chưa dùng
 được, dù 11 trang kia hoàn hảo. Cần xử lý từng trang riêng thì đọc `pages[].verdict`.
+
+`DocumentResult.scores` là điểm trung bình của các trang; `pages[].scores` giữ điểm chi tiết
+của từng trang. `scores.original` là điểm chất lượng ảnh đầu vào và là chỉ số chính để phân
+loại nguồn; `scores.composite` tổng hợp metrics QC, hình học và penalty từ reason codes.
+Các hệ thống gọi API không được tự tính lại các điểm này.
 
 Phân biệt hai dạng phản hồi bằng `page_count` (hoặc bằng `Content-Type`: `image/png` với một
 trang, `application/json` với nhiều trang).
@@ -412,7 +425,7 @@ năng lực máy server, và mất im lặng.
 Muốn biết máy đích chịu được bao nhiêu, **đo chứ đừng suy**:
 
 ```bash
-docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
+docker exec classify-scanned classify-scanned-bench --url http://127.0.0.1:5000
 ```
 
 Nó in luôn bảng quy đổi ảnh/s → CCU. Về câu hỏi 700 CCU và dynamic batching, xem
@@ -449,8 +462,8 @@ Nhóm theo hành động của phía gọi:
 | Lỗi tích hợp / đầu vào | `MISSING_FILE` `FILE_EMPTY` `DECODE_FAILED` `PDF_DECODE_FAILED` `PDF_NO_PAGES` `PDF_TOO_MANY_PAGES` `PDF_MULTIPAGE` | Sửa phía gọi, đừng retry |
 | Xác thực | `UNAUTHORIZED` | Sửa key phía gọi. **Đừng retry** cùng key đó, và đừng đánh dấu ảnh là hỏng |
 | Sự cố / quá tải máy chủ | `SERVER_BUSY` `INFERENCE_FAILED` `MODEL_MISSING` | **Retry** — ảnh không có vấn đề gì (`MODEL_MISSING` phải sửa image trước) |
-| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `CONTENT_OUTSIDE_CROP` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
-| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_MASK_FALLBACK` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` `FULL_FRAME_ASSUMED` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
+| Ảnh không dùng được (`fail`) | `NO_CROP_DETECTED` `CONTENT_CLIPPED` `QUAD_NOT_FOUND` `SUBJECT_NOT_FOUND` `TOO_SMALL` `NOT_CONVEX` `FALLBACK_ORIGINAL` `LOW_RESOLUTION` `BLURRY` `TEXT_NOT_LEVEL` | Chụp lại, hoặc đưa người soi |
+| Dùng được nhưng có rủi ro (`warn`) | `CLIPPED_EDGE` `CONTENT_OUTSIDE_CROP` `EXTREME_SKEW` `GLARE` `TOO_DARK` `MULTIPLE_DOCUMENTS` `RECOVERED_BY_MASK_FALLBACK` `RECOVERED_BY_EDGE_FALLBACK` `DETECTOR_DISAGREEMENT` `FULL_FRAME_ASSUMED` | Vào hàng chờ người soi ([EX-8](need_exchange.md)) |
 | **Đã ngừng phát** | `SUBJECT_FILLS_FRAME` | Không xuất hiện nữa từ QC-15. Mã vẫn được giữ vì `code` là ổn định vĩnh viễn và log cũ còn tham chiếu — đừng viết nhánh xử lý mới cho nó |
 
 ---
@@ -523,7 +536,7 @@ của máy chạy, nên khác nhau giữa các lần triển khai — **đừng 
 | 32 | 8.43 | 2.55s |
 
 Gửi 32 thay vì 16 mua thêm 9.6% thông lượng và trả bằng **46% độ trễ** — món lỗ cho mọi người
-đang chờ. `qc-scanner-bench --url …` in thẳng mức nên khuyên cho từng máy.
+đang chờ. `classify-scanned-bench --url …` in thẳng mức nên khuyên cho từng máy.
 
 ### Vượt quá thì sao
 
@@ -590,7 +603,7 @@ container; không có state nào phải đồng bộ.
 - **Mỗi request một ảnh.** Không có khái niệm "hồ sơ nhiều trang" — một giấy chứng nhận chụp
   hai mặt là **hai** request độc lập. Việc ghép và kiểm đủ mặt thuộc hệ gọi, xem
   [EX-15](need_exchange.md#ex-multipage).
-- **Không có endpoint xử lý lô.** Chạy lô dùng CLI `qc-scanner-batch`, không qua HTTP.
+- **Không có endpoint xử lý lô.** Chạy lô dùng CLI `classify-scanned-batch`, không qua HTTP.
 - **Docker image chưa build lại sau khi thêm DocAligner + xác thực.** Bước tải mô hình trong
   `Dockerfile` chưa chạy thử lần nào. Còn lại của [OPS-3](features_issues.md#ops-docker-unverified):
   chưa kiểm gọi từ máy khác qua LAN, chưa kiểm khi ngắt mạng, chưa build trong CI.

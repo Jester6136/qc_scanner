@@ -1,14 +1,14 @@
-# Sổ tính năng & issue — qc_scanner
+# Sổ tính năng & issue — classify_scanned
 
 > **File này ghi việc CHƯA làm và quyết định CÒN HIỆU LỰC.** Việc đã làm xong không ở đây — nó
 > ở lịch sử commit, nơi có kèm diff. Chép lại vào tài liệu chỉ tạo thêm một bản sao để trôi.
 >
 > Mục đã đóng giữ đúng **một dòng** trong §C vì có chỗ khác trỏ tới. Lý do đằng sau từng ngưỡng
-> nằm trong docstring của [`config.py`](../src/qc_scanner/config.py), cạnh chính con số đó.
+> nằm trong docstring của [`config.py`](../src/classify_scanned/config.py), cạnh chính con số đó.
 >
 > Ưu tiên: **P0** chặn/đắt nghiêm trọng · **P1** đáng làm sớm · **P2** cải thiện · **P3** nice-to-have.
 >
-> Bối cảnh: mục tiêu dự án là biến qc_scanner thành **cổng QC** — không crop được thì phải nói rõ
+> Bối cảnh: mục tiêu dự án là biến classify_scanned thành **cổng QC** — không crop được thì phải nói rõ
 > nguyên nhân + hướng xử lý. Xem [overall_roadmap.md §1](overall_roadmap.md).
 
 ---
@@ -22,12 +22,12 @@
 
 **Đã hết chặn một phần**: [S-3 đã đóng](#s-docaligner) — DocAligner là detector mặc định, và
 việc đó quyết được là nhờ **tập vàng công khai** [SmartDoc 2015](https://zenodo.org/records/1230218)
-(CC-BY-4.0, 926 ảnh, 5 nền, nhãn 4 góc). Bộ chuyển: `qc-scanner-smartdoc`. Nghĩa là QUAL-3/QUAL-4
+(CC-BY-4.0, 926 ảnh, 5 nền, nhãn 4 góc). Bộ chuyển: `classify-scanned-smartdoc`. Nghĩa là QUAL-3/QUAL-4
 không còn phải chờ khách nữa cho phần **hình học**; chúng vẫn chờ [EX-2](need_exchange.md) cho
 phần **verdict**, vì SmartDoc không có nhãn verdict và ngưỡng của nó lệch miền (832/836 ảnh bị
 `TOO_SMALL` do khung video để xa).
 
-Mọi ngưỡng trong [`config.py`](../src/qc_scanner/config.py) vẫn là ước đoán, trừ 11 cái đã chốt
+Mọi ngưỡng trong [`config.py`](../src/classify_scanned/config.py) vẫn là ước đoán, trừ 11 cái đã chốt
 bằng số đo: `max_border_ink_ratio` · `no_crop_area_ratio` · `no_crop_min_confidence` ·
 `min_long_side_px` · `min_blur_score` · `max_text_skew_deg` · `edge_grow_percentile` ·
 `no_crop_corner_outside_px` · `border_paper_min_ratio` · `border_paper_percentile` ·
@@ -68,12 +68,12 @@ header đó là thứ chỉ ra thủ phạm.
 nó (link hỏng) và `setup.py` không khai trường `license` nào.
 
 Đây không phải chuyện hình thức: [EX-13](need_exchange.md) chốt bàn giao cho khách là **Docker
-image**, tức có phân phối thật. Và giấy phép của qc_scanner không phải thứ duy nhất phải nói rõ
+image**, tức có phân phối thật. Và giấy phép của classify_scanned không phải thứ duy nhất phải nói rõ
 — **model đi kèm có điều khoản riêng**: U²-Net (mặc định hiện tại) khác BiRefNet, DocAligner là
 Apache-2.0, `pypdfium2` là Apache-2.0/BSD. Image nướng sẵn model vào trong, nên điều khoản của
 model đi theo image tới tay khách.
 
-**Cần người quyết định, không phải người viết code**: chốt giấy phép cho qc_scanner, thêm
+**Cần người quyết định, không phải người viết code**: chốt giấy phép cho classify_scanned, thêm
 `LICENSE.txt`, khai `license` trong `setup.py`, và liệt kê giấy phép của model + thư viện đi
 kèm image.
 
@@ -81,7 +81,7 @@ kèm image.
 
 ### 📦 PKG-6 · P0 · Hai giấy phép model đang bị bỏ ngỏ {#pkg-model-licence}
 
-**`isnet-general-use`** đang được [`config.py`](../src/qc_scanner/config.py) *khuyên dùng* trong
+**`isnet-general-use`** đang được [`config.py`](../src/classify_scanned/config.py) *khuyên dùng* trong
 docstring của `rembg_model`. Code của nó Apache-2.0, nhưng **dữ liệu huấn luyện DIS5K buộc người
 dùng thương mại ký thoả thuận riêng**. Ta đang chỉ khách đi vào chỗ đó.
 
@@ -180,7 +180,7 @@ sai được. Ca thật của khách (`132578.pdf`): trang bìa sổ đỏ bị 
 nó và bị xoá ngay tại đây.
 
 Điều trớ trêu: ghi chú của chính hàm `_apply_pre_cropped` đã dự báo đúng chuyện này — *"rủi ro
-còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó qc_scanner mất khả năng bắt crop hụt. Đó là
+còn lại là gắn cờ nhầm cho một ảnh chụp: khi đó classify_scanned mất khả năng bắt crop hụt. Đó là
 đánh đổi thuộc về phía gọi, và vì thế nó phải **khai báo** chứ không được đoán."* Đường PDF
 đang đoán, và đoán theo định dạng file.
 
@@ -378,7 +378,7 @@ trong docstring `Config.detector`; điều quyết định là cột `background
 | `MULTIPLE_DOCUMENTS` suýt **tắt lặng lẽ** — nó đếm ứng viên của detector, mà mô hình hồi quy góc chỉ trả một tứ giác | đếm contour trong mask, độc lập detector |
 | thang confidence không so được (rembg 0.6/0.9 rời rạc; DocAligner số thực, trung vị 0.841) | ngưỡng theo từng detector |
 | không có contour → **QC-17 không chạy** | chưa xử lý — xem [QC-17b](#qc-padding-floor) |
-| mô hình 83MB nằm trên Google Drive | nướng vào image lúc build (`qc-scanner-fetch-models`), mã `MODEL_MISSING` nếu thiếu |
+| mô hình 83MB nằm trên Google Drive | nướng vào image lúc build (`classify-scanned-fetch-models`), mã `MODEL_MISSING` nếu thiếu |
 
 **Hồi quy còn lại**: 1/30 ảnh (sổ đỏ) DocAligner nắn chéo trong khi rembg làm đúng. Cổng QC
 **bắt được** (`fail`), không lọt. Đổi lấy 11 ảnh tốt lên.
@@ -453,7 +453,7 @@ Nhưng chặng resample cuối khác đi làm metric trôi trung vị 0.14%, và
 nằm cách ngưỡng 0.02% nên lật thành false fail — xem [QUAL-4](#qual-knife-edge). 43ms không đáng
 đổi lấy một ảnh tốt bị loại.
 
-Bật bằng `QC_SCANNER_SEGMENT_AT_MODEL_SIZE=1` **sau khi** đã chạy `qc-scanner-batch` trên ảnh
+Bật bằng `QC_SCANNER_SEGMENT_AT_MODEL_SIZE=1` **sau khi** đã chạy `classify-scanned-batch` trên ảnh
 thật của mình và đối chiếu verdict trước/sau.
 
 ### 🔬 S-1 · Đổi model nền: đã đo, **chưa đủ căn cứ đổi** {#s-model-swap}
@@ -504,7 +504,7 @@ bằng một tứ giác thì bắt buộc kéo theo nền ở bốn góc lượn
 Xoay một góc khác bội số 90° buộc **nội suy lại mọi điểm ảnh**. [FADGI] mức 4 sao vì thế **cấm**
 de-skew bằng phần mềm với bản gốc lưu trữ.
 
-Ta vẫn bật mặc định vì đầu ra của qc_scanner đi vào **OCR**, không vào kho lưu trữ ([EX-13]): ở
+Ta vẫn bật mặc định vì đầu ra của classify_scanned đi vào **OCR**, không vào kho lưu trữ ([EX-13]): ở
 đó chữ nằm ngang đáng giá hơn phần độ phân giải thực bị mất. Đo được: 18/38 ảnh lệch > 0.5° còn
 2, tốn 1.0ms.
 
@@ -522,7 +522,7 @@ Chi tiết ở commit tương ứng. Giữ ở đây vì có chỗ khác trỏ t
 
 | Mã | Việc | |
 |---|---|---|
-| VẤN ĐỀ GỐC | qc_scanner không nói được **vì sao**; nay `scan_qc()` trả verdict + reasons + metrics | {#root-no-qc} |
+| VẤN ĐỀ GỐC | classify_scanned không nói được **vì sao**; nay `scan_qc()` trả verdict + reasons + metrics | {#root-no-qc} |
 | BUG-2 | `scan()` nuốt mọi exception rồi trả `None`; nay `ScanError` mang mã lý do | {#bug-swallow} |
 | SEC-1 | `GET /?url=` đọc được file nội bộ và metadata cloud — bỏ hẳn, `GET /` trả `405` | {#sec-ssrf} |
 | QC-1 | Kiểu `ScanResult`; bất biến `verdict == "pass"` ⟺ `reasons == []` | {#qc-contract} |
@@ -574,7 +574,7 @@ số đúng chỉ lộ ra khi đo thông lượng — không phải khi đếm m
 **Một con số đúng bị chép ra nhiều bản thì các bản sẽ trôi khỏi nhau.** `MAX_CONCURRENCY: "2"`
 (số của máy dev 10 nhân) lọt vào `docker-compose.yml` làm máy 64 nhân mất ~64% năng lực trong im
 lặng; rồi `bench.py` giữ thêm một bản sao với default `"2"` riêng, nên công cụ đo nói dối về
-đúng thứ nó đang đo. Nay cả hai van sống ở [`limits.py`](../src/qc_scanner/limits.py), có test
+đúng thứ nó đang đo. Nay cả hai van sống ở [`limits.py`](../src/classify_scanned/limits.py), có test
 chặn việc chép lại.
 
 ---
@@ -599,4 +599,4 @@ chặn việc chép lại.
   [algorithm.md §7](algorithm.md#ma-ly-do) kèm ca test. Có test khoá
   danh mục đó cho khớp với `REASONS`.
 - Chốt một **ngưỡng**: ghi số đo vào docstring của trường đó trong
-  [`config.py`](../src/qc_scanner/config.py), **cạnh chính con số** — không phải vào đây.
+  [`config.py`](../src/classify_scanned/config.py), **cạnh chính con số** — không phải vào đây.

@@ -6,7 +6,7 @@ không ai thêm được mã lý do thiếu hướng xử lý mà bộ test vẫ
 
 import pytest
 
-from qc_scanner.qc import REASONS, Metrics, Reason, ScanResult, verdict_of
+from classify_scanned.qc import REASONS, Metrics, Reason, ScanResult, verdict_of
 
 AUDIENCES = {"capturer", "operator", "system"}
 SEVERITIES = {"warn", "fail"}
@@ -69,7 +69,7 @@ def test_both_hints_travel_with_the_result():
 
 def test_system_codes_fall_back_to_the_operator_tier():
     """Mã hệ thống không có tầng riêng — người vận hành mới là người đọc log."""
-    from qc_scanner.qc import ScanError
+    from classify_scanned.qc import ScanError
 
     err = ScanError("FILE_EMPTY")
     assert err.reason.hint == REASONS["FILE_EMPTY"].hints["operator"]
@@ -127,7 +127,7 @@ def test_every_metric_reaches_the_csv_report():
     """
     import dataclasses
 
-    from qc_scanner.eval import CSV_FIELDS
+    from classify_scanned.eval import CSV_FIELDS
 
     missing = {f.name for f in dataclasses.fields(Metrics)} - set(CSV_FIELDS)
     assert not missing, f"metric không có cột trong báo cáo: {sorted(missing)}"

@@ -30,7 +30,7 @@ WORKDIR /app
 # * Base image sau này nâng lên 24.04 thì python hệ thống có dấu PEP 668
 #   (externally-managed) và `pip install` bị chặn. Venv miễn nhiễm cả hai.
 #
-# Đặt venv lên đầu PATH thì `qc-scanner-server`, `qc-scanner-bench` và `python3`
+# Đặt venv lên đầu PATH thì `classify-scanned-server`, `classify-scanned-bench` và `python3`
 # đều trỏ đúng vào đó, kể cả trong healthcheck và `docker exec`.
 RUN python3 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
@@ -79,7 +79,7 @@ sys.exit(0 if found else 1)"
 
 # Nướng model vào image — bước này cần mạng lúc BUILD, không cần lúc chạy.
 ENV U2NET_HOME=/opt/u2net
-RUN python -c "from qc_scanner.rembg_session import warmup; warmup()"
+RUN python -c "from classify_scanned.rembg_session import warmup; warmup()"
 
 EXPOSE 5000
 ENV QC_SCANNER_WORK_HEIGHT=500
@@ -90,4 +90,4 @@ ENV QC_SCANNER_ONNX_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider
 # kia. Con số 4 là ước đoán, chưa đo; chỉnh lại sau khi đo trên máy thật.
 ENV QC_SCANNER_MAX_CONCURRENCY=4
 
-CMD ["qc-scanner-server", "-a", "0.0.0.0", "-p", "5000"]
+CMD ["classify-scanned-server", "-a", "0.0.0.0", "-p", "5000"]

@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import __version__, auth
 from ..config import Config
-from ..doc import scan_document
+from ..doc import scan_document, score_pdf
 from ..limits import MAX_CONCURRENCY, MAX_IN_FLIGHT, default_concurrency
 from ..pdf import build_pdf
 from ..qc import ScanError
@@ -71,7 +71,7 @@ _scan_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 _in_flight = 0
 
 app = FastAPI(
-    title="qc-scanner",
+    title="classify-scanned",
     version=__version__,
     summary="Nắn phẳng tài liệu và chấm điểm chất lượng.",
     description=(
@@ -203,7 +203,7 @@ async def require_api_key(request: Request, call_next):
             {"error": ScanError("UNAUTHORIZED").to_dict()},
             status_code=401,
             # RFC 6750: 401 phải nói bằng cách nào thì xác thực được.
-            headers={"WWW-Authenticate": 'Bearer realm="qc-scanner"'},
+            headers={"WWW-Authenticate": 'Bearer realm="classify-scanned"'},
         )
 
     # Tên client, KHÔNG PHẢI key. Log là thứ được chép đi khắp nơi — đưa key vào đó
@@ -261,6 +261,17 @@ def scan_endpoint(
         overrides["pre_cropped"] = True
 
     content = file.file.read()  # `.file`, không `await`: đây là endpoint đồng bộ
+
+    # Batch callers that only need PDF quality must not pay for detection, mask,
+    # perspective correction, or PNG output. This path returns compact JSON and
+    # is deliberately opt-in so the existing OCR-facing contract is unchanged.
+    if params.get("score_only", "").lower() in {"1", "true", "yes"}:
+        try:
+            result = score_pdf(content, config=Config.from_env(**overrides))
+        except ScanError as err:
+            return JSONResponse({"error": err.to_dict()}, status_code=400)
+        status = 422 if result["verdict"] == "fail" else 200
+        return JSONResponse(result, status_code=status)
     try:
         with _scan_slots:
             document = scan_document(content, config=Config.from_env(**overrides))
@@ -435,7 +446,7 @@ def main(argv=None):
         # phân biệt "GPU đang chạy" với "tưởng là GPU đang chạy".
         providers = active_providers(cfg.rembg_model, cfg.onnx_providers)
         print(
-            f"qc-scanner {__version__} · model={cfg.rembg_model} · "
+            f"classify-scanned {__version__} · model={cfg.rembg_model} · "
             f"providers={providers} · max_concurrency={MAX_CONCURRENCY} · "
             f"auth={'on' if AUTH['enabled'] else 'OFF'}",
             flush=True,

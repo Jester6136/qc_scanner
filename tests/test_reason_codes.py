@@ -9,9 +9,9 @@ nhiều so với việc nó được cho qua.
 import pytest
 
 import synthetic as S
-from qc_scanner.config import Config
-from qc_scanner.doc import scan_qc
-from qc_scanner.qc import ScanError
+from classify_scanned.config import Config
+from classify_scanned.doc import scan_qc
+from classify_scanned.qc import ScanError
 
 BAD_CASES = [
     "tiny_document",
@@ -149,7 +149,7 @@ def test_filling_the_frame_is_not_a_defect_by_itself():
 
 def test_subject_fills_frame_is_retired_but_still_decodable():
     """Giữ định nghĩa để log/CSV cũ tra được, dù không còn phát nữa."""
-    from qc_scanner.qc import REASONS
+    from classify_scanned.qc import REASONS
 
     assert "SUBJECT_FILLS_FRAME" in REASONS
 
@@ -198,8 +198,8 @@ def _geometry_codes(corners, shape=(500, 400), config=None, confidence=0.6):
     """
     import numpy as np
 
-    from qc_scanner.doc import _geometry_reasons
-    from qc_scanner.qc import Metrics
+    from classify_scanned.doc import _geometry_reasons
+    from classify_scanned.qc import Metrics
 
     work = np.zeros((*shape, 3), dtype="uint8")
     metrics = Metrics(detector_confidence=confidence)
@@ -250,14 +250,14 @@ def test_large_but_properly_cropped_quad_is_not_no_crop():
 
 
 def test_no_crop_is_fail_severity():
-    from qc_scanner.qc import REASONS
+    from classify_scanned.qc import REASONS
 
     assert REASONS["NO_CROP_DETECTED"].severity == "fail"
 
 
 def test_edge_fallback_is_never_silent():
     """Đường lui được phép cứu ảnh, nhưng không được giấu việc đã phải dùng nó."""
-    from qc_scanner.qc import REASONS
+    from classify_scanned.qc import REASONS
 
     assert REASONS["RECOVERED_BY_EDGE_FALLBACK"].severity == "warn"
     assert REASONS["FALLBACK_ORIGINAL"].severity == "fail"
@@ -272,7 +272,7 @@ def test_every_reason_code_appears_in_the_published_catalogue():
     """
     import pathlib
 
-    from qc_scanner.qc import REASONS
+    from classify_scanned.qc import REASONS
 
     root = pathlib.Path(__file__).resolve().parent.parent
 

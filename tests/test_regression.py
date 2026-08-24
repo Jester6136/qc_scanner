@@ -172,7 +172,7 @@ def test_segment_at_model_size_feeds_the_model_the_same_tensor():
     import numpy as np
     from PIL import Image
 
-    from qc_scanner.rembg_session import _model_input_size, get_session
+    from classify_scanned.rembg_session import _model_input_size, get_session
 
     session = get_session("u2net")
     size = _model_input_size(session)
@@ -195,6 +195,6 @@ def test_segment_at_model_size_feeds_the_model_the_same_tensor():
 
 def test_speed_flag_is_off_by_default():
     """Cờ này đánh đổi 43ms lấy một false fail đã đo được — không bật lén."""
-    from qc_scanner.config import Config
+    from classify_scanned.config import Config
 
     assert Config().segment_at_model_size is False

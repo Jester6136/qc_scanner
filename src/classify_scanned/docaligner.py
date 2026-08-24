@@ -50,7 +50,7 @@ MODELS = {
 
 #: Nơi chứa mô hình. Đặt tên theo lối `U2NET_HOME` của rembg cho nhất quán.
 HOME_ENV = "DOCALIGNER_HOME"
-DEFAULT_HOME = "~/.cache/qc-scanner/docaligner"
+DEFAULT_HOME = "~/.cache/classify-scanned/docaligner"
 
 
 def model_home():
@@ -131,7 +131,7 @@ INPUT_SIZE = 256
 
 
 def main(argv=None):
-    """`qc-scanner-fetch-models` — tải mô hình về máy này.
+    """`classify-scanned-fetch-models` — tải mô hình về máy này.
 
     Bước BUILD, không phải bước chạy. Dockerfile gọi nó để nướng mô hình vào image.
     """

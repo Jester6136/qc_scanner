@@ -20,11 +20,11 @@ import pytest
 from PIL import Image
 
 from conftest import EXAMPLES
-from qc_scanner import geometry as geo
-from qc_scanner.config import Config
-from qc_scanner.doc import scan_document, scan_qc
-from qc_scanner.pdf import is_pdf, page_images
-from qc_scanner.qc import ScanError
+from classify_scanned import geometry as geo
+from classify_scanned.config import Config
+from classify_scanned.doc import scan_document, scan_qc
+from classify_scanned.pdf import is_pdf, page_images
+from classify_scanned.qc import ScanError
 
 
 def build_pdf(paths, dpi=300, margin_pt=0.0) -> bytes:
@@ -68,7 +68,7 @@ def three_pages():
 def client():
     from fastapi.testclient import TestClient
 
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     return TestClient(app)
 
@@ -166,8 +166,8 @@ def test_a_page_that_got_cropped_in_half_is_not_treated_as_pre_cropped():
     Luật vá: "đã cắt sẵn" phải có nghĩa là **không có gì để cắt**. Bài này chốt đúng
     điều đó ở mức hàm thuần, không cần dựng lại ảnh sổ đỏ.
     """
-    from qc_scanner.doc import _apply_pre_cropped
-    from qc_scanner.qc import Metrics, Reason
+    from classify_scanned.doc import _apply_pre_cropped
+    from classify_scanned.qc import Metrics, Reason
 
     reasons = [Reason.of("CONTENT_CLIPPED"), Reason.of("BLURRY")]
     cfg = Config(pre_cropped=True, pre_cropped_min_area=0.90)
@@ -188,8 +188,8 @@ def test_a_caller_declaring_pre_cropped_is_still_taken_at_their_word():
     định dạng file. Bản vá đầu tiên siết cả hai và làm đỏ đúng bài test canh hợp đồng
     này — dấu hiệu tốt rằng nó đang canh đúng thứ.
     """
-    from qc_scanner.doc import _apply_pre_cropped
-    from qc_scanner.qc import Metrics, Reason
+    from classify_scanned.doc import _apply_pre_cropped
+    from classify_scanned.qc import Metrics, Reason
 
     kept = _apply_pre_cropped(
         [Reason.of("CONTENT_CLIPPED")],
@@ -207,8 +207,8 @@ def test_the_pdf_path_passes_its_verification_gate_down():
     """
     import dataclasses
 
-    from qc_scanner.doc import scan_document
-    from qc_scanner.qc import Metrics
+    from classify_scanned.doc import scan_document
+    from classify_scanned.qc import Metrics
 
     seen = {}
     real = scan_document.__globals__["scan_image"]
@@ -231,8 +231,8 @@ def test_the_pdf_path_passes_its_verification_gate_down():
 def test_no_quad_at_all_is_still_treated_as_pre_cropped():
     """Không dựng được tứ giác thì trả nguyên ảnh gốc — **không có phép cắt nào** để
     nghi ngờ, nên vẫn dập mã biên như cũ. `None` không được coi là 0.0."""
-    from qc_scanner.doc import _apply_pre_cropped
-    from qc_scanner.qc import Metrics, Reason
+    from classify_scanned.doc import _apply_pre_cropped
+    from classify_scanned.qc import Metrics, Reason
 
     kept = _apply_pre_cropped(
         [Reason.of("CLIPPED_EDGE")], Config(pre_cropped=True), Metrics()
@@ -335,7 +335,7 @@ def test_corrupt_pdf_over_http_is_400(client):
 
 def _cli(args, stdin=b""):
     return subprocess.run(
-        [sys.executable, "-m", "qc_scanner.cmd.cli", *args],
+        [sys.executable, "-m", "classify_scanned.cmd.cli", *args],
         input=stdin,
         capture_output=True,
     )
@@ -386,7 +386,7 @@ def test_cli_report_keeps_the_old_shape_for_a_single_page(tmp_path, one_page):
 
 
 def test_batch_reports_one_row_per_page(tmp_path, three_pages):
-    from qc_scanner.cmd.batch import run
+    from classify_scanned.cmd.batch import run
 
     src = tmp_path / "in"
     src.mkdir()
@@ -407,7 +407,7 @@ def test_batch_reports_one_row_per_page(tmp_path, three_pages):
 
 
 def test_batch_picks_up_pdf_files(tmp_path, one_page):
-    from qc_scanner.cmd.batch import iter_inputs
+    from classify_scanned.cmd.batch import iter_inputs
 
     (tmp_path / "a.pdf").write_bytes(one_page)
     (tmp_path / "b.jpg").write_bytes((EXAMPLES / "doc-1.jpg").read_bytes())
@@ -417,8 +417,8 @@ def test_batch_picks_up_pdf_files(tmp_path, one_page):
 
 
 def test_csv_has_a_page_column(tmp_path, three_pages):
-    from qc_scanner.cmd.batch import run
-    from qc_scanner.eval import write_csv
+    from classify_scanned.cmd.batch import run
+    from classify_scanned.eval import write_csv
 
     src = tmp_path / "in"
     src.mkdir()
@@ -448,7 +448,7 @@ def test_lossless_mode_still_keeps_every_pixel(one_page):
     """
     import numpy as np
 
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     cfg = Config(pdf_out_jpeg_quality=0)
     result = scan_document(one_page).pages[0]
@@ -467,7 +467,7 @@ def test_default_output_is_visually_indistinguishable_from_lossless(one_page):
     hay bằng OCR. Chốt bằng PSNR chứ không bằng "trông cũng được"."""
     import numpy as np
 
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
     original = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR)
@@ -490,7 +490,7 @@ def test_pdf_output_stays_in_the_same_size_class_as_the_png(one_page):
     không chốt một bất đẳng thức tình cờ đúng ở một mẫu. Tính lossless đã có
     `test_lossless_mode_still_keeps_every_pixel` giữ.
     """
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
     assert len(build_pdf([png], Config(pdf_out_jpeg_quality=0))) < len(png) * 1.25
@@ -515,7 +515,7 @@ def test_a_pdf_in_does_not_come_back_many_times_larger(one_page):
     chặn. Ngưỡng một nửa rất rộng so với thực tế đo được — 0.44 ở trang này, 0.36 trên
     file thật của khách — vì bài canh hạng độ lớn chứ không canh một tỉ lệ cụ thể.
     """
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     pages = [p.image for p in scan_document(one_page).pages]
     lossless = build_pdf(pages, Config(pdf_out_jpeg_quality=0))
@@ -526,7 +526,7 @@ def test_a_pdf_in_does_not_come_back_many_times_larger(one_page):
 
 
 def test_jpeg_knob_shrinks_the_file_when_asked(one_page):
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
     lossless = build_pdf([png], Config(pdf_out_jpeg_quality=0))
@@ -535,7 +535,7 @@ def test_jpeg_knob_shrinks_the_file_when_asked(one_page):
 
 
 def test_pdf_output_carries_all_pages_in_one_file(three_pages):
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     document = scan_document(three_pages)
     data = build_pdf([p.image for p in document.pages], Config())
@@ -545,7 +545,7 @@ def test_pdf_output_carries_all_pages_in_one_file(three_pages):
 def test_out_dpi_only_changes_page_size_never_pixel_count(one_page):
     """`pdf_out_dpi` là phỏng đoán về khổ giấy thật ([EX-4]) nên nó **không được**
     đụng tới số điểm ảnh — đó mới là thứ OCR dùng."""
-    from qc_scanner.pdf import build_pdf
+    from classify_scanned.pdf import build_pdf
 
     png = scan_document(one_page).pages[0].image
     sizes, pixels = [], []
@@ -621,7 +621,7 @@ def test_cli_can_stream_a_multipage_pdf_to_stdout(tmp_path, three_pages):
 
 
 def test_batch_pdf_output_is_one_file_in_one_file_out(tmp_path, three_pages, one_page):
-    from qc_scanner.cmd.batch import run
+    from classify_scanned.cmd.batch import run
 
     src = tmp_path / "in"
     src.mkdir()

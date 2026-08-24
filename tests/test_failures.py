@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from qc_scanner.doc import scan
-from qc_scanner.qc import ScanError
+from classify_scanned.doc import scan
+from classify_scanned.qc import ScanError
 
 
 def test_empty_input_raises_file_empty():
@@ -35,7 +35,7 @@ def test_cli_exits_nonzero_with_json_reason(tmp_path):
     junk = tmp_path / "junk.png"
     junk.write_bytes(b"\x00\x01\x02not-an-image" * 8)
     proc = subprocess.run(
-        [sys.executable, "-m", "qc_scanner.cmd.cli", str(junk), str(tmp_path / "o.png")],
+        [sys.executable, "-m", "classify_scanned.cmd.cli", str(junk), str(tmp_path / "o.png")],
         capture_output=True,
     )
     assert proc.returncode != 0
@@ -49,7 +49,7 @@ def test_cli_exits_nonzero_with_json_reason(tmp_path):
 def client():
     from fastapi.testclient import TestClient
 
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     return TestClient(app)
 
@@ -84,7 +84,7 @@ def test_gpu_out_of_memory_is_not_reported_as_a_broken_image(monkeypatch):
     GPU hết bộ nhớ (`CUBLAS_STATUS_ALLOC_FAILED`) từng ra `DECODE_FAILED` — "không
     giải mã được dữ liệu thành ảnh" — trong khi ảnh hoàn toàn bình thường.
     """
-    import qc_scanner.doc as doc
+    import classify_scanned.doc as doc
     from conftest import PAIRS
 
     def oom(*a, **kw):
@@ -103,7 +103,7 @@ def test_server_returns_503_for_resource_failures(client, monkeypatch):
 
     Hậu quả thật: ảnh tốt bị loại vĩnh viễn vì một sự cố nhất thời của máy chủ.
     """
-    import qc_scanner.doc as doc
+    import classify_scanned.doc as doc
     from conftest import PAIRS
 
     def oom(*a, **kw):
@@ -123,8 +123,8 @@ def test_gpu_concurrency_is_separate_from_cpu_concurrency():
     chạy song song. Nhưng VRAM là tài nguyên dùng chung — trên chính máy đó một
     service vLLM giữ 77.8/81.5 GB. Gộp hai van làm một thì luôn phải hy sinh một bên.
     """
-    from qc_scanner import rembg_session
-    from qc_scanner.cmd import server
+    from classify_scanned import rembg_session
+    from classify_scanned.cmd import server
 
     assert rembg_session.GPU_CONCURRENCY >= 1
     assert server.MAX_CONCURRENCY >= 1

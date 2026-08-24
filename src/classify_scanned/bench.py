@@ -1,7 +1,7 @@
 """Đo tốc độ trên máy đích — chạy thẳng trong container.
 
-    docker exec qc-scanner qc-scanner-bench
-    docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000
+    docker exec classify-scanned classify-scanned-bench
+    docker exec classify-scanned classify-scanned-bench --url http://127.0.0.1:5000
 
 Mục đích: trả lời **hai** câu bằng số đo trên máy thật, không phải phỏng đoán.
 
@@ -361,7 +361,7 @@ def ccu_table(rate):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Đo tốc độ qc-scanner trên máy đích.")
+    ap = argparse.ArgumentParser(description="Đo tốc độ classify-scanned trên máy đích.")
     ap.add_argument("--images", help="Thư mục ảnh thật. Không có thì tự sinh ảnh.")
     ap.add_argument("-n", "--count", type=int, default=16, help="Số ảnh dùng để đo.")
     ap.add_argument("--url", help="Đo thêm qua HTTP, ví dụ http://127.0.0.1:5000")
@@ -377,7 +377,7 @@ def main(argv=None):
     cfg = Config.from_env()
 
     _hr("MÔI TRƯỜNG")
-    print(f"  qc-scanner       {__version__}")
+    print(f"  classify-scanned       {__version__}")
     print(f"  model            {cfg.rembg_model}")
     warmup(cfg.rembg_model, cfg.onnx_providers)
     providers = active_providers(cfg.rembg_model, cfg.onnx_providers)

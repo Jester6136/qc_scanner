@@ -1,4 +1,4 @@
-# Thuật toán luồng xử lý qc_scanner
+# Thuật toán luồng xử lý classify_scanned
 
 > Mô tả **thuật toán** của luồng chính (ảnh chụp → tách nền → dò biên → nắn phối cảnh → PNG),
 > kèm **hợp đồng đầu ra QC** đang hướng tới. Nguồn sự thật là code; tài liệu này giải thích
@@ -48,13 +48,19 @@ không hàng đợi.
 | `scan_image(ndarray)` | ảnh BGR đã giải mã | `ScanResult` |
 | `scan(bytes)` | ảnh | `bytes` PNG — API cũ, **không mang phán quyết** |
 
-Mặt tiền: [`cmd/cli.py`](../src/qc_scanner/cmd/cli.py) ·
-[`cmd/server.py`](../src/qc_scanner/cmd/server.py) ·
-[`cmd/batch.py`](../src/qc_scanner/cmd/batch.py) · library.
+Mặt tiền: [`cmd/cli.py`](../src/classify_scanned/cmd/cli.py) ·
+[`cmd/server.py`](../src/classify_scanned/cmd/server.py) ·
+[`cmd/batch.py`](../src/classify_scanned/cmd/batch.py) · library.
 
 ---
 
 ## 1. `scan_qc()` — luồng đang chạy
+
+### 1a. Chế độ nguồn `photo` / `scan`
+
+Kho đầu vào không được giả định loại nguồn theo phần mở rộng: một PDF có thể được tạo từ ảnh điện thoại, còn một ảnh có thể là bản scan. Vì vậy mặc định `QC_SCANNER_SOURCE_MODE=auto` ưu tiên bằng chứng hình học trong từng trang: detector tìm được biên tài liệu thì xử lý như ảnh chụp; không có biên đáng tin mới cân nhắc coi toàn khung là trang scan đã cắt sẵn. Chế độ `photo` (`QC_SCANNER_SOURCE_MODE=photo`) buộc xử lý theo ảnh chụp có tài liệu cần tìm; chế độ `scan` (`QC_SCANNER_SOURCE_MODE=scan`) chỉ nên bật khi nguồn xác nhận chắc chắn đầu vào là scan; khi đó toàn khung được dùng làm tài liệu và không chạy suy đoán biên.
+
+Với PDF nhiều trang, quyết định vẫn thực hiện độc lập trên từng trang bitmap. Không dùng đuôi file để ép toàn bộ PDF vào một mode, nên PDF ghép từ các ảnh thường vẫn được phát hiện như ảnh chụp nếu trang còn dấu hiệu nền/biên phù hợp.
 
 ```
 scan_qc(data, config) -> ScanResult
@@ -85,7 +91,7 @@ scan_qc(data, config) -> ScanResult
     VÀ mảng đó có cấu trúc như tài liệu (mật độ biên ≥10% của trong quad)
     VÀ mask ĐÁNG TIN làm chứng cứ (khớp hình chữ nhật xoay ≥0.85 — không có cổng này
     thì loại oan 70% ảnh nền bàn bừa bộn của SmartDoc, xem QC-22)
-    → CONTENT_OUTSIDE_CROP (fail). Phép kiểm duy nhất còn hiệu lực khi tứ giác nằm
+    → CONTENT_OUTSIDE_CROP (warn). Phép kiểm duy nhất còn hiệu lực khi tứ giác nằm
     gọn giữa khung — mọi mã cắt xén khác chỉ soi cạnh áp vào MÉP ẢNH.
     ≥2 contour trong mask → MULTIPLE_DOCUMENTS
     cross-check bật → IoU hai detector thấp → DETECTOR_DISAGREEMENT
@@ -103,7 +109,7 @@ scan_qc(data, config) -> ScanResult
 `scan()` cũ vẫn còn, là lớp bọc mỏng trả `result.image` — không phá người dùng hiện tại,
 nhưng cũng **không mang phán quyết**, nên mã mới nên gọi `scan_qc()`.
 
-Mọi ngưỡng nằm trong [`config.py`](../src/qc_scanner/config.py), override được bằng biến môi
+Mọi ngưỡng nằm trong [`config.py`](../src/classify_scanned/config.py), override được bằng biến môi
 trường `QC_SCANNER_*`.
 
 ---
@@ -131,8 +137,8 @@ class Reason:
 ```
 
 **Hint hai tầng (QC-13)**. Cùng một lý do đọc khác nhau tuỳ người nhận: người chụp còn chụp
-lại được, người soi kho ảnh thì không. Luồng gọi khai báo vai — `qc-scanner --audience`,
-`POST /?audience=`, `QC_SCANNER_HINT_AUDIENCE` — và `qc-scanner-batch` mặc định `operator`.
+lại được, người soi kho ảnh thì không. Luồng gọi khai báo vai — `classify-scanned --audience`,
+`POST /?audience=`, `QC_SCANNER_HINT_AUDIENCE` — và `classify-scanned-batch` mặc định `operator`.
 Trường `hints` luôn mang đủ cả hai để phía gọi tự hiển thị lại mà không phải xử lý lại ảnh.
 Mã `system` không có tầng riêng, rơi về tầng `operator`.
 
@@ -171,22 +177,22 @@ phá người dùng PyPI hiện tại.
 
 ---
 
-## 3. Mặt tiền CLI — [cmd/cli.py](../src/qc_scanner/cmd/cli.py)
+## 3. Mặt tiền CLI — [cmd/cli.py](../src/classify_scanned/cmd/cli.py)
 
 Ảnh ra stdout (hoặc file), **phán quyết đi theo exit code**: `0` pass · `1` warn · `2` fail ·
 `3` đầu vào không đánh giá được. Báo cáo JSON (reason + hint + metrics) ra stderr, hoặc ra file
-với `--report`. Pipe cũ (`cat a.jpg | qc-scanner > b.png`) không vỡ.
+với `--report`. Pipe cũ (`cat a.jpg | classify-scanned > b.png`) không vỡ.
 
 PDF nhiều trang: trang đầu vào OUTPUT, các trang sau thành `OUTPUT.p2.png`… — hoặc gộp cả vào
 một file nếu OUTPUT có đuôi `.pdf`. Ghi đè mọi trang lên cùng một đích sẽ để lại đúng trang cuối
 mà không báo gì, nên ca stdout + nhiều trang bị **từ chối** thay vì làm im lặng.
 
-`qc-scanner-batch` chạy cả thư mục, xuất CSV **một dòng mỗi trang** kèm toàn bộ metric — đây là
+`classify-scanned-batch` chạy cả thư mục, xuất CSV **một dòng mỗi trang** kèm toàn bộ metric — đây là
 hình thức QC mà vận hành tiêu thụ được ở quy mô hàng vạn ảnh.
 
 ---
 
-## 4. Mặt tiền HTTP — [cmd/server.py](../src/qc_scanner/cmd/server.py)
+## 4. Mặt tiền HTTP — [cmd/server.py](../src/classify_scanned/cmd/server.py)
 
 Hợp đồng đầy đủ ở [api.md](api.md); `tests/test_api_contract.py` giữ đúng những gì tài liệu đó
 hứa. Tóm tắt phần thuật toán quan tâm:
@@ -222,7 +228,7 @@ Ba chỗ mà thuật toán quyết định hình dạng HTTP:
 | **tổng** | **~584** | |
 
 ⚠️ Bảng trên đo trên **máy server 64 nhân**. Trên máy dev (Apple Silicon) cùng luồng ấy tốn
-~1669ms — con số bạn sẽ thấy trong vài docstring của [`geometry.py`](../src/qc_scanner/geometry.py).
+~1669ms — con số bạn sẽ thấy trong vài docstring của [`geometry.py`](../src/classify_scanned/geometry.py).
 Hai số không mâu thuẫn, nhưng đừng trộn chúng vào cùng một phép tính tỉ trọng.
 
 **Đã đổi từ khi chuyển detector mặc định sang DocAligner (S-3b):** riêng chặng dò biên nhanh hơn
@@ -242,7 +248,7 @@ Hai hệ quả còn hiệu lực:
 * Thông lượng bão hoà ở ~16 luồng trong một tiến trình (8.4 ảnh/s). Muốn hơn thì **nhân số
   container**, không phải tối ưu tiếp trong một tiến trình.
 
-Đo lại trên máy đích bằng `qc-scanner-bench` — số ở đây là của một máy cụ thể, không phải hằng số.
+Đo lại trên máy đích bằng `classify-scanned-bench` — số ở đây là của một máy cụ thể, không phải hằng số.
 
 ---
 
@@ -285,7 +291,7 @@ là mã vô dụng.
 | `SERVER_BUSY` | fail | số request đang bay ≥ `MAX_IN_FLIGHT` | Quá tải tạm thời, **không phải lỗi ảnh** — ảnh chưa được xử lý lần nào. Cho chạy lại. Gặp thường xuyên thì giảm request song song, hoặc thêm container. | system |
 | `INFERENCE_FAILED` | fail | model tách nền ném lỗi (hay gặp: hết bộ nhớ GPU) | Lỗi tài nguyên máy chủ (thường là hết bộ nhớ GPU), **không phải lỗi ảnh**. Cho chạy lại, đừng loại ảnh. | system |
 | `UNAUTHORIZED` | fail | request thiếu `Authorization: Bearer <key>` hợp lệ | Request không kèm `Authorization: Bearer <key>` hợp lệ. Ảnh **chưa được xử lý lần nào** — đây là lỗi tích hợp, không phải lỗi ảnh. | system |
-| `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** (`qc-scanner-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image. | system |
+| `MODEL_MISSING` | fail | không tìm thấy file `.onnx` của DocAligner | Image thiếu mô hình DocAligner; nó phải được nướng vào lúc **build** (`classify-scanned-fetch-models`). Ảnh không có lỗi — cho chạy lại sau khi sửa image. | system |
 | `LOW_RESOLUTION` | fail | **cạnh dài ảnh đã nắn < 600px** (xem ghi chú) | Ảnh quá nhỏ để OCR đọc. Lại gần hơn rồi chụp lại. | capturer |
 
 ### Đầu vào PDF (N-08)
@@ -315,7 +321,7 @@ là mã vô dụng.
 | `QUAD_NOT_FOUND` | fail | không contour nào cho đúng 4 đỉnh | Máy không thấy đủ 4 góc. Mở phẳng tờ giấy, đừng che góc, chụp lại cả tờ. | capturer |
 | `TOO_SMALL` | fail | `quad_area_ratio < 0.20` | Tài liệu quá nhỏ trong khung. Lại gần hoặc zoom vào rồi chụp lại. | capturer |
 | `NOT_CONVEX` | fail | `not is_convex` | Biên bị méo, thường do nếp gấp. Vuốt phẳng tài liệu rồi chụp lại. | capturer |
-| `CONTENT_OUTSIDE_CROP` | fail | `abandoned_ratio ≥ 0.10` **và** `abandoned_structure ≥ 0.10` **và** `mask_quad_fit ≥ 0.85` | Máy cắt trượt, bỏ rơi một phần tờ giấy. Chụp lại cả tờ, để lộ đủ bốn góc. | capturer |
+| `CONTENT_OUTSIDE_CROP` | warn | `abandoned_ratio ≥ 0.10` **và** `abandoned_structure ≥ 0.10` **và** `mask_quad_fit ≥ 0.85` | Máy cắt trượt, bỏ rơi một phần tờ giấy. Chụp lại cả tờ, để lộ đủ bốn góc. | capturer |
 | `CONTENT_CLIPPED` | fail | `border_ink_ratio > 0.08`, **và chỉ khi có cắt thật** (`quad_area_ratio ≤ 0.90`) | Mất **chữ** chứ không chỉ mất viền. Lùi máy ra, chụp lại cả tờ kèm chút nền. | capturer |
 | `NO_CROP_DETECTED` | fail | **hoặc** `quad_area_ratio > 0.90` + `touches_border ≥ 3` + detector thua; **hoặc** `conf < 0.9` **và** góc lọt > 8px ra ngoài ảnh (QC-20 — một tứ giác sai bét vẫn có thể nhỏ hơn khung) | Máy không tìm được biên tờ giấy. Đặt lên nền tối rồi chụp lại cả 4 mép. | capturer |
 | `CLIPPED_EDGE` | warn | `touches_border ≥ 1` (và **không** phải ca trên) | Một phần tài liệu nằm ngoài khung. Lùi máy ra cho thấy trọn 4 mép. | capturer |
@@ -360,7 +366,7 @@ là ước đoán** — cần tập vàng để chốt (QUAL-3, EX-2).
 
 ### 8.0 Đánh giá lõi hiện tại
 
-Điểm **đúng** của thiết kế cũ, cần ghi nhận: qc_scanner chọn **segmentation-first** (rembg tách
+Điểm **đúng** của thiết kế cũ, cần ghi nhận: classify_scanned chọn **segmentation-first** (rembg tách
 chủ thể → dò biên trên mask) thay vì Canny+Hough thuần. Ở 2019 đó đã là lựa chọn tiến bộ —
 mask sạch hơn hẳn dò cạnh trên nền lộn xộn. Đây cũng vẫn là xương sống của nhiều sản phẩm.
 
@@ -380,7 +386,7 @@ Không model, vài ms, chạy mọi nơi. Thua trên nền lộn xộn và tài 
 đường kẻ trong tài liệu). *Giá trị hôm nay*: **đường lui**, không phải đường chính — đúng vai
 trò đã thiết kế ở [§6](#6--fallback-dò-cạnh-khi-rembg-thất-bại).
 
-**B. Segmentation-first** (họ của qc_scanner hiện tại) — mask chủ thể → contour → tứ giác.
+**B. Segmentation-first** (họ của classify_scanned hiện tại) — mask chủ thể → contour → tứ giác.
 Nâng cấp tại chỗ, rẻ nhất, **không đổi kiến trúc**:
 - Đổi model trong rembg: `isnet-general-use` (đã có sẵn trong rembg, thường hơn u2net) —
   **đổi một tham số `session`**, không đổi code.
@@ -393,10 +399,10 @@ Nâng cấp tại chỗ, rẻ nhất, **không đổi kiến trúc**:
 regression hoặc heatmap). Đây là hướng các app scanner thương mại đã chuyển sang (CNN dò
 landmark, >30fps trên thiết bị di động, kèm Kalman filter làm mượt giữa các khung hình).
 - Mã nguồn mở dùng được ngay: **[DocAligner](https://github.com/DocsaidLab/DocAligner)**
-  (Apache-2.0, `pip install docaligner-docsaid`, chạy **ONNXRuntime** — cùng runtime qc_scanner
+  (Apache-2.0, `pip install docaligner-docsaid`, chạy **ONNXRuntime** — cùng runtime classify_scanned
   đã phụ thuộc sẵn). Hai biến thể: point regression (PP-LCNet, 128×128) và heatmap
   (FastViT/MobileNetV2 + BiFPN).
-- **Vì sao hợp qc_scanner hơn hẳn**: (a) **suy được góc bị che hoặc nằm ngoài khung** — thứ
+- **Vì sao hợp classify_scanned hơn hẳn**: (a) **suy được góc bị che hoặc nằm ngoài khung** — thứ
   contour không bao giờ làm được; (b) sinh **confidence tự nhiên** (đỉnh heatmap) → nạp thẳng
   vào `metrics`/`verdict` của [hợp đồng QC §2](#2--hợp-đồng-đầu-ra-qc); (c) thay được **cả**
   rembg lẫn contour → bỏ luôn chặng chiếm ~95% thời gian.
@@ -472,7 +478,7 @@ trên cùng tập vàng** để so bằng số thay vì bằng cảm tính.
 
 Ta không tự nghĩ ra bộ chỉ số này — kiểm lại thì nó gần trùng khít cái ngành đang dùng:
 
-| Chỉ số | [Google Document AI][gdai] | qc_scanner |
+| Chỉ số | [Google Document AI][gdai] | classify_scanned |
 |---|---|---|
 | mờ | `defect_blurry` | `blur_score`, ngưỡng 25 |
 | cháy sáng | `defect_glare` | `glare_ratio` + `median_brightness` |

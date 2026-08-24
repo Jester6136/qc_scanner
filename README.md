@@ -54,7 +54,7 @@ không từ tên file. PDF nhiều trang cho một phán quyết mỗi trang —
 ## Kết quả trả về
 
 ```python
-from qc_scanner import scan_qc
+from classify_scanned import scan_qc
 
 result = scan_qc(open("photo.jpg", "rb").read())
 result.verdict          # "pass" | "warn" | "fail"
@@ -86,7 +86,7 @@ pip install .
 Cần **hai** model, tải một lần:
 
 ```bash
-qc-scanner-fetch-models --head heatmap    # DocAligner ~83MB → ~/.cache/qc-scanner/docaligner/
+classify-scanned-fetch-models --head heatmap    # DocAligner ~83MB → ~/.cache/classify-scanned/docaligner/
 ```
 
 rembg (~176MB → `~/.u2net/`) tự tải ở lần chạy đầu. Máy không có mạng sẽ dừng ở bước này;
@@ -95,11 +95,11 @@ rembg (~176MB → `~/.u2net/`) tự tải ở lần chạy đầu. Máy không c
 ## CLI
 
 ```bash
-qc-scanner photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
-cat photo.jpg | qc-scanner > out.png
-qc-scanner photo.jpg out.png --report qc.json
-qc-scanner hoso.pdf out.png           # PDF vào: trang 1 → out.png, trang 2 → out.p2.png, …
-qc-scanner hoso.pdf out.pdf           # PDF ra: mọi trang trong một file
+classify-scanned photo.jpg out.png          # exit 0 pass · 1 warn · 2 fail · 3 đầu vào hỏng
+cat photo.jpg | classify-scanned > out.png
+classify-scanned photo.jpg out.png --report qc.json
+classify-scanned hoso.pdf out.png           # PDF vào: trang 1 → out.png, trang 2 → out.p2.png, …
+classify-scanned hoso.pdf out.pdf           # PDF ra: mọi trang trong một file
 ```
 
 Báo cáo QC ra stderr, hoặc ra file với `--report`:
@@ -117,9 +117,9 @@ Báo cáo QC ra stderr, hoặc ra file với `--report`:
 ## Chạy lô
 
 ```bash
-qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv
-qc-scanner-batch anh-vao/ anh-ra/ --report qc.csv -j 4
-qc-scanner-batch anh-vao/ anh-ra/ --format pdf     # một file vào → một file ra
+classify-scanned-batch anh-vao/ anh-ra/ --report qc.csv
+classify-scanned-batch anh-vao/ anh-ra/ --report qc.csv -j 4
+classify-scanned-batch anh-vao/ anh-ra/ --format pdf     # một file vào → một file ra
 ```
 
 CSV một dòng mỗi **trang**: file, verdict, reasons và toàn bộ metric; một PDF 12 trang cho 12
@@ -133,7 +133,7 @@ phần suy luận.
 ## HTTP server
 
 ```bash
-qc-scanner-server -a 127.0.0.1 -p 5000
+classify-scanned-server -a 127.0.0.1 -p 5000
 
 curl -F "file=@photo.jpg" http://127.0.0.1:5000/ -o out.png -D-
 # X-QC-Scanner-Verdict: warn
@@ -164,7 +164,7 @@ Hợp đồng API đầy đủ: **[docs/api.md](docs/api.md)**.
 
 ```bash
 docker compose up -d --build
-docker compose logs -f qc-scanner
+docker compose logs -f classify-scanned
 
 # từ máy khác trong cùng LAN
 curl -F "file=@photo.jpg" "http://<IP-máy-chạy>:5000/?format=json"
@@ -179,8 +179,8 @@ header `Server: AirTunes/...`. Kiểm bằng `curl -sI http://localhost:5000/hea
 
 ### Bản GPU NVIDIA
 
-Bản CPU và bản GPU là **cùng một service** `qc-scanner`; file đè chỉ thay Dockerfile và biến môi
-trường, nên không chạy được cả hai cùng lúc và `docker exec qc-scanner …` dùng chung.
+Bản CPU và bản GPU là **cùng một service** `classify-scanned`; file đè chỉ thay Dockerfile và biến môi
+trường, nên không chạy được cả hai cùng lúc và `docker exec classify-scanned …` dùng chung.
 
 Kiểm host trước khi build:
 
@@ -200,22 +200,22 @@ docker compose ps
 Dòng log đầu tiên báo provider đang chạy:
 
 ```
-qc-scanner 0.2.0 · model=u2net · providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] · max_concurrency=16
+classify-scanned 0.2.0 · model=u2net · providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] · max_concurrency=16
 ```
 
 `QC_SCANNER_REQUIRE_GPU=1` (bật sẵn trong `docker-compose.gpu.yml`) làm container thoát với mã 3
 khi không có provider tăng tốc, kèm các lệnh chẩn đoán. Không có cờ này thì onnxruntime tụt về
 CPU mà không báo lỗi: service vẫn chạy đúng, healthcheck vẫn xanh, chỉ chậm hơn nhiều lần.
 
-`--remove-orphans` xoá container `qc-scanner-gpu` do bản compose cũ (dùng `profiles: gpu`) tạo ra.
+`--remove-orphans` xoá container `classify-scanned-gpu` do bản compose cũ (dùng `profiles: gpu`) tạo ra.
 Container đó vẫn chạy image cũ nếu không xoá.
 
 ## Đo tốc độ
 
 ```bash
-docker exec qc-scanner qc-scanner-bench                                # tự sinh ảnh
-docker exec qc-scanner qc-scanner-bench --url http://127.0.0.1:5000    # đo cả đường HTTP
-docker exec qc-scanner qc-scanner-bench --images /data -n 32           # đo trên ảnh thật
+docker exec classify-scanned classify-scanned-bench                                # tự sinh ảnh
+docker exec classify-scanned classify-scanned-bench --url http://127.0.0.1:5000    # đo cả đường HTTP
+docker exec classify-scanned classify-scanned-bench --images /data -n 32           # đo trên ảnh thật
 ```
 
 Bốn mục: **CHẶNG** (thời gian đi đâu, GPU hay CPU) · **SONG SONG** (trần thông lượng một tiến
@@ -231,8 +231,8 @@ thoại thật vì chi phí CPU tỉ lệ với số pixel.
 Cùng một endpoint, cùng một CLI, cùng một batch — không có tham số nào phải bật.
 
 ```bash
-qc-scanner hoso.pdf out.png              # trang 1 → out.png, trang 2 → out.p2.png, …
-qc-scanner hoso.pdf out.png --page 2     # chỉ một trang
+classify-scanned hoso.pdf out.png              # trang 1 → out.png, trang 2 → out.p2.png, …
+classify-scanned hoso.pdf out.png --page 2     # chỉ một trang
 curl -F "file=@hoso.pdf" http://127.0.0.1:5000/ | jq '.verdict, .page_count'
 ```
 
@@ -245,7 +245,7 @@ curl -F "file=@hoso.pdf" http://127.0.0.1:5000/ | jq '.verdict, .page_count'
 ```
 
 `verdict` gộp là **trang tệ nhất**: một bộ hồ sơ có 1 trang không đọc được thì chưa dùng được,
-dù 11 trang kia hoàn hảo. `qc-scanner-batch` ghi một dòng CSV mỗi trang, có cột `page`.
+dù 11 trang kia hoàn hảo. `classify-scanned-batch` ghi một dòng CSV mỗi trang, có cột `page`.
 
 Trang scan được lấy **thẳng bitmap nhúng** ra, không render, không resample. Chọn sẵn một DPI
 để render thì gần như không bao giờ trùng DPI thật của ảnh bên trong, và lệch lên trên là mọi
@@ -263,10 +263,10 @@ trả về 50 trang đầu của một file 200 trang mà không nói gì sẽ k
 ### PDF ở đầu ra
 
 ```bash
-qc-scanner hoso.pdf out.pdf                          # CLI: suy từ đuôi file
-qc-scanner anh.jpg out.pdf                           # ảnh vào cũng ra PDF được
+classify-scanned hoso.pdf out.pdf                          # CLI: suy từ đuôi file
+classify-scanned anh.jpg out.pdf                           # ảnh vào cũng ra PDF được
 curl -F "file=@hoso.pdf" "…:5000/?format=pdf" -o daxuly.pdf
-qc-scanner-batch vao/ ra/ --format pdf               # một file vào → một file ra
+classify-scanned-batch vao/ ra/ --format pdf               # một file vào → một file ra
 ```
 
 Mọi trang nằm gọn trong một file, nên ràng buộc "stdout chỉ chứa được một ảnh" cũng biến mất.
@@ -284,12 +284,12 @@ Chi tiết: [N-08](docs/features_issues.md#n-pdf) · [docs/api.md](docs/api.md).
 
 ## Cấu hình
 
-Mọi tham số nằm trong [`config.py`](src/qc_scanner/config.py), override bằng
+Mọi tham số nằm trong [`config.py`](src/classify_scanned/config.py), override bằng
 `QC_SCANNER_<TÊN_TRƯỜNG>`:
 
 ```bash
-QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 qc-scanner photo.jpg out.png
-qc-scanner photo.jpg out.png --detector edge-hough --cross-check
+QC_SCANNER_MIN_QUAD_AREA_RATIO=0.10 classify-scanned photo.jpg out.png
+classify-scanned photo.jpg out.png --detector edge-hough --cross-check
 ```
 
 Các biến hay dùng nhất:
@@ -329,7 +329,7 @@ Ba van cho ba tài nguyên khác nhau, và không van nào suy ra được từ 
 | Xác thực | API key kiểu Bearer, nhiều key thu hồi riêng từng client; không đặt key thì **server không khởi động** |
 | Mã lý do | 32 mã, mỗi mã kèm `hint` + `audience` |
 | Đường lui | DocAligner trả rỗng → rembg (`RECOVERED_BY_MASK_FALLBACK`); rembg thua → dò cạnh (`RECOVERED_BY_EDGE_FALLBACK`); hết đường → ảnh gốc kèm `FALLBACK_ORIGINAL` (fail) |
-| Bộ đo | 401 test + CI; `python -m qc_scanner.eval` đổ metric ra CSV, so hai lần chạy. Tập vàng công khai: `qc-scanner-smartdoc` (SmartDoc 2015, CC-BY-4.0) |
+| Bộ đo | 401 test + CI; `python -m classify_scanned.eval` đổ metric ra CSV, so hai lần chạy. Tập vàng công khai: `classify-scanned-smartdoc` (SmartDoc 2015, CC-BY-4.0) |
 | Hợp đồng API | [docs/api.md](docs/api.md) + 36 test hợp đồng |
 | Ngưỡng | 5 ngưỡng chốt bằng số đo trên 37–45 ảnh (`max_border_ink_ratio`, `no_crop_area_ratio`, `no_crop_min_confidence`, `min_long_side_px`, `min_blur_score`); phần còn lại là ước đoán ban đầu |
 | Độ chính xác | Chưa đo được — crop rate / false pass / false fail cần ảnh **có nhãn** ([EX-2](docs/need_exchange.md)) |
@@ -397,7 +397,7 @@ Tài liệu dự án viết bằng tiếng Việt, đặt trong [docs/](docs/):
 ## Development
 
 ```bash
-conda create -n qc_scanner python=3.12 && conda activate qc_scanner
+conda create -n classify_scanned python=3.12 && conda activate classify_scanned
 pip install -r requirements-dev.txt
 pip install -e .
 ```
@@ -409,7 +409,7 @@ ruff check src tests
 
 Quy ước khi gửi thay đổi:
 
-- thay đổi thuật toán kèm số đo trước/sau (`python -m qc_scanner.eval ... --baseline`);
+- thay đổi thuật toán kèm số đo trước/sau (`python -m classify_scanned.eval ... --baseline`);
 - thêm reason code kèm `hint` + `audience` — `test_qc_contract.py` chặn nếu thiếu;
 - nâng dependency thì chạy bộ regression và ghi version cũ/mới trong commit.
 

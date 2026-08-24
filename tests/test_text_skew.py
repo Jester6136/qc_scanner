@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
-from qc_scanner import geometry as geo
+from classify_scanned import geometry as geo
 
 
 def _page(angle=0.0, lines=22, size=(1000, 700)):
@@ -93,7 +93,7 @@ def test_threshold_sits_outside_the_meters_own_error():
     Ta nhận ảnh chụp rồi nắn phối cảnh; trần nhóm sạch đo được cũng là 1.0°, mà sai
     số thước cũng 1.0° — đặt ngưỡng ở đó thì mọi ảnh sạch thành ca 50-50.
     """
-    from qc_scanner.config import Config
+    from classify_scanned.config import Config
 
     cfg = Config()
     assert cfg.max_text_skew_deg >= 5 * cfg.text_skew_step_deg
@@ -110,9 +110,9 @@ def test_a_broken_warp_is_never_rotated_straight():
     """
     import dataclasses
 
-    from qc_scanner import doc
-    from qc_scanner.config import Config
-    from qc_scanner.qc import Metrics
+    from classify_scanned import doc
+    from classify_scanned.config import Config
+    from classify_scanned.qc import Metrics
 
     cfg = Config()
     warped = _page(0.0)
@@ -137,9 +137,9 @@ def test_the_reported_angle_is_the_one_measured_not_the_one_left_over():
     Gộp hai thứ làm một thì sau khi bật deskew, mọi ảnh đều báo ~0° và chỉ số mất
     sạch giá trị chẩn đoán — không ai biết ảnh vào vốn lệch bao nhiêu nữa.
     """
-    from qc_scanner import doc
-    from qc_scanner.config import Config
-    from qc_scanner.qc import Metrics
+    from classify_scanned import doc
+    from classify_scanned.config import Config
+    from classify_scanned.qc import Metrics
 
     m = Metrics(text_skew_deg=3.0)
     doc._deskew(_page(0.0), Config(), m)
@@ -166,9 +166,9 @@ def test_a_lost_detector_fails_even_when_its_quad_is_small():
 
     Một tứ giác sai bét vẫn có thể nhỏ hơn khung.
     """
-    from qc_scanner.config import Config
-    from qc_scanner.doc import _no_crop_detected
-    from qc_scanner.qc import Metrics
+    from classify_scanned.config import Config
+    from classify_scanned.doc import _no_crop_detected
+    from classify_scanned.qc import Metrics
 
     cfg = Config()
 

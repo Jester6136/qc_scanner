@@ -8,7 +8,7 @@
 import cv2
 import numpy as np
 
-from qc_scanner import geometry as geo
+from classify_scanned import geometry as geo
 
 FULL_FRAME = np.array([[0, 0], [899, 0], [899, 1199], [0, 1199]], dtype=np.float32)
 

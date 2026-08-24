@@ -17,7 +17,7 @@ import base64
 import pytest
 
 from conftest import PAIRS
-from qc_scanner.qc import REASONS
+from classify_scanned.qc import REASONS
 
 SAMPLE = PAIRS[0]
 CLIPPED = next(p for p in PAIRS if p.name == "doc-1")
@@ -29,7 +29,7 @@ REQUIRED_REASON_FIELDS = {"code", "severity", "message", "hint", "audience", "hi
 def client():
     from fastapi.testclient import TestClient
 
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     return TestClient(app)
 
@@ -155,7 +155,7 @@ def test_get_root_is_gone_for_good(client):
 
 
 def test_upload_limit_is_enforced(client):
-    from qc_scanner.cmd.server import MAX_UPLOAD_BYTES
+    from classify_scanned.cmd.server import MAX_UPLOAD_BYTES
 
     oversized = b"\x00" * (MAX_UPLOAD_BYTES + 1024)
     resp = client.post("/", files={"file": ("big.jpg", oversized)})
@@ -221,7 +221,7 @@ def test_uploads_never_touch_the_disk():
     """
     import starlette.formparsers
 
-    from qc_scanner.cmd.server import MAX_UPLOAD_BYTES
+    from classify_scanned.cmd.server import MAX_UPLOAD_BYTES
 
     assert starlette.formparsers.MultiPartParser.spool_max_size >= MAX_UPLOAD_BYTES
 
@@ -237,7 +237,7 @@ def test_scan_endpoint_does_not_block_the_event_loop():
     """
     import inspect
 
-    from qc_scanner.cmd.server import healthz, scan_endpoint
+    from classify_scanned.cmd.server import healthz, scan_endpoint
 
     assert not inspect.iscoroutinefunction(scan_endpoint)
     # Ngược lại: healthz phải ở trên vòng lặp sự kiện thì mới trả lời nổi lúc bận.
@@ -254,8 +254,8 @@ def test_require_gpu_kills_the_server_instead_of_running_slowly():
     """
     import pytest
 
-    from qc_scanner.cmd.server import _enforce_gpu
-    from qc_scanner.config import Config
+    from classify_scanned.cmd.server import _enforce_gpu
+    from classify_scanned.config import Config
 
     cpu_only = ["CPUExecutionProvider"]
     # Mặc định: chạy chậm còn hơn không chạy.

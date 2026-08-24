@@ -28,7 +28,7 @@ from conftest import EXAMPLES
 def client():
     from fastapi.testclient import TestClient
 
-    from qc_scanner.cmd.server import app
+    from classify_scanned.cmd.server import app
 
     return TestClient(app)
 
@@ -77,7 +77,7 @@ def test_memory_is_bounded_by_max_in_flight_not_by_max_concurrency(
     client, photo, monkeypatch
 ):
     """Bài quan trọng nhất file này: đo **bộ nhớ**, không đo thông lượng."""
-    from qc_scanner.cmd import server
+    from classify_scanned.cmd import server
 
     counter = _CountingSlots(server._scan_slots)
     monkeypatch.setattr(server, "_scan_slots", counter)
@@ -92,7 +92,7 @@ def test_memory_is_bounded_by_max_in_flight_not_by_max_concurrency(
 
 
 def test_overload_is_refused_with_503_and_retry_after(client, photo, monkeypatch):
-    from qc_scanner.cmd import server
+    from classify_scanned.cmd import server
 
     monkeypatch.setattr(server, "MAX_IN_FLIGHT", 2)
     results = _blast(client, photo, 16)
@@ -108,7 +108,7 @@ def test_busy_says_it_is_not_the_image_s_fault(client, photo, monkeypatch):
     Không nói thì hệ gọi rất dễ đối xử với nó như `fail` và **loại một ảnh tốt** —
     đúng lỗi đã sửa cho `INFERENCE_FAILED` ở SPD-6.
     """
-    from qc_scanner.cmd import server
+    from classify_scanned.cmd import server
 
     # Ép kín tải một cách xác định thay vì đua nhiều luồng rồi hy vọng trúng — bài này
     # nói về *nội dung* thông báo, không về thời điểm nó xuất hiện.
@@ -126,7 +126,7 @@ def test_the_counter_is_released_on_every_path(client, photo, monkeypatch):
     """Rò bộ đếm là kiểu hỏng tệ nhất có thể ở đây: service tự khoá mình vĩnh viễn
     và chỉ khởi động lại mới cứu được. Nhánh lỗi phải trả suất y như nhánh thành công.
     """
-    from qc_scanner.cmd import server
+    from classify_scanned.cmd import server
 
     client.post("/", files={"file": ("junk.png", b"junk" * 40)})  # 400
     client.post("/")  # 400, thiếu file
@@ -139,7 +139,7 @@ def test_the_counter_is_released_on_every_path(client, photo, monkeypatch):
 def test_healthz_answers_while_the_server_is_saturated(client, photo, monkeypatch):
     """Liveness probe phải sống sót qua lúc quá tải, nếu không Docker restart oan
     container **đúng lúc nó đang bận nhất**."""
-    from qc_scanner.cmd import server
+    from classify_scanned.cmd import server
 
     monkeypatch.setattr(server, "MAX_IN_FLIGHT", 2)
     with ThreadPoolExecutor(9) as pool:
@@ -174,7 +174,7 @@ def test_default_concurrency_matches_both_machines_it_was_measured_on():
     """
     from unittest import mock
 
-    from qc_scanner.cmd.server import _default_concurrency
+    from classify_scanned.cmd.server import _default_concurrency
 
     for cores, expected in ((10, 2), (64, 16)):
         with mock.patch("os.cpu_count", return_value=cores):
@@ -217,9 +217,9 @@ def test_bench_reports_the_same_limits_the_server_actually_runs():
     sao của số `2`. Cả hai lần đều không phải lỗi logic — chỉ là con số đúng bị chép
     ra nhiều bản rồi các bản trôi khỏi nhau.
     """
-    import qc_scanner.bench as bench
-    from qc_scanner import limits
-    from qc_scanner.cmd import server
+    import classify_scanned.bench as bench
+    from classify_scanned import limits
+    from classify_scanned.cmd import server
 
     assert server.MAX_CONCURRENCY == limits.MAX_CONCURRENCY
     assert server.MAX_IN_FLIGHT == limits.MAX_IN_FLIGHT
@@ -233,7 +233,7 @@ def test_bench_reports_the_same_limits_the_server_actually_runs():
 def test_limits_are_integers_everywhere():
     """`TypeError: '<=' not supported between 'str' and 'int'` — bench chết giữa chừng
     vì trần được giữ dưới dạng chuỗi. Kiểu dữ liệu là một phần của hợp đồng."""
-    from qc_scanner import limits
+    from classify_scanned import limits
 
     assert isinstance(limits.MAX_CONCURRENCY, int)
     assert isinstance(limits.MAX_IN_FLIGHT, int)
@@ -252,7 +252,7 @@ def test_recommendation_prefers_latency_over_the_last_9_percent(capsys):
     Nhưng p50 tăng **46%**. Đó là món hời cho máy chủ và món lỗ cho mọi người đang
     chờ — mà bên gọi API mới là người đọc con số này.
     """
-    from qc_scanner.bench import _recommend
+    from classify_scanned.bench import _recommend
 
     _recommend(
         [
@@ -275,10 +275,10 @@ def test_queue_depth_is_reported_as_waiting_time_not_as_megabytes():
     from contextlib import redirect_stdout
     from unittest import mock
 
-    from qc_scanner.bench import _recommend
+    from classify_scanned.bench import _recommend
 
     buf = io.StringIO()
-    with mock.patch("qc_scanner.limits.MAX_IN_FLIGHT", 64), redirect_stdout(buf):
+    with mock.patch("classify_scanned.limits.MAX_IN_FLIGHT", 64), redirect_stdout(buf):
         _recommend([(16, 7.69, 1.75), (32, 8.43, 2.55)])
     out = buf.getvalue()
 
@@ -300,6 +300,6 @@ def test_queue_depth_stops_where_throughput_stops_growing():
     để chặn RAM, nhưng máy server có 231 GB nên 64 × 32MB = 2 GB chẳng bao giờ là ràng
     buộc. Ràng buộc thật là thời gian chờ.
     """
-    from qc_scanner import limits
+    from classify_scanned import limits
 
     assert limits.MAX_IN_FLIGHT == limits.MAX_CONCURRENCY * 2

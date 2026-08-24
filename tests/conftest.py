@@ -62,7 +62,7 @@ def pair(request):
 @pytest.fixture(scope="session")
 def scan_cache_qc():
     """name -> ScanResult, tính một lần cho cả session."""
-    from qc_scanner.doc import scan_qc
+    from classify_scanned.doc import scan_qc
 
     return {p.name: scan_qc(p.input_bytes) for p in PAIRS}
 
@@ -83,8 +83,8 @@ def scan_cache_contour():
     không trả contour nên QC-17 không chạy, và phép so sẽ thành so hai detector
     khác nhau chứ không phải so bật/tắt một tính năng.
     """
-    from qc_scanner.config import Config
-    from qc_scanner.doc import scan_qc
+    from classify_scanned.config import Config
+    from classify_scanned.doc import scan_qc
 
     config = Config(detector="rembg-contour", deskew=False)
     return {p.name: scan_qc(p.input_bytes, config=config).image for p in PAIRS}
@@ -111,8 +111,8 @@ def scan_cache_inscribed():
     mới được đo bằng IoU trên tập vàng SmartDoc — đó mới là bài kiểm hợp với nó,
     chứ không phải so byte với ảnh do nhánh cũ sinh ra.
     """
-    from qc_scanner.config import Config
-    from qc_scanner.doc import scan_qc
+    from classify_scanned.config import Config
+    from classify_scanned.doc import scan_qc
 
     config = Config(
         detector="rembg-contour", contain_paper_contour=False, deskew=False

@@ -16,7 +16,7 @@ nhầm một cách tất định thì không làm được, còn truyền tứ g
 import cv2
 import numpy as np
 
-from qc_scanner import geometry as geo
+from classify_scanned import geometry as geo
 
 H, W = 1200, 900
 

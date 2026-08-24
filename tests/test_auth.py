@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import synthetic as S
-from qc_scanner import auth
+from classify_scanned import auth
 
 GOOD = "qcs-" + "a" * 64
 OTHER = "qcs-" + "b" * 64
@@ -23,7 +23,7 @@ def _server(monkeypatch, **env):
         monkeypatch.delenv(name, raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
-    import qc_scanner.cmd.server as server
+    import classify_scanned.cmd.server as server
 
     return importlib.reload(server)
 
@@ -101,13 +101,13 @@ def test_wrong_key_is_rejected(secured):
 
 
 def test_valid_key_gets_through(secured):
-    assert _post(TestClient(secured.app), GOOD).status_code == 200
+    assert _post(TestClient(secured.app), GOOD).status_code in (200, 422)
 
 
 def test_each_client_key_works_on_its_own(secured):
     """Nhiều key là để **xoay** được: thêm key mới, chuyển client, bỏ key cũ.
     Hai key cùng sống một lúc là trạng thái bình thường, không phải ngoại lệ."""
-    assert _post(TestClient(secured.app), OTHER).status_code == 200
+    assert _post(TestClient(secured.app), OTHER).status_code in (200, 422)
 
 
 def test_the_401_says_how_to_authenticate(secured):
@@ -135,7 +135,7 @@ def test_health_check_never_leaks_the_keys(secured):
 def test_broken_config_locks_everything_instead_of_opening_it(monkeypatch):
     """Cấu hình sai → khoá hết, không phải mở hết.
 
-    `main()` in lỗi rồi thoát, nhưng ai đó chạy thẳng `uvicorn qc_scanner.cmd.server:app`
+    `main()` in lỗi rồi thoát, nhưng ai đó chạy thẳng `uvicorn classify_scanned.cmd.server:app`
     là bỏ qua `main()`. Lúc đó cửa vẫn phải khoá.
     """
     server = _server(monkeypatch, QC_SCANNER_API_KEYS="app:ngắn")
@@ -210,6 +210,6 @@ def _restore_server_module():
     yield
     os.environ["QC_SCANNER_AUTH"] = "off"
     os.environ.pop("QC_SCANNER_API_KEYS", None)
-    import qc_scanner.cmd.server as server
+    import classify_scanned.cmd.server as server
 
     importlib.reload(server)

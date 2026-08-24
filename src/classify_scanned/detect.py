@@ -228,7 +228,7 @@ class DocAlignerDetector(Detector):
             raise ScanError(
                 "MODEL_MISSING",
                 f"thiếu mô hình DocAligner (tìm ở {da.model_home()}); "
-                "chạy `qc-scanner-fetch-models` hoặc trỏ QC_SCANNER_DOCALIGNER_MODEL",
+                "chạy `classify-scanned-fetch-models` hoặc trỏ QC_SCANNER_DOCALIGNER_MODEL",
             )
 
         if config.docaligner_head == "point":
